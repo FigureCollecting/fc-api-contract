@@ -1,0 +1,27 @@
+# Code generation: TypeScript via protoc-gen-es (@bufbuild/protoc-gen-es,
+# resolved from node_modules/.bin when run through `npm run generate`).
+#
+# The output at src/gen IS COMMITTED — unlike fc-ingest-contract, which
+# gitignores it. Two reasons: consumers reading a PR should see the wire types
+# change in the diff, and CI can then prove the committed output still matches
+# the protos (`npm run generate && git diff --exit-code`). Generated code that
+# only exists at publish time cannot be reviewed and cannot be drift-checked.
+#
+# `clean: true` matters for that check: it wipes src/gen before regenerating, so
+# a file left behind by a deleted proto shows up as a deletion in the diff
+# rather than lingering forever.
+#
+# Other languages consume proto/ directly (the package exports the .proto files
+# by path) — no language is privileged by the contract.
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-es
+    out: src/gen
+    opt:
+      - target=ts
+      # Explicit ESM specifiers. No cross-file import exists today (compare and
+      # sync are independent), but the day one imports the other, Node16/NodeNext
+      # resolution requires the extension and a silent break here would be found
+      # by a consumer, not by us.
+      - import_extension=js

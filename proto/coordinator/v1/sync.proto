@@ -1,0 +1,229 @@
+// ============================================================================
+// coordinator.v1 — the sync feed.
+//
+// fc-mobile is offline-first: it holds a local copy, accepts edits with no
+// network, and reconciles later. The feed below is the whole reconciliation
+// surface. Three RPCs:
+//
+//   Delta   pull everything the server has that the client has not seen
+//   Push    hand the server the edits made while offline
+//   Status  where the server's head is, and what its clock reads
+//
+// THE WIRE EVENT is {facet_key, version, op, payload} and nothing else. The
+// merge rule it serves is LWW-per-facet: the client applies an event when
+// `version > local[facet_key]`, and drops it otherwise. Per-facet, not
+// per-record — two devices editing different facets of the same holding both
+// win, which is the property bare record-level LWW throws away.
+//
+// FOUR RULES THIS SHAPE ENCODES:
+//
+//  1. PAGING IS ON A SERVER SEQUENCE, NEVER A TIMESTAMP. `cursor` is opaque
+//     to the client and positional server-side. Timestamp paging silently
+//     skips records whose write commits after a reader has already passed
+//     their timestamp — catalog-api's SyncService has exactly that bug. An
+//     opaque cursor also means the server can change its paging basis
+//     without a wire break.
+//
+//  2. `version` IS A RAW STRING TOKEN — the facet's `as_of`, never
+//     google.protobuf.Timestamp. Same fidelity doctrine as the spine: a
+//     PG-arbitrated instant must not round-trip through epoch seconds+nanos.
+//     The server emits NORMALISED UTC ISO-8601, which is what makes the
+//     client's lexicographic `>` identical to an instant comparison. A
+//     server that emitted an offset form (+09:00) would break that identity;
+//     normalisation is the server's obligation, not the client's.
+//
+//  3. `payload` IS JSON TEXT, never google.protobuf.Struct. Struct folds
+//     every JSON number to float64. Facet payloads carry prices and
+//     identifiers as strings and must stay that way end to end.
+//
+//  4. DISPLAY TIME IS NEVER RESTAMPED. `version` is a merge token, not the
+//     thing the UI shows. The user's local edit time travels inside
+//     `payload` and is shown as the user wrote it; the merge token is an HLC
+//     anchored to a measured per-connection server offset (see
+//     StatusResponse.server_now_iso). Conflating the two is how "edited just
+//     now" appears on a record edited last Tuesday.
+// ============================================================================
+
+syntax = "proto3";
+
+package coordinator.v1;
+
+// ---------------------------------------------------------------------------
+// SyncOp — what the event does to the facet.
+// ---------------------------------------------------------------------------
+enum SyncOp {
+  // Never emitted by a conforming server; present so an old client that has
+  // not learned a newer op can tell "unknown to me" from "upsert".
+  SYNC_OP_UNSPECIFIED = 0;
+
+  // Replace the facet's value with `payload`. There is no partial update:
+  // the facet is the unit of merge, so a facet is always carried whole.
+  SYNC_OP_UPSERT = 1;
+
+  // Tombstone the facet. A SOFT delete — the estate's retention policy is
+  // soft-delete only, so this marks the facet absent at `version` and never
+  // instructs anyone to destroy rows. `payload` is empty for a tombstone.
+  SYNC_OP_DELETE = 2;
+}
+
+// ---------------------------------------------------------------------------
+// SyncEvent — one facet at one version. The only event shape on this feed,
+// in both directions: the server emits these in Delta, the client emits the
+// same message in Push.
+// ---------------------------------------------------------------------------
+message SyncEvent {
+  // Stable identity of the facet being replaced. Opaque to transport; the
+  // client uses it as the key of its local version map. Never reused for a
+  // different facet, because a reused key would make a stale event win.
+  string facet_key = 1;
+
+  // The facet's `as_of` — the merge token. Normalised UTC ISO-8601; see
+  // rule 2 above. The client applies this event iff
+  // version > local[facet_key].
+  string version = 2;
+
+  // Upsert or tombstone.
+  SyncOp op = 3;
+
+  // The facet value as JSON TEXT (rule 3). Empty when op is
+  // SYNC_OP_DELETE.
+  string payload = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Delta — pull. Resume is exact: replaying from an empty cursor must reach
+// the same state as any partial replay, which is the property the two-device
+// acceptance checks.
+// ---------------------------------------------------------------------------
+message DeltaRequest {
+  // Opaque resume token from a previous DeltaResponse. Empty means "from the
+  // beginning of this user's feed".
+  string cursor = 1;
+
+  // Maximum events to return. 0 means the server's default; the server may
+  // return fewer, and `has_more` — not a short page — is what says whether
+  // to ask again.
+  uint32 limit = 2;
+}
+
+message DeltaResponse {
+  // In feed order. Applying them in order is required: two events for the
+  // same facet_key may appear in one page.
+  repeated SyncEvent events = 1;
+
+  // Pass to the next DeltaRequest. Always set, including on the last page,
+  // so a caller can park it and resume later.
+  string next_cursor = 2;
+
+  // Whether more events are already waiting. False does not mean "nothing
+  // will ever arrive"; it means the client has caught up to the head.
+  bool has_more = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Push — the offline edits. Idempotent per user: replaying an identical
+// batch after a dropped response must not double-apply.
+// ---------------------------------------------------------------------------
+message PushRequest {
+  // Client-chosen idempotency key, unique per user. A retry of the same
+  // batch MUST carry the same client_id; the server answers the replay from
+  // its record rather than re-applying. This is what makes an unacknowledged
+  // push safe to retry on reconnect.
+  string client_id = 1;
+
+  // The edits, oldest first. Order matters for the same reason as in
+  // DeltaResponse.
+  repeated SyncEvent events = 2;
+}
+
+// ---------------------------------------------------------------------------
+// PushOutcome — what the server did with one pushed event.
+//
+// Bare LWW would need only applied/stale. The extra two exist because this
+// feed carries a field-level conflict policy (AUTO_ACCEPT | REVIEW | LOCKED)
+// over user overrides: an enricher must not silently overwrite something the
+// user set deliberately, so some writes land in a review queue instead of in
+// the facet.
+// ---------------------------------------------------------------------------
+enum PushOutcome {
+  PUSH_OUTCOME_UNSPECIFIED = 0;
+
+  // Written. The facet now reads at `version` in PushResult.
+  PUSH_OUTCOME_APPLIED = 1;
+
+  // Recognised as a replay of an earlier batch with the same client_id.
+  // Nothing was written a second time; PushResult.version is the state the
+  // original push produced.
+  PUSH_OUTCOME_DUPLICATE = 2;
+
+  // The server already holds a version >= this event's. Nothing written.
+  // PushResult.version is the server's, so the client can fast-forward
+  // without a Delta round trip.
+  PUSH_OUTCOME_STALE = 3;
+
+  // The field's policy is REVIEW or LOCKED, so the write went to the pending
+  // review queue instead of to the facet. PushResult.version is still the
+  // server's current value: the client must NOT show the edit as landed.
+  PUSH_OUTCOME_REVIEW = 4;
+}
+
+message PushResult {
+  // Echoes the facet_key of the event this result answers. Results are
+  // returned in request order, one per event; the echo makes a client-side
+  // mismatch loud rather than silent.
+  string facet_key = 1;
+
+  PushOutcome outcome = 2;
+
+  // The server's authoritative version for this facet after the push. The
+  // client stores it as local[facet_key] whatever the outcome — that is what
+  // converges a STALE or REVIEW result without another pull.
+  string version = 3;
+}
+
+message PushResponse {
+  // One per PushRequest.events entry, same order.
+  repeated PushResult results = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Status — the cheap poll. Answers "am I behind?" without pulling a page,
+// and carries the clock sample the client's HLC is anchored to.
+// ---------------------------------------------------------------------------
+message StatusRequest {}
+
+message StatusResponse {
+  // The server's head cursor. A client whose stored cursor differs is
+  // behind; comparing cursors is the only supported use — the value is
+  // otherwise opaque.
+  string cursor = 1;
+
+  // How many of this user's pushes are sitting in the review queue awaiting
+  // a decision. 0 means nothing to review.
+  uint64 pending_review = 2;
+
+  // The server's clock, normalised UTC ISO-8601, sampled when this response
+  // was built. The client measures its offset from this (rule 4) and anchors
+  // its HLC to the measurement, clamping only when the offset is
+  // implausible. Never used to restamp anything the user sees.
+  string server_now_iso = 3;
+}
+
+// ---------------------------------------------------------------------------
+// SyncService — the whole offline-first reconciliation surface.
+//
+// ERROR CONTRACT:
+//   * an unreadable cursor -> INVALID_ARGUMENT. The client's recovery is a
+//     full replay from an empty cursor, which is always safe.
+//   * an empty client_id on Push -> INVALID_ARGUMENT: without it a retry
+//     cannot be recognised, and a silently non-idempotent push is worse than
+//     a rejected one.
+//   * a rejected individual event is NOT an RPC error. It comes back as a
+//     PushResult with a non-APPLIED outcome, because a batch with one stale
+//     event must not fail the other nineteen.
+// ---------------------------------------------------------------------------
+service SyncService {
+  rpc Delta(DeltaRequest) returns (DeltaResponse);
+  rpc Push(PushRequest) returns (PushResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+}

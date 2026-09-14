@@ -1,0 +1,28 @@
+# buf module config for the coordinator.v1 client contract.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  # NO exceptions. fc-ingest-contract excepts four STANDARD rules because its
+  # wire shape deliberately mirrors an in-process TS API 1:1. This contract has
+  # no such constraint — it is designed wire-first — so it passes STANDARD
+  # clean, and any future exception has to argue for itself here.
+breaking:
+  use:
+    # DELIBERATELY STRICTER THAN THE SPINE CONTRACT, which uses WIRE_JSON.
+    #
+    # WIRE_JSON asks "can a new server and an old server exchange bytes?" and
+    # permits deleting a field or an enum value, because a reader simply skips
+    # what it does not recognise. That is the right question for the spine,
+    # whose consumers are operator-deployed and redeploy together.
+    #
+    # It is the wrong question here. This contract's consumers are PHONES. A
+    # PWA installed six months ago is still running its own copy of these
+    # types and will not update because we shipped. Deleting a field does not
+    # break its parser; it blanks a screen. FILE is the strictest category buf
+    # offers and adds FIELD_NO_DELETE / ENUM_VALUE_NO_DELETE / MESSAGE_NO_DELETE
+    # / RPC_NO_DELETE on top of everything WIRE_JSON checks, which is exactly
+    # the "additive only" rule the README states, mechanised.
+    - FILE
