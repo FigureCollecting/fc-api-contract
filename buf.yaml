@@ -14,9 +14,13 @@ breaking:
     # DELIBERATELY STRICTER THAN THE SPINE CONTRACT, which uses WIRE_JSON.
     #
     # WIRE_JSON asks "can a new server and an old server exchange bytes?" and
-    # permits deleting a field or an enum value, because a reader simply skips
-    # what it does not recognise. That is the right question for the spine,
-    # whose consumers are operator-deployed and redeploy together.
+    # permits deleting a field or an enum value ONCE ITS NUMBER IS RESERVED —
+    # the textbook-correct way to retire one — because a reader simply skips
+    # what it does not recognise. (A bare delete without a reservation is
+    # caught by both categories; the reserved delete is the one that slips
+    # through, and it is the one a careful author writes.) That is the right
+    # question for the spine, whose consumers are operator-deployed and
+    # redeploy together.
     #
     # It is the wrong question here. This contract's consumers are PHONES. A
     # PWA installed six months ago is still running its own copy of these
