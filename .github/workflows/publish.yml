@@ -1,0 +1,79 @@
+name: Publish Package
+
+# Publishes @figurecollecting/fc-api-contract to GitHub Packages (npm) on a v*
+# tag, with a signed SLSA build-provenance attestation — the same shape as
+# fc-shared's publish flow:
+#   - ephemeral GITHUB_TOKEN (no standing PAT)
+#   - id-token: write -> sigstore-signed provenance
+# npm versions are immutable, so this is gated on a tag, not on every push.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+# CI policy ("fork shift-left"): publishing is org-only. On a fork this job is
+# skipped, so a fork can never publish into the FigureCollecting scope.
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'FigureCollecting'
+    permissions:
+      contents: read        # checkout
+      packages: write       # publish to npm.pkg.github.com via GITHUB_TOKEN
+      id-token: write       # OIDC token used to sign the provenance attestation
+      attestations: write   # store the attestation against the repo
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # prepublishOnly runs `npm run breaking`, which needs the tag history
+          # to find the PREVIOUS release to compare against.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@figurecollecting'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="v$(node -pe "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version check OK: $PKG_VERSION"
+
+      - name: Verify committed codegen matches the protos
+        run: |
+          # The tarball ships dist/, compiled from the COMMITTED src/gen. If the
+          # commit being released has stale generated code, the published types
+          # would not match the published .proto files.
+          npm run generate
+          git diff --exit-code -- src/gen
+
+      - name: Build
+        # prepublishOnly (lint + typecheck + build + coverage) also runs during
+        # `npm pack`; this makes the build failure explicit and early.
+        run: npm run build
+
+      - name: Pack tarball
+        run: npm pack   # -> figurecollecting-fc-api-contract-<version>.tgz
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: '*.tgz'
+
+      - name: Publish to GitHub Packages
+        run: npm publish *.tgz
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

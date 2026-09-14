@@ -1,0 +1,104 @@
+name: Build and Test
+
+on:
+  push:
+    branches: ['**']  # every branch; the job-level gate below decides what runs
+  pull_request:
+    branches: [develop, main]
+
+# ---------------------------------------------------------------------------
+# CI policy: "fork shift-left". Developers work on forks and open PRs to
+# FigureCollecting/*. Every push event is gated per entry job by ONE expression
+# (pull_request and workflow_dispatch behave normally). The four push cases:
+#   owner == FigureCollecting, ref develop|main -> RUN  (upstream integration branches)
+#   owner == FigureCollecting, any other ref    -> SKIP (gets CI via its PR)
+#   owner != FigureCollecting, ref develop|main -> SKIP (fork mirrors of upstream)
+#   owner != FigureCollecting, any other ref    -> RUN  (shift-left: fork feature branches)
+#
+# This package has NO @figurecollecting dependencies — only public @bufbuild
+# packages — so `npm ci` needs no registry token anywhere, on a fork or upstream.
+# Publishing is org-only and lives in publish.yml.
+# ---------------------------------------------------------------------------
+
+jobs:
+  contract:
+    name: Contract (lint, breaking, codegen drift)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'push'
+      || (github.repository_owner == 'FigureCollecting' && (github.ref_name == 'develop' || github.ref_name == 'main'))
+      || (github.repository_owner != 'FigureCollecting' && github.ref_name != 'develop' && github.ref_name != 'main')
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags are the baseline for the breaking check. With the default
+          # shallow fetch `git tag` is empty and the check would skip on a repo
+          # that DOES have releases — passing for the wrong reason.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: buf lint
+        run: npm run lint
+
+      - name: buf breaking (against the last release tag)
+        run: npm run breaking
+
+      - name: Codegen drift — committed output must match the protos
+        run: |
+          # src/gen is committed so wire-type changes are reviewable in a diff.
+          # That is only worth anything if CI proves the committed output is
+          # what the protos actually produce. `buf generate` has clean: true,
+          # so a file orphaned by a deleted proto shows up here as a deletion.
+          npm run generate
+          if ! git diff --exit-code -- src/gen; then
+            echo "::error::Generated output in src/gen is stale. Run 'npm run generate' and commit the result."
+            exit 1
+          fi
+          echo "Committed codegen matches proto/."
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'push'
+      || (github.repository_owner == 'FigureCollecting' && (github.ref_name == 'develop' || github.ref_name == 'main'))
+      || (github.repository_owner != 'FigureCollecting' && github.ref_name != 'develop' && github.ref_name != 'main')
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage
+        run: npm run test:ci
+
+      - name: Upload coverage to Codecov
+        # org-only: no Codecov token is configured, so an upload from a fork
+        # push has nothing to authenticate with. PRs from forks still upload,
+        # because repository_owner is the base repo's owner.
+        if: github.repository_owner == 'FigureCollecting'
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage/lcov.info
+          flags: api-contract
+          fail_ci_if_error: false
