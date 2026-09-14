@@ -61,6 +61,13 @@ describe('build workflow', () => {
     expect(buildYml).toMatch(/fetch-depth: 0/);
   });
 
+  it('names the breaking baseline as the previous tag, not the latest', () => {
+    // The latest tag IS the release at tag-push time; the script excludes tags
+    // on HEAD, and the step name has to say what it actually does.
+    expect(buildYml).toContain('buf breaking (against the previous release tag)');
+    expect(buildYml).not.toContain('against the last release tag');
+  });
+
   it('gates both entry jobs with the fork shift-left expression', () => {
     const gates = buildYml.match(/github\.event_name != 'push'/g) ?? [];
     expect(gates.length).toBe(2);

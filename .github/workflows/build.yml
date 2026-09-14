@@ -48,7 +48,11 @@ jobs:
       - name: buf lint
         run: npm run lint
 
-      - name: buf breaking (against the last release tag)
+      - name: buf breaking (against the previous release tag)
+        # "Previous", not "latest": the script excludes tags pointing at HEAD,
+        # so a release can never be compared against itself. This job is the
+        # gate of record — a break is cheap to fix here and expensive once an
+        # immutable npm version exists.
         run: npm run breaking
 
       - name: Codegen drift — committed output must match the protos
