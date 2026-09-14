@@ -15,6 +15,11 @@ export default defineConfig({
         branches: 85,
         functions: 85,
         statements: 85,
+        // Per file, not just in aggregate. The generated pool grows with every
+        // message added, and a global-only threshold dilutes: a small untested
+        // hand-written file stops moving the aggregate once the pool is large
+        // enough. Per-file is what keeps this gate able to fail.
+        perFile: true,
       },
     },
   },
