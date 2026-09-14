@@ -56,7 +56,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coordinator/v1/compare.proto.
  */
 export const file_coordinator_v1_compare: GenFile = /*@__PURE__*/
-  fileDesc("Chxjb29yZGluYXRvci92MS9jb21wYXJlLnByb3RvEg5jb29yZGluYXRvci52MSJOCg5Db21wYXJlUmVxdWVzdBIQCgZndGluMTQYASABKAlIABIRCgdoZWFkX2lkGAIgASgJSAASDwoHbm93X2lzbxgDIAEoCUIGCgRzZWVkIlIKD0NvbXBhcmVSZXNwb25zZRITCgtyZXN1bHRfanNvbhgBIAEoCRIqCghjb3ZlcmFnZRgCIAEoCzIYLmNvb3JkaW5hdG9yLnYxLkNvdmVyYWdlIhwKCENvdmVyYWdlEhAKCHJlZGFjdGVkGAEgAygJMlwKDkNvbXBhcmVTZXJ2aWNlEkoKB0NvbXBhcmUSHi5jb29yZGluYXRvci52MS5Db21wYXJlUmVxdWVzdBofLmNvb3JkaW5hdG9yLnYxLkNvbXBhcmVSZXNwb25zZWIGcHJvdG8z");
+  fileDesc("Chxjb29yZGluYXRvci92MS9jb21wYXJlLnByb3RvEg5jb29yZGluYXRvci52MSJOCg5Db21wYXJlUmVxdWVzdBIQCgZndGluMTQYASABKAlIABIRCgdoZWFkX2lkGAIgASgJSAASDwoHbm93X2lzbxgDIAEoCUIGCgRzZWVkIlIKD0NvbXBhcmVSZXNwb25zZRITCgtyZXN1bHRfanNvbhgBIAEoCRIqCghjb3ZlcmFnZRgCIAEoCzIYLmNvb3JkaW5hdG9yLnYxLkNvdmVyYWdlIjMKCENvdmVyYWdlEhAKCHJlZGFjdGVkGAEgAygJEhUKDXNlbWFudGljc19yZXYYAiABKAkyXAoOQ29tcGFyZVNlcnZpY2USSgoHQ29tcGFyZRIeLmNvb3JkaW5hdG9yLnYxLkNvbXBhcmVSZXF1ZXN0Gh8uY29vcmRpbmF0b3IudjEuQ29tcGFyZVJlc3BvbnNlYgZwcm90bzM");
 
 /**
  * ---------------------------------------------------------------------------
@@ -132,9 +132,15 @@ export type CompareResponse = Message<"coordinator.v1.CompareResponse"> & {
   resultJson: string;
 
   /**
-   * The spine's coverage report, lifted out of result_json. Always set on a
+   * The spine's coverage report, lifted out of result_json. Set on every
    * successful response, even when nothing was withheld (an empty `redacted`
    * means "you saw everything the spine holds").
+   *
+   * PRESENCE — read this before writing `res.coverage.redacted`. This is a
+   * proto3 message field, so it carries presence and the generated type is
+   * `coverage?: Coverage | undefined`. A client MUST null-check it
+   * (`res.coverage?.redacted`): a server that omits the field decodes to
+   * undefined, not to an empty Coverage, and the property access throws.
    *
    * @generated from field: coordinator.v1.Coverage coverage = 2;
    */
@@ -150,12 +156,15 @@ export const CompareResponseSchema: GenMessage<CompareResponse> = /*@__PURE__*/
 
 /**
  * ---------------------------------------------------------------------------
- * Coverage — what the spine withheld from this response and why-by-name.
+ * Coverage — the two facts about this response a client must be able to read
+ * WITHOUT parsing result_json: what was withheld, and which semantics produced
+ * it. Both are copied out of the spine's own coverage object; neither is
+ * computed here.
  *
- * Deliberately carries ONE field today. The spine's coverage object has more
- * to say (which stores were gathered, which were stale), and those are
- * additive field numbers 2..n when a screen needs them. Shipping them
- * speculatively would be a placeholder; this contract has none.
+ * The spine's coverage object has more to say (crossReleaseLinked, note, which
+ * stores were gathered, which were stale). Those are additive field numbers
+ * 3..n when a screen needs them. Shipping them speculatively would be a
+ * placeholder; this contract has none.
  * ---------------------------------------------------------------------------
  *
  * @generated from message coordinator.v1.Coverage
@@ -170,9 +179,36 @@ export type Coverage = Message<"coordinator.v1.Coverage"> & {
    * Copied verbatim from result_json's coverage.redacted: same members, same
    * order. See the PASS-THROUGH DOCTRINE above.
    *
+   * PRESENCE NOTE: the spine's field is OPTIONAL and is stamped only when
+   * something was actually removed; it never emits an empty array. A proto3
+   * `repeated string` has no presence, so spine-absent maps to wire-empty and
+   * spine-present maps to the same members. The mapping is 1:1 and preserves
+   * the distinction the spine exists to draw: "no inventory data" versus "you
+   * may not see it".
+   *
    * @generated from field: repeated string redacted = 1;
    */
   redacted: string[];
+
+  /**
+   * The spine's `coverage.semanticsRev` — a 16-hex-char stable hash of the
+   * orderability semantics that produced the verdicts inside result_json.
+   * fc-aggregation stamps it on EVERY CompareResult (it is required there,
+   * never optional), so a conforming coordinator always fills this in.
+   *
+   * WHY IT IS LIFTED, when the fidelity doctrine says the blob is opaque:
+   * `buf breaking --use FILE` protects this ENVELOPE and cannot see inside
+   * result_json. The spine can change how a verdict is derived without any
+   * wire signal at all. semanticsRev is the one marker that says so, and a
+   * client that caches or reasons about verdicts needs it without parsing the
+   * blob — which is the same argument that justifies lifting `redacted`.
+   *
+   * Copied verbatim, like `redacted`. It is a hash, not a version number:
+   * compare it for equality, never for order.
+   *
+   * @generated from field: string semantics_rev = 2;
+   */
+  semanticsRev: string;
 };
 
 /**

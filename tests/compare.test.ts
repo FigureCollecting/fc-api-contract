@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { create, equals, fromBinary, fromJson, toBinary, toJson } from '@bufbuild/protobuf';
 import {
@@ -142,5 +144,65 @@ describe('Coverage', () => {
     expect(fromJson(CoverageSchema, toJson(CoverageSchema, populated)).redacted).toEqual([
       'inventory_levels',
     ]);
+  });
+});
+
+describe('Coverage.semantics_rev (the payload version marker)', () => {
+  it('round-trips the spine semanticsRev hash', () => {
+    // fc-aggregation stamps coverage.semanticsRev on every CompareResult
+    // (compare.ts:253,288) as a 16-hex-char stable hash of the orderability
+    // semantics. It is REQUIRED spine-side, never optional.
+    const semanticsRev = '9f3c1a2b7d4e6058';
+    const msg = create(CoverageSchema, { redacted: [], semanticsRev });
+
+    const decoded = fromBinary(CoverageSchema, toBinary(CoverageSchema, msg));
+    expect(equals(CoverageSchema, msg, decoded)).toBe(true);
+    expect(decoded.semanticsRev).toBe(semanticsRev);
+    expect(fromJson(CoverageSchema, toJson(CoverageSchema, msg)).semanticsRev).toBe(semanticsRev);
+  });
+
+  it('is lifted alongside redacted and agrees with the blob', () => {
+    // buf breaking --use FILE protects the ENVELOPE; it cannot see inside
+    // result_json. semanticsRev is the only signal a client has that the
+    // spine's verdict semantics changed under it, which is exactly why it is
+    // worth lifting out of the blob.
+    const semanticsRev = '9f3c1a2b7d4e6058';
+    const msg = create(CompareResponseSchema, {
+      resultJson: JSON.stringify({
+        heads: [],
+        coverage: { crossReleaseLinked: false, semanticsRev, note: 'n' },
+      }),
+      coverage: { semanticsRev },
+    });
+    const decoded = fromBinary(CompareResponseSchema, toBinary(CompareResponseSchema, msg));
+
+    const inBlob = (
+      JSON.parse(decoded.resultJson) as { coverage: { semanticsRev: string } }
+    ).coverage.semanticsRev;
+    expect(decoded.coverage?.semanticsRev).toBe(inBlob);
+  });
+
+  it('leaves redacted and semantics_rev independent', () => {
+    // An entitled caller still gets a semanticsRev; a redacted one still gets
+    // the same one. Neither field implies anything about the other.
+    const entitled = fromBinary(
+      CoverageSchema,
+      toBinary(CoverageSchema, create(CoverageSchema, { semanticsRev: 'abc0123456789def' })),
+    );
+    expect(entitled.redacted).toEqual([]);
+    expect(entitled.semanticsRev).toBe('abc0123456789def');
+  });
+});
+
+describe('compare.proto documents presence honestly (finding H)', () => {
+  it('tells clients to null-check coverage despite "always set"', () => {
+    const text = readFileSync(
+      fileURLToPath(new URL('../proto/coordinator/v1/compare.proto', import.meta.url)),
+      'utf8',
+    );
+    // proto3 message fields have presence: the generated type is
+    // `coverage?: Coverage | undefined`, so `res.coverage.redacted` throws
+    // against a server that omits it.
+    expect(text).toMatch(/null[- ]check/i);
   });
 });
