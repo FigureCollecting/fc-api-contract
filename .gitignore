@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+*.tgz
+
+# Build output. Regenerate with `npm run build`.
+dist/
+
+# NOTE: src/gen/ is deliberately NOT ignored. The generated wire types are
+# committed so they are reviewable in a diff and drift-checkable in CI.
+# See buf.gen.yaml.

@@ -1,0 +1,112 @@
+name: Publish Package
+
+# Publishes @figurecollecting/fc-api-contract to GitHub Packages (npm) on a v*
+# tag. npm versions are immutable, so this is gated on a tag, not on every push.
+#
+# THE GATE IS THESE STEPS, NOT `prepublishOnly`. npm runs `prepublishOnly` on
+# `npm publish` FROM A DIRECTORY — not on `npm pack`, and not on
+# `npm publish <tarball>`, which is the path this job takes. Relying on it here
+# would be a documented gate that does not exist, so lint, typecheck, codegen
+# drift, breaking and the test suite run as explicit steps below, ahead of the
+# publish. A failed step fails the job and every later step is skipped, so the
+# publish cannot run past a red gate.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+# CI policy ("fork shift-left"): publishing is org-only. On a fork this job is
+# skipped, so a fork can never publish into the FigureCollecting scope.
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'FigureCollecting'
+    permissions:
+      contents: read        # checkout
+      packages: write       # publish to npm.pkg.github.com via GITHUB_TOKEN
+      id-token: write       # OIDC token for the provenance attestation, when it can run
+      attestations: write   # store the attestation against the repo, when it can run
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # The breaking check needs tag history to find the PREVIOUS release.
+          # Shallow, it would see no tags and skip — a pass for the wrong
+          # reason, which scripts/buf-breaking.sh now refuses outright.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@figurecollecting'
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="v$(node -pe "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version check OK: $PKG_VERSION"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: buf lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Verify committed codegen matches the protos
+        run: |
+          # The tarball ships dist/, compiled from the COMMITTED src/gen. If the
+          # commit being released has stale generated code, the published types
+          # would not match the published .proto files.
+          npm run generate
+          git diff --exit-code -- src/gen
+
+      - name: buf breaking (against the previous release tag)
+        # Belt and braces. The PR/develop contract job is the gate of record —
+        # it is where a break is cheap to fix. This re-runs it at the last
+        # moment before an IMMUTABLE npm version exists, because a tag can be
+        # cut from any commit, not only one that passed PR CI. It is meaningful
+        # only because the script excludes tags pointing at HEAD; selecting the
+        # highest tag would compare the release against itself.
+        run: npm run breaking
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage
+        run: npm run test:ci
+
+      - name: Pack tarball
+        run: npm pack   # -> figurecollecting-fc-api-contract-<version>.tgz
+
+      # GitHub artifact attestations are available for PRIVATE and internal
+      # repositories only on GitHub Enterprise Cloud. FigureCollecting is on the
+      # free plan and this repo is private, so an ungated step would fail the
+      # release here — before `npm publish`, so fail-safe, but the release would
+      # never complete. fc-shared attests successfully because fc-shared is
+      # PUBLIC; the shape does not transfer. Buying Enterprise Cloud is out of
+      # scope under the standing budget constraint.
+      #
+      # The condition is left in rather than deleted so provenance returns
+      # automatically if this repo is ever made public. Until then, releases
+      # from here carry no provenance attestation, and the README says so.
+      - name: Attest build provenance
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: '*.tgz'
+
+      - name: Publish to GitHub Packages
+        run: npm publish *.tgz
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,59 @@
+{
+  "name": "@figurecollecting/fc-api-contract",
+  "version": "0.1.0",
+  "description": "coordinator.v1 \u2014 the CLIENT-facing wire contract served by fc-coordinator: the Compare pass-through (spine read.v1 CompareResult carried verbatim, including coverage.redacted) and the sync feed (SyncEvent {facet_key, version, op, payload} plus Delta/Push/Status). Generated TypeScript is committed and published; no consumer depends on coordinator-internal types.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FigureCollecting/fc-api-contract.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./proto/coordinator/v1/compare.proto": "./proto/coordinator/v1/compare.proto",
+    "./proto/coordinator/v1/sync.proto": "./proto/coordinator/v1/sync.proto",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "proto",
+    "dist",
+    "buf.yaml",
+    "buf.gen.yaml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "generate": "buf generate",
+    "lint": "buf lint",
+    "breaking": "bash scripts/buf-breaking.sh",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage",
+    "verify": "npm run lint && npm run typecheck && npm run breaking && npm run build && npm run test:ci",
+    "prepublishOnly": "npm run verify"
+  },
+  "peerDependencies": {
+    "@bufbuild/protobuf": "^2.15.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.73.0",
+    "@bufbuild/protobuf": "^2.15.0",
+    "@bufbuild/protoc-gen-es": "^2.15.0",
+    "@types/node": "^26.5.1",
+    "@vitest/coverage-v8": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}
