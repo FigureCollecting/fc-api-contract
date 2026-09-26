@@ -44,7 +44,7 @@ describe('sync.proto', () => {
 
   it('states the bound the Hlc keeps, and when only the server backs it', () => {
     const text = prose(sync);
-    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh and every earlier edit minted past the bound has been answered, and re-minted if REJECTED/i);
+    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh and every earlier edit minted past the bound has been answered, and re-minted if REJECTED version_future or dropped after a rebase for any other code/i);
     expect(text).not.toMatch(/while the anchor is fresh \(bar a 1 us carry/i);
     expect(text).toMatch(/a stale anchor may tick past server-now plus the clamp, and the server's version_future check is the backstop only when the push precedes real time catching up/i);
     expect(text).not.toMatch(/version_future check catches a jump/i);
@@ -79,7 +79,7 @@ describe('sync.proto', () => {
   });
 
   it('states the precondition of the bound wherever the bound is stated, and leaves an unanswered push to its retry', () => {
-    const precondition = /every earlier edit minted past the bound has been answered, and re-minted if REJECTED/i;
+    const precondition = /every earlier edit minted past the bound has been answered, and re-minted if REJECTED version_future or dropped after a rebase for any other code/i;
     const inFlight = /an edit pushed but not yet answered is not re-minted in place: its retry carries the same client_id/i;
     const untilAnswered = /until it is answered, later ticks on that facet, and through the clock every later tick, may pass the bound/i;
     const text = prose(sync);
@@ -118,6 +118,14 @@ describe('sync.proto', () => {
     const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
     expect(rejected).toMatch(any);
     expect(rejected).toMatch(/a replay under the same client_id is REJECTED again with the same reason/i);
+  });
+
+  it('pins the server\'s check order: every REJECTED check before any STALE, REVIEW or APPLIED routing', () => {
+    const order = /the server runs every REJECTED check \(version_malformed, version_future, facet_key_not_user_owned, device_mismatch, payload_invalid\) before any STALE, REVIEW or APPLIED routing, so an event past server_now \+ 5 minutes is REJECTED version_future whatever the field's policy and whatever the stored version/i;
+    const rule5 = prose(sync.slice(sync.indexOf(' 5. THE VERSION GRAMMAR'), sync.indexOf(' 6. USER-OWNED FACET KEYS')));
+    expect(rule5).toMatch(order);
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(order);
   });
 
   it('rests the collation rule on out-of-grammar tokens, which is where collations disagree', () => {
@@ -171,11 +179,14 @@ describe('sync.proto', () => {
 });
 
 describe('hlc.ts', () => {
-  it('says the bound assumes the clamp equals the server skew and monotonic time keeps server rate', () => {
+  it('says the clamp is the server skew, any other is refused, and the bound assumes monotonic time keeps server rate', () => {
     const header = prose(hlcSource.slice(0, hlcSource.indexOf('import {')));
-    expect(header).toMatch(/the bound assumes the clamp equals the server's version_future skew \(MAX_FUTURE_SKEW_MS; a smaller clamp is refused\) and monotonic time keeping server rate/i);
+    expect(header).toMatch(/the clamp is the server's version_future skew \(MAX_FUTURE_SKEW_MS; any other clamp is refused\), and the bound assumes monotonic time keeping server rate/i);
+    expect(header).not.toMatch(/a smaller clamp is refused/i);
     const clampDoc = prose(hlcSource.slice(hlcSource.indexOf('clampMs?: number;') - 400, hlcSource.indexOf('clampMs?: number;')));
-    expect(clampDoc).toMatch(/defaults to, and may not be below, MAX_FUTURE_SKEW_MS/i);
+    expect(clampDoc).toMatch(/must equal MAX_FUTURE_SKEW_MS/i);
+    expect(clampDoc).toMatch(/a larger one lets a fresh tick be REJECTED/i);
+    expect(clampDoc).not.toMatch(/may not be below/i);
   });
 
   it('calls the floor a lower bound on server time only assuming monotonic time keeps server rate', () => {

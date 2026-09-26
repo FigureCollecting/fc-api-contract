@@ -112,8 +112,14 @@
 //     when a long round trip makes the offset suspect. So once anchored and
 //     rebased, a tick never passes server-now plus the clamp while the
 //     anchor is fresh and every earlier edit minted past the bound has been
-//     answered, and re-minted if REJECTED (bar a 1 us carry past a token at
-//     the bound whose counter is exhausted).
+//     answered, and re-minted if REJECTED version_future or dropped after a
+//     rebase for any other code (bar a 1 us carry past a token at the bound
+//     whose counter is exhausted). That rests on the server's check order:
+//     the server runs every REJECTED check (version_malformed,
+//     version_future, facet_key_not_user_owned, device_mismatch,
+//     payload_invalid) before any STALE, REVIEW or APPLIED routing, so an
+//     event past server_now + 5 minutes is REJECTED version_future whatever
+//     the field's policy and whatever the stored version.
 //
 //     A larger forward gap is a sleep (monotonic time stalls) or a wall-clock
 //     jump, and two clocks cannot tell them apart, so the Hlc trusts the wall:
@@ -339,6 +345,11 @@ enum PushOutcome {
   //                             DPoP-bound device
   //   payload_invalid           the payload fails its JSON Schema, an UPSERT
   //                             is empty, a DELETE is not, or op is unknown
+  // The server runs every REJECTED check (version_malformed, version_future,
+  // facet_key_not_user_owned, device_mismatch, payload_invalid) before any
+  // STALE, REVIEW or APPLIED routing, so an event past server_now + 5 minutes
+  // is REJECTED version_future whatever the field's policy and whatever the
+  // stored version: rule 5's bound depends on it.
   // Retrying the same event cannot succeed: a replay under the same
   // client_id is REJECTED again with the same reason. For version_future the
   // client takes a fresh Status, calls Hlc.rebase(), adopts `current` and

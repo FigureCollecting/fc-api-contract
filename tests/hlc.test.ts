@@ -472,6 +472,41 @@ describe('Hlc.rebase', () => {
     const duplicate = play(false);
     expect(duplicate.h > bound).toBe(true);
   });
+
+  it('keeps the bound after an edit on a REVIEW facet past it, because the server checks version_future before routing by policy', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    // The fake server runs every REJECTED check before routing (rule 5); the contrast routes REVIEW first.
+    const push = (version: string, rejectedFirst: boolean) => {
+      const future = parseVersion(version)!.micros > bound;
+      if (rejectedFirst && future) return 'REJECTED';
+      return 'REVIEW'; // the facet's policy is REVIEW
+    };
+    const play = (rejectedFirst: boolean) => {
+      const clock = new FakeClock();
+      const hlc = new Hlc({ deviceId: DEVICE, clock });
+      hlc.measure(iso(T0), 0);
+      clock.wall += 6 * 60_000; // the wall jumps: the anchor goes stale
+      const e = hlc.tick(undefined); // E on a REVIEW facet, past the bound
+      expect(parseVersion(e)!.micros > bound).toBe(true);
+      const answer = push(e, rejectedFirst);
+      clock.wall -= 6 * 60_000; // the wall is corrected, and a routine Status makes the anchor fresh
+      hlc.measure(iso(T0), 0);
+      if (answer === 'REJECTED') {
+        expect(hlc.rebase()).toBe(true);
+        expect(parseVersion(hlc.tick(undefined))!.micros <= bound).toBe(true); // E re-minted
+      }
+      expect(hlc.fresh).toBe(true);
+      return { answer, h: parseVersion(hlc.tick(undefined))!.micros }; // an edit on another facet
+    };
+
+    const pinned = play(true);
+    expect(pinned.answer).toBe('REJECTED');
+    expect(pinned.h <= bound).toBe(true);
+    // Routed REVIEW first, E counts as answered and not REJECTED, nothing rebases, and the clock stays past the bound.
+    const reviewFirst = play(false);
+    expect(reviewFirst.answer).toBe('REVIEW');
+    expect(reviewFirst.h > bound).toBe(true);
+  });
 });
 
 describe('Hlc construction and state', () => {
@@ -490,13 +525,20 @@ describe('Hlc construction and state', () => {
     expect(() => hlc.measure('2026-09-14T11:30:00Z', 10)).toThrow(VersionError);
   });
 
-  it('refuses a clamp below the server\'s version_future skew, which would let an APPLIED tick hold the clock past the bound', () => {
-    expect(() => new Hlc({ deviceId: DEVICE, clampMs: MAX_FUTURE_SKEW_MS - 1 })).toThrow(
-      /clampMs must be >= MAX_FUTURE_SKEW_MS \(300000\), the server's version_future skew: 299999/,
-    );
-    expect(() => new Hlc({ deviceId: DEVICE, clampMs: 60_000 })).toThrow(RangeError);
+  it('refuses any clamp but the server\'s version_future skew: a smaller one lets an APPLIED tick pass the bound, a larger one a fresh tick be REJECTED', () => {
+    for (const [clampMs, shown] of [
+      [Number.NaN, 'NaN'],
+      [Number.POSITIVE_INFINITY, 'Infinity'],
+      [MAX_FUTURE_SKEW_MS - 1, '299999'],
+      [MAX_FUTURE_SKEW_MS + 1, '300001'],
+      [2 * MAX_FUTURE_SKEW_MS, '600000'],
+    ] as const) {
+      expect(() => new Hlc({ deviceId: DEVICE, clampMs }), shown).toThrow(
+        new RangeError(`clampMs must equal MAX_FUTURE_SKEW_MS (300000), the server's version_future skew: ${shown}`),
+      );
+    }
     expect(new Hlc({ deviceId: DEVICE, clampMs: MAX_FUTURE_SKEW_MS }).deviceId).toBe(DEVICE);
-    expect(new Hlc({ deviceId: DEVICE, clampMs: 2 * MAX_FUTURE_SKEW_MS }).deviceId).toBe(DEVICE);
+    expect(new Hlc({ deviceId: DEVICE }).deviceId).toBe(DEVICE);
   });
 
   it('continues monotonically from a snapshot', () => {
