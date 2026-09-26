@@ -111,7 +111,7 @@
 //     sample plus elapsed monotonic time plus 5 minutes, which binds only
 //     when a long round trip makes the offset suspect. So once anchored and
 //     rebased, a tick never passes server-now plus the clamp while the
-//     anchor is fresh and every edit minted past the bound has been
+//     anchor is fresh and every earlier edit minted past the bound has been
 //     answered, and re-minted if REJECTED (bar a 1 us carry past a token at
 //     the bound whose counter is exhausted).
 //
@@ -136,17 +136,22 @@
 //     so the edit lands above it even after rebase() has lowered the clock
 //     below versions the client already holds. After a push is REJECTED
 //     version_future the client takes a fresh Status, calls Hlc.rebase(),
-//     adopts `current` and re-mints with Hlc.tick(base). Every other pending
-//     (unpushed) edit minted before the rebase whose version is past the new
-//     present is re-minted the same way, on its facet's server version, and a
-//     later edit on that facet takes the re-minted version as its base: handed
-//     to tick as a base, the old version would carry the rebased clock past
-//     the bound. An edit pushed but not yet answered is not re-minted in
-//     place: its retry carries the same client_id and the server answers from
-//     its record, so it is re-minted only if that answer is REJECTED. Until it
-//     is answered, later ticks on that facet may pass the bound. The Hlc never
-//     clamps a base or an observed token: the server bounds every token on the
-//     feed, and a clamp there would mint an edit below its base.
+//     adopts `current` and re-mints with Hlc.tick(base). After any REJECTED
+//     edit whose version is past the present, whatever the code, the client
+//     takes a fresh Status and calls Hlc.rebase() before it mints again: a
+//     dropped edit held the clock ahead too. Every other pending (unpushed)
+//     edit minted before the rebase whose version is past the new present is
+//     re-minted the same way, on its facet's server version, and a later edit
+//     on that facet takes the re-minted version as its base: handed to tick
+//     as a base, the old version would carry the rebased clock past the
+//     bound. An edit pushed but not yet answered is not re-minted in
+//     place: its retry carries the same client_id and the server answers with
+//     each event's recorded outcome (PushRequest.client_id), so it is
+//     re-minted only if that answer is REJECTED. Until it is answered, later
+//     ticks on that facet, and through the clock every later tick, may pass
+//     the bound. The Hlc never clamps a base or an observed token: the server
+//     bounds every token on the feed, and a clamp there would mint an edit
+//     below its base.
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
 //     buf cannot see a grammar change; this comment and the golden vectors
@@ -275,9 +280,15 @@ message DeltaResponse {
 // ---------------------------------------------------------------------------
 message PushRequest {
   // Client-chosen idempotency key, unique per user. A retry of the same
-  // batch MUST carry the same client_id; the server answers the replay from
-  // its record rather than re-applying. This is what makes an unacknowledged
-  // push safe to retry on reconnect.
+  // batch MUST carry the same client_id and the same events. A replay (same
+  // client_id, same events) returns each event's recorded outcome and never
+  // re-applies: an event first APPLIED is answered DUPLICATE, with the
+  // `current` it was answered with; an event first REJECTED is REJECTED again
+  // with the same reason; an event first STALE is STALE again with its
+  // recorded `current`; any other outcome is returned as recorded. DUPLICATE
+  // answers only an event that was written. Every replay is byte-identical.
+  // The same client_id with different events is INVALID_ARGUMENT. This is
+  // what makes an unacknowledged push safe to retry on reconnect.
   string client_id = 1;
 
   // The edits, oldest first. Order matters for the same reason as in
@@ -300,9 +311,13 @@ enum PushOutcome {
   // Written. `current` is the event as the server stored it.
   PUSH_OUTCOME_APPLIED = 1;
 
-  // Recognised as a replay of an earlier batch with the same client_id.
-  // Nothing was written a second time. `current` is the facet as the server
-  // holds it now.
+  // A replay (same client_id, same events) returns each event's recorded
+  // outcome: an event first APPLIED is answered DUPLICATE, with the `current`
+  // it was answered with; an event first REJECTED is REJECTED again with the
+  // same reason; an event first STALE is STALE again with its recorded
+  // `current`. DUPLICATE answers only an event that was written, and nothing
+  // is written a second time. Every replay is byte-identical, so a later
+  // write reaches the client by Delta, not here.
   PUSH_OUTCOME_DUPLICATE = 2;
 
   // The server already holds a version >= this event's. Nothing written.
@@ -324,14 +339,18 @@ enum PushOutcome {
   //                             DPoP-bound device
   //   payload_invalid           the payload fails its JSON Schema, an UPSERT
   //                             is empty, a DELETE is not, or op is unknown
-  // Retrying the same event cannot succeed. For version_future the client
-  // takes a fresh Status, calls Hlc.rebase(), adopts `current` and re-mints
-  // with Hlc.tick(base) (rule 5), then re-mints the same way, on its facet's
-  // server version, every other unpushed edit minted before the rebase whose
-  // version is past the new present; for any other code it drops the edit
-  // and tells the user. Before minting any edit, not only a re-mint, the
-  // client hands Hlc.tick the facet's current local version: a rebase can
-  // lower the clock below versions it holds for other facets.
+  // Retrying the same event cannot succeed: a replay under the same
+  // client_id is REJECTED again with the same reason. For version_future the
+  // client takes a fresh Status, calls Hlc.rebase(), adopts `current` and
+  // re-mints with Hlc.tick(base) (rule 5), then re-mints the same way, on
+  // its facet's server version, every other unpushed edit minted before the
+  // rebase whose version is past the new present; for any other code it
+  // drops the edit and tells the user. After any REJECTED edit whose version
+  // is past the present, whatever the code, the client takes a fresh Status
+  // and calls Hlc.rebase() before it mints again. Before minting any edit,
+  // not only a re-mint, the client hands Hlc.tick the facet's current local
+  // version: a rebase can lower the clock below versions it holds for other
+  // facets.
   PUSH_OUTCOME_REJECTED = 5;
 }
 
@@ -413,6 +432,9 @@ message StatusResponse {
 //   * an empty client_id on Push -> INVALID_ARGUMENT: without it a retry
 //     cannot be recognised, and a silently non-idempotent push is worse than
 //     a rejected one.
+//   * a client_id already recorded with different events ->
+//     INVALID_ARGUMENT: a replay must be the same batch, or its recorded
+//     outcomes would answer events it never carried.
 //   * a rejected individual event is NOT an RPC error. It comes back as a
 //     PushResult with a non-APPLIED outcome (STALE, REVIEW or REJECTED),
 //     because a batch with one bad event must not fail the other nineteen.

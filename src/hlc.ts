@@ -1,6 +1,8 @@
 // Mints SyncEvent.version tokens (sync.proto rule 5). A tick beats its base and every tick and token since
 // the last rebase; once anchored it is >= sample + monotonic elapsed, and <= server-now + clamp (+1 us on a
-// carry) while fresh and every edit minted past the bound has been answered, and re-minted if REJECTED.
+// carry) while fresh and every earlier edit minted past the bound has been answered, and re-minted if REJECTED.
+// The bound assumes the clamp equals the server's version_future skew (MAX_FUTURE_SKEW_MS; a smaller clamp is
+// refused) and monotonic time keeping server rate.
 import {
   MAX_FUTURE_SKEW_MS,
   MAX_HLC_COUNTER,
@@ -29,7 +31,8 @@ export interface HlcOptions {
   clock?: HlcClock;
   /**
    * How far past the server's clock a fresh tick may run, and how far the wall may
-   * run ahead of monotonic time before the anchor goes stale. Defaults to MAX_FUTURE_SKEW_MS.
+   * run ahead of monotonic time before the anchor goes stale. Defaults to, and may not
+   * be below, MAX_FUTURE_SKEW_MS: below it the server APPLIES ticks past the bound.
    */
   clampMs?: number;
   /** Restored from storage so ticks stay monotonic across reloads. */
@@ -54,15 +57,20 @@ export class Hlc {
   private counter: number;
   private offset: number;
   // The latest server sample and the wall and monotonic readings when it
-  // arrived. The sample is a LOWER bound on the server's clock at arrival, so
-  // the cap it yields never exceeds true server-now plus the clamp.
+  // arrived. The sample is a LOWER bound on the server's clock at arrival, so,
+  // assuming monotonic time keeps server rate, the cap it yields never exceeds
+  // true server-now plus the clamp.
   private anchor: { serverMicros: bigint; wallMs: number; monoMs: number } | undefined;
 
   constructor(opts: HlcOptions) {
     this.deviceId = normaliseDeviceId(opts.deviceId);
     this.clock = opts.clock ?? systemClock;
     const clampMs = opts.clampMs ?? MAX_FUTURE_SKEW_MS;
-    if (!Number.isFinite(clampMs) || clampMs < 0) throw new RangeError(`clampMs must be >= 0: ${clampMs}`);
+    if (!Number.isFinite(clampMs) || clampMs < MAX_FUTURE_SKEW_MS) {
+      throw new RangeError(
+        `clampMs must be >= MAX_FUTURE_SKEW_MS (${MAX_FUTURE_SKEW_MS}), the server's version_future skew: ${clampMs}`,
+      );
+    }
     this.clampMs = clampMs;
     this.clampMicros = toMicros(clampMs);
     this.micros = opts.state?.micros ?? 0n;
@@ -149,9 +157,10 @@ export class Hlc {
    * that facet takes the re-minted version as its base. An edit pushed but
    * not yet answered is not re-minted in place: its retry carries the same
    * client_id, and it is re-minted only if that answer is REJECTED. Until it
-   * is answered, later ticks on that facet may pass the bound (server-now +
-   * clamp), which holds while fresh and every edit minted past the bound has
-   * been answered, and re-minted if REJECTED. Returns whether the state moved.
+   * is answered, later ticks on that facet, and through the clock every later
+   * tick, may pass the bound (server-now + clamp), which holds while fresh and
+   * every earlier edit minted past the bound has been answered, and re-minted
+   * if REJECTED. Returns whether the state moved.
    */
   rebase(): boolean {
     if (this.anchor === undefined) throw new Error('rebase needs a Status sample: call measure() first');
@@ -167,8 +176,8 @@ export class Hlc {
     return { micros: this.micros, counter: this.counter, offsetMs: this.offset };
   }
 
-  // Wall plus offset, floored at sample + elapsed monotonic time (a lower bound
-  // on server time whatever the wall does) and capped at floor + clamp while the
+  // Wall plus offset, floored at sample + elapsed monotonic time (a lower bound on server time whatever
+  // the wall does, assuming monotonic time keeps server rate) and capped at floor + clamp while the
   // anchor is fresh. A larger forward gap is a sleep or a wall jump; trust the wall.
   private physical(): bigint {
     const wall = this.clock.wallMs();

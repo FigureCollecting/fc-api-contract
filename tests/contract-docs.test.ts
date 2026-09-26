@@ -44,7 +44,7 @@ describe('sync.proto', () => {
 
   it('states the bound the Hlc keeps, and when only the server backs it', () => {
     const text = prose(sync);
-    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh and every edit minted past the bound has been answered, and re-minted if REJECTED/i);
+    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh and every earlier edit minted past the bound has been answered, and re-minted if REJECTED/i);
     expect(text).not.toMatch(/while the anchor is fresh \(bar a 1 us carry/i);
     expect(text).toMatch(/a stale anchor may tick past server-now plus the clamp, and the server's version_future check is the backstop only when the push precedes real time catching up/i);
     expect(text).not.toMatch(/version_future check catches a jump/i);
@@ -79,9 +79,9 @@ describe('sync.proto', () => {
   });
 
   it('states the precondition of the bound wherever the bound is stated, and leaves an unanswered push to its retry', () => {
-    const precondition = /every edit minted past the bound has been answered, and re-minted if REJECTED/i;
+    const precondition = /every earlier edit minted past the bound has been answered, and re-minted if REJECTED/i;
     const inFlight = /an edit pushed but not yet answered is not re-minted in place: its retry carries the same client_id/i;
-    const untilAnswered = /until it is answered, later ticks on that facet may pass the bound/i;
+    const untilAnswered = /until it is answered, later ticks on that facet, and through the clock every later tick, may pass the bound/i;
     const text = prose(sync);
     expect(text).toMatch(precondition);
     expect(text).toMatch(inFlight);
@@ -93,6 +93,31 @@ describe('sync.proto', () => {
     expect(rebaseDoc).toMatch(precondition);
     expect(rebaseDoc).toMatch(inFlight);
     expect(rebaseDoc).toMatch(untilAnswered);
+  });
+
+  it('answers a replayed client_id with each event\'s recorded outcome, so a REJECTED retry is REJECTED again', () => {
+    const clientId = prose(sync.slice(sync.indexOf('message PushRequest {'), sync.indexOf('string client_id = 1;')));
+    const duplicate = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_APPLIED = 1;'), sync.indexOf('PUSH_OUTCOME_DUPLICATE = 2;')));
+    for (const text of [clientId, duplicate]) {
+      expect(text).toMatch(/a replay \(same client_id, same events\) returns each event's recorded outcome/i);
+      expect(text).toMatch(/an event first APPLIED is answered DUPLICATE, with the `current` it was answered with/i);
+      expect(text).toMatch(/an event first REJECTED is REJECTED again with the same reason/i);
+      expect(text).toMatch(/an event first STALE is STALE again with its recorded `current`/i);
+      expect(text).toMatch(/DUPLICATE answers only an event that was written/i);
+      expect(text).toMatch(/every replay is byte-identical/i);
+    }
+    expect(clientId).toMatch(/the same client_id with different events is INVALID_ARGUMENT/i);
+    expect(duplicate).not.toMatch(/the facet as the server holds it now/i);
+    const errors = prose(sync.slice(sync.indexOf('ERROR CONTRACT:'), sync.indexOf('service SyncService {')));
+    expect(errors).toMatch(/a client_id already recorded with different events -> INVALID_ARGUMENT/i);
+  });
+
+  it('rebases after any REJECTED edit past the present, not only version_future', () => {
+    const any = /after any REJECTED edit whose version is past the present, whatever the code, the client takes a fresh Status and calls Hlc\.rebase\(\) before it mints again/i;
+    expect(prose(sync)).toMatch(any);
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(any);
+    expect(rejected).toMatch(/a replay under the same client_id is REJECTED again with the same reason/i);
   });
 
   it('rests the collation rule on out-of-grammar tokens, which is where collations disagree', () => {
@@ -142,6 +167,22 @@ describe('sync.proto', () => {
   it('keeps the deferred Resync and Ack out of the wire and says so', () => {
     expect(prose(sync)).toMatch(/Resync|prune/);
     expect(sync).not.toMatch(/rpc (Resync|Ack)\(/);
+  });
+});
+
+describe('hlc.ts', () => {
+  it('says the bound assumes the clamp equals the server skew and monotonic time keeps server rate', () => {
+    const header = prose(hlcSource.slice(0, hlcSource.indexOf('import {')));
+    expect(header).toMatch(/the bound assumes the clamp equals the server's version_future skew \(MAX_FUTURE_SKEW_MS; a smaller clamp is refused\) and monotonic time keeping server rate/i);
+    const clampDoc = prose(hlcSource.slice(hlcSource.indexOf('clampMs?: number;') - 400, hlcSource.indexOf('clampMs?: number;')));
+    expect(clampDoc).toMatch(/defaults to, and may not be below, MAX_FUTURE_SKEW_MS/i);
+  });
+
+  it('calls the floor a lower bound on server time only assuming monotonic time keeps server rate', () => {
+    const text = prose(hlcSource);
+    const lowerBounds = text.match(/lower bound[^.]*\./gi) ?? [];
+    expect(lowerBounds.length).toBe(2);
+    for (const sentence of lowerBounds) expect(sentence).toMatch(/assuming monotonic time keeps server rate/i);
   });
 });
 

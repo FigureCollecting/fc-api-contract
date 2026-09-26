@@ -91,22 +91,22 @@ describe('Hlc.tick', () => {
 
   it('caps a fresh anchor at the sample plus elapsed monotonic time plus the clamp when the round trip makes the offset suspect', () => {
     const clock = new FakeClock();
-    const hlc = new Hlc({ deviceId: DEVICE, clock, clampMs: 60_000 });
-    hlc.measure(iso(T0), 180_000); // a 3-minute round trip: the midpoint may be off by 90 s
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
+    hlc.measure(iso(T0), 720_000); // a 12-minute round trip: the midpoint may be off by 6 min
 
-    expect(hlc.offsetMs).toBe(90_000);
+    expect(hlc.offsetMs).toBe(360_000);
     expect(hlc.fresh).toBe(true);
-    expect(instantOf(hlc.tick(undefined))).toBe('2026-09-14T11:31:00.000000Z');
+    expect(instantOf(hlc.tick(undefined))).toBe('2026-09-14T11:35:00.000000Z');
   });
 
   it('still caps when the wall has run ahead of monotonic time by exactly the clamp', () => {
     const clock = new FakeClock();
-    const hlc = new Hlc({ deviceId: DEVICE, clock, clampMs: 60_000 });
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
     hlc.measure(iso(T0), 2_000); // the midpoint puts the server 1 s ahead of the sample
-    clock.wall += 60_000;
+    clock.wall += MAX_FUTURE_SKEW_MS;
 
     expect(hlc.fresh).toBe(true);
-    expect(instantOf(hlc.tick(undefined))).toBe('2026-09-14T11:31:00.000000Z');
+    expect(instantOf(hlc.tick(undefined))).toBe('2026-09-14T11:35:00.000000Z');
   });
 
   it('trusts the wall clock after a sleep longer than the clamp, so a later edit outranks an earlier one', () => {
@@ -141,7 +141,7 @@ describe('Hlc.tick', () => {
 
   it('follows a forward wall jump past the clamp; the server rejects that as version_future', () => {
     const clock = new FakeClock();
-    const hlc = new Hlc({ deviceId: DEVICE, clock, clampMs: 60_000 });
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
     hlc.measure(iso(T0), 0);
     clock.wall += DAY; // the device clock is set a day ahead; mono does not move
 
@@ -293,14 +293,14 @@ describe('Hlc.observe', () => {
 describe('Hlc.fresh', () => {
   it('holds from a Status sample until the wall clock runs ahead of monotonic time by more than the clamp', () => {
     const clock = new FakeClock();
-    const hlc = new Hlc({ deviceId: DEVICE, clock, clampMs: 60_000 });
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
     expect(hlc.fresh).toBe(false);
 
     hlc.measure(iso(T0), 0);
     expect(hlc.fresh).toBe(true);
     clock.advance(HOUR);
     expect(hlc.fresh).toBe(true);
-    clock.sleep(60_000);
+    clock.sleep(MAX_FUTURE_SKEW_MS);
     expect(hlc.fresh).toBe(true);
     clock.sleep(1);
     expect(hlc.fresh).toBe(false);
@@ -436,6 +436,42 @@ describe('Hlc.rebase', () => {
     const g4 = hlc.tick(g3);
     for (const v of [g3, g4, hlc.tick(g4)]) expect(parseVersion(v)!.micros <= bound).toBe(true);
   });
+
+  it('rebases on the retry of a push first REJECTED, because a replay returns the recorded outcome and not DUPLICATE', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    // The server keeps rule 5's version_future check and answers a replayed client_id from its record.
+    const record = new Map<string, 'APPLIED' | 'REJECTED'>();
+    const push = (clientId: string, version: string) => {
+      const answer = record.get(clientId) ?? (parseVersion(version)!.micros > bound ? 'REJECTED' : 'APPLIED');
+      record.set(clientId, answer);
+      return answer;
+    };
+    const play = (followRecord: boolean) => {
+      const clock = new FakeClock();
+      const hlc = new Hlc({ deviceId: DEVICE, clock });
+      hlc.measure(iso(T0), 0);
+      clock.wall += 6 * 60_000; // the anchor goes stale
+      const g = hlc.tick(undefined);
+      expect(parseVersion(g)!.micros > bound).toBe(true);
+      record.clear();
+      push('batch-g', g); // REJECTED version_future, and the response is lost
+      hlc.measure(iso(T0), 0); // the reconnect Status makes the anchor fresh
+      const retry = followRecord ? push('batch-g', g) : 'DUPLICATE'; // the retry under the same client_id
+      if (retry === 'REJECTED') {
+        expect(hlc.rebase()).toBe(true);
+        expect(parseVersion(hlc.tick(undefined))!.micros <= bound).toBe(true); // G re-minted
+      }
+      expect(hlc.fresh).toBe(true);
+      return { retry, h: parseVersion(hlc.tick(undefined))!.micros }; // an edit on another facet
+    };
+
+    const recorded = play(true);
+    expect(recorded.retry).toBe('REJECTED');
+    expect(recorded.h <= bound).toBe(true);
+    // Had the replay been answered DUPLICATE, nothing would rebase and the clock would stay past the bound.
+    const duplicate = play(false);
+    expect(duplicate.h > bound).toBe(true);
+  });
 });
 
 describe('Hlc construction and state', () => {
@@ -447,10 +483,20 @@ describe('Hlc construction and state', () => {
   it('rejects a bad device id, clamp or measurement', () => {
     expect(() => new Hlc({ deviceId: 'nope' })).toThrow(VersionError);
     expect(() => new Hlc({ deviceId: DEVICE, clampMs: -1 })).toThrow(RangeError);
+    expect(() => new Hlc({ deviceId: DEVICE, clampMs: Number.NaN })).toThrow(RangeError);
     const hlc = new Hlc({ deviceId: DEVICE, clock: new FakeClock() });
     expect(() => hlc.measure(iso(T0), -1)).toThrow(RangeError);
     expect(() => hlc.measure(iso(T0), Number.NaN)).toThrow(RangeError);
     expect(() => hlc.measure('2026-09-14T11:30:00Z', 10)).toThrow(VersionError);
+  });
+
+  it('refuses a clamp below the server\'s version_future skew, which would let an APPLIED tick hold the clock past the bound', () => {
+    expect(() => new Hlc({ deviceId: DEVICE, clampMs: MAX_FUTURE_SKEW_MS - 1 })).toThrow(
+      /clampMs must be >= MAX_FUTURE_SKEW_MS \(300000\), the server's version_future skew: 299999/,
+    );
+    expect(() => new Hlc({ deviceId: DEVICE, clampMs: 60_000 })).toThrow(RangeError);
+    expect(new Hlc({ deviceId: DEVICE, clampMs: MAX_FUTURE_SKEW_MS }).deviceId).toBe(DEVICE);
+    expect(new Hlc({ deviceId: DEVICE, clampMs: 2 * MAX_FUTURE_SKEW_MS }).deviceId).toBe(DEVICE);
   });
 
   it('continues monotonically from a snapshot', () => {
