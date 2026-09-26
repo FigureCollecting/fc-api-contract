@@ -1,6 +1,6 @@
-// Mints SyncEvent.version tokens (sync.proto rule 5). A tick beats its base and every tick and token
-// since the last rebase; once anchored it is >= sample + monotonic elapsed; once rebased, with unpushed
-// edits past the present re-minted, it is <= server-now + clamp while fresh (+1 us on a counter carry).
+// Mints SyncEvent.version tokens (sync.proto rule 5). A tick beats its base and every tick and token since
+// the last rebase; once anchored it is >= sample + monotonic elapsed, and <= server-now + clamp (+1 us on a
+// carry) while fresh and every edit minted past the bound has been answered, and re-minted if REJECTED.
 import {
   MAX_FUTURE_SKEW_MS,
   MAX_HLC_COUNTER,
@@ -146,8 +146,12 @@ export class Hlc {
    * then re-mint with tick(base). Re-mint every other unpushed edit minted
    * before the rebase whose version is past the new present (above
    * snapshot()) the same way, on its facet's server version; a later edit on
-   * that facet takes the re-minted version as its base. Returns whether the
-   * state moved.
+   * that facet takes the re-minted version as its base. An edit pushed but
+   * not yet answered is not re-minted in place: its retry carries the same
+   * client_id, and it is re-minted only if that answer is REJECTED. Until it
+   * is answered, later ticks on that facet may pass the bound (server-now +
+   * clamp), which holds while fresh and every edit minted past the bound has
+   * been answered, and re-minted if REJECTED. Returns whether the state moved.
    */
   rebase(): boolean {
     if (this.anchor === undefined) throw new Error('rebase needs a Status sample: call measure() first');

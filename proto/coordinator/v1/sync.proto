@@ -111,37 +111,42 @@
 //     sample plus elapsed monotonic time plus 5 minutes, which binds only
 //     when a long round trip makes the offset suspect. So once anchored and
 //     rebased, a tick never passes server-now plus the clamp while the
-//     anchor is fresh (bar a 1 us carry past a token at the bound whose
-//     counter is exhausted).
+//     anchor is fresh and every edit minted past the bound has been
+//     answered, and re-minted if REJECTED (bar a 1 us carry past a token at
+//     the bound whose counter is exhausted).
 //
-//     A larger forward gap is a sleep (monotonic time stalls) or a
-//     wall-clock jump, and two clocks cannot tell them apart, so the Hlc
-//     trusts the wall: an edit made after a sleep still outranks one made
-//     before it. The trade-off: a stale anchor may tick past server-now plus
-//     the clamp, and the server's version_future check is the backstop only
-//     when the push precedes real time catching up. An edit pushed later is
-//     accepted at its inflated version and outranks edits other devices made
-//     in between. A tick past the bound also holds the clock ahead: until
-//     real time overtakes it or its rejection brings a rebase, later ticks
-//     may pass the bound even on a fresh anchor. The same holds before a
-//     session's first Status, when the Hlc runs on the offset restored from
-//     the last one: if the wall clock was corrected in between, ticks are off
-//     by that old offset. A phone on automatic time keeps its offset near
-//     zero and is unaffected by either.
+//     A larger forward gap is a sleep (monotonic time stalls) or a wall-clock
+//     jump, and two clocks cannot tell them apart, so the Hlc trusts the wall:
+//     an edit made after a sleep still outranks one made before it. The
+//     trade-off: a stale anchor may tick past server-now plus the clamp, and
+//     the server's version_future check is the backstop only when the push
+//     precedes real time catching up. An edit pushed later is accepted at its
+//     inflated version and outranks edits other devices made in between. A
+//     tick past the bound is carried two ways: it holds the clock ahead, and
+//     as a base it lifts the next edit on its facet. Until real time overtakes
+//     it or it is answered, and re-minted if REJECTED, later ticks may pass
+//     the bound even on a fresh anchor. The same holds before a session's
+//     first Status, when the Hlc runs on the offset restored from the last
+//     one: if the wall clock was corrected in between, ticks are off by that
+//     old offset. A phone on automatic time keeps its offset near zero and is
+//     unaffected by either.
 //
 //     THE FACET FLOOR. Before minting any edit the client hands the facet's
-//     current local version to Hlc.tick(base) (undefined when it holds
-//     none), so the edit lands above it even after rebase() has lowered the
-//     clock below versions the client already holds. After a push is
-//     REJECTED version_future the client takes a fresh Status, calls
-//     Hlc.rebase(), adopts `current` and re-mints with Hlc.tick(base). Every
-//     other pending (unpushed) edit minted before the rebase whose version is
-//     past the new present is re-minted the same way, on its facet's server
-//     version, and a later edit on that facet takes the re-minted version as
-//     its base: handed to tick as a base, the old version would carry the
-//     rebased clock past the bound. The Hlc never clamps a base or an
-//     observed token: the server bounds every token on the feed, and a clamp
-//     there would mint an edit below its base.
+//     current local version to Hlc.tick(base) (undefined when it holds none),
+//     so the edit lands above it even after rebase() has lowered the clock
+//     below versions the client already holds. After a push is REJECTED
+//     version_future the client takes a fresh Status, calls Hlc.rebase(),
+//     adopts `current` and re-mints with Hlc.tick(base). Every other pending
+//     (unpushed) edit minted before the rebase whose version is past the new
+//     present is re-minted the same way, on its facet's server version, and a
+//     later edit on that facet takes the re-minted version as its base: handed
+//     to tick as a base, the old version would carry the rebased clock past
+//     the bound. An edit pushed but not yet answered is not re-minted in
+//     place: its retry carries the same client_id and the server answers from
+//     its record, so it is re-minted only if that answer is REJECTED. Until it
+//     is answered, later ticks on that facet may pass the bound. The Hlc never
+//     clamps a base or an observed token: the server bounds every token on the
+//     feed, and a clamp there would mint an edit below its base.
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
 //     buf cannot see a grammar change; this comment and the golden vectors

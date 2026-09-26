@@ -44,7 +44,8 @@ describe('sync.proto', () => {
 
   it('states the bound the Hlc keeps, and when only the server backs it', () => {
     const text = prose(sync);
-    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh/i);
+    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh and every edit minted past the bound has been answered, and re-minted if REJECTED/i);
+    expect(text).not.toMatch(/while the anchor is fresh \(bar a 1 us carry/i);
     expect(text).toMatch(/a stale anchor may tick past server-now plus the clamp, and the server's version_future check is the backstop only when the push precedes real time catching up/i);
     expect(text).not.toMatch(/version_future check catches a jump/i);
     expect(text).toMatch(/the offset restored from the last one/i);
@@ -71,8 +72,27 @@ describe('sync.proto', () => {
     expect(rebaseDoc).toMatch(/a later edit on that facet takes the re-minted version as its base/i);
   });
 
-  it('says a stale tick holds the clock ahead until real time overtakes it or a rebase', () => {
-    expect(prose(sync)).toMatch(/holds the clock ahead: until real time overtakes it or its rejection brings a rebase, later ticks may pass the bound even on a fresh anchor/i);
+  it('says a tick past the bound carries later ticks past it, through the clock and as a base, until it is answered', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/it holds the clock ahead, and as a base it lifts the next edit on its facet/i);
+    expect(text).toMatch(/until real time overtakes it or it is answered, and re-minted if REJECTED, later ticks may pass the bound even on a fresh anchor/i);
+  });
+
+  it('states the precondition of the bound wherever the bound is stated, and leaves an unanswered push to its retry', () => {
+    const precondition = /every edit minted past the bound has been answered, and re-minted if REJECTED/i;
+    const inFlight = /an edit pushed but not yet answered is not re-minted in place: its retry carries the same client_id/i;
+    const untilAnswered = /until it is answered, later ticks on that facet may pass the bound/i;
+    const text = prose(sync);
+    expect(text).toMatch(precondition);
+    expect(text).toMatch(inFlight);
+    expect(text).toMatch(untilAnswered);
+    const header = prose(hlcSource.slice(0, hlcSource.indexOf('import {')));
+    expect(header).toMatch(precondition);
+    expect(header).not.toMatch(/once rebased, with unpushed edits past the present re-minted, it is <= server-now \+ clamp while fresh/i);
+    const rebaseDoc = prose(hlcSource.slice(hlcSource.indexOf('Drop whatever the clock holds'), hlcSource.indexOf('rebase(): boolean')));
+    expect(rebaseDoc).toMatch(precondition);
+    expect(rebaseDoc).toMatch(inFlight);
+    expect(rebaseDoc).toMatch(untilAnswered);
   });
 
   it('rests the collation rule on out-of-grammar tokens, which is where collations disagree', () => {

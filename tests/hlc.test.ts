@@ -273,6 +273,17 @@ describe('Hlc.observe', () => {
     expect(compareVersion(atCap, next)).toBe(-1);
   });
 
+  it('caps a tick at the bound after folding a token below the cap with an exhausted counter', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    const hlc = new Hlc({ deviceId: DEVICE, clock: new FakeClock() });
+    hlc.measure(iso(T0), 2 * (MAX_FUTURE_SKEW_MS + 60_000)); // the midpoint puts the estimate past the cap
+    hlc.observe(`${iso(T0 + MAX_FUTURE_SKEW_MS - 1)}#${MAX_HLC_COUNTER}#${OTHER}`);
+
+    const next = hlc.tick(undefined); // the fresh cap decides this tick, not the carry
+    expect(next).toBe(`2026-09-14T11:35:00.000000Z#0000000000#${DEVICE}`);
+    expect(parseVersion(next)!.micros <= bound).toBe(true);
+  });
+
   it('throws on a token that is not canonical', () => {
     const hlc = new Hlc({ deviceId: DEVICE, clock: new FakeClock() });
     expect(() => hlc.observe('2026-09-14T11:30:00Z')).toThrow(VersionError);
@@ -400,6 +411,30 @@ describe('Hlc.rebase', () => {
     hlc.measure(iso(T0), 0); // F is REJECTED: rebase, then re-mint F and G, both past the new present
     expect(hlc.rebase()).toBe(true);
     for (const v of [hlc.tick(undefined), hlc.tick(undefined)]) expect(parseVersion(v)!.micros <= bound).toBe(true);
+  });
+
+  it('lets an edit pushed but not yet answered carry a later edit on its facet past the bound until its retry is answered', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    const clock = new FakeClock();
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
+    hlc.measure(iso(T0), 0);
+    clock.wall += 6 * 60_000; // the anchor goes stale
+    const g = hlc.tick(undefined); // G is pushed and the response is lost: in flight, not re-minted in place
+    hlc.tick(undefined); // F is pushed and REJECTED version_future
+
+    hlc.measure(iso(T0), 0);
+    expect(hlc.rebase()).toBe(true);
+    expect(parseVersion(hlc.tick(undefined))!.micros <= bound).toBe(true); // F re-minted; nothing unpushed is left
+    const g2 = hlc.tick(g); // the user edits G before its retry is answered
+    expect(hlc.fresh).toBe(true);
+    expect(parseVersion(g2)!.micros > bound).toBe(true); // G as a base carries G2 past the bound
+    expect(compareVersion(g, g2)).toBe(-1); // because order outranks the bound
+
+    hlc.measure(iso(T0), 0); // G's retry under the same client_id is REJECTED: rebase, re-mint G, then G2
+    expect(hlc.rebase()).toBe(true);
+    const g3 = hlc.tick(undefined);
+    const g4 = hlc.tick(g3);
+    for (const v of [g3, g4, hlc.tick(g4)]) expect(parseVersion(v)!.micros <= bound).toBe(true);
   });
 });
 
