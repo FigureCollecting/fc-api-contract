@@ -1,12 +1,11 @@
 // coordinator.v1 — the client-facing wire contract.
 //
-// This barrel is the ONLY hand-written TypeScript in the package. Everything it
-// re-exports is generated from proto/ by protoc-gen-es; nothing here adds
-// behaviour, and nothing should. The estate's rule (plan §A.3): if a type
-// crosses the wire it is generated and imported from this package; if it is UI
-// vocabulary or a helper it lives in fc-shared. A convenience helper added here
-// would be a second place to look for the same concept, which is how
-// fc-shared's figureDisplayMeta became a stale mirror of a generated type.
+// Wire types are generated from proto/ by protoc-gen-es and re-exported here.
+// The hand-written helpers (version, hlc, sync-vocabulary) exist because the
+// merge token's grammar and the facet-key grammar are part of the contract:
+// the coordinator and every client must order and validate them identically,
+// and golden/version-vectors.json is the shared test. UI helpers stay in
+// fc-shared.
 
 export {
   CompareRequestSchema,
@@ -47,3 +46,79 @@ export type {
   StatusRequest,
   StatusResponse,
 } from './gen/coordinator/v1/sync_pb.js';
+
+export {
+  ProductRefSchema,
+  SourceItemSchema,
+  CardTextSchema,
+  ProductCardSchema,
+  GetProductsRequestSchema,
+  GetProductsResponseSchema,
+  GetProductImagesRequestSchema,
+  GetProductImagesResponseSchema,
+  ProductImagesSchema,
+  ProductImageSchema,
+  SearchProductsRequestSchema,
+  SearchProductsResponseSchema,
+  CatalogService,
+  file_coordinator_v1_catalog,
+} from './gen/coordinator/v1/catalog_pb.js';
+export type {
+  ProductRef,
+  SourceItem,
+  CardText,
+  ProductCard,
+  GetProductsRequest,
+  GetProductsResponse,
+  GetProductImagesRequest,
+  GetProductImagesResponse,
+  ProductImages,
+  ProductImage,
+  SearchProductsRequest,
+  SearchProductsResponse,
+} from './gen/coordinator/v1/catalog_pb.js';
+
+export {
+  ImportMfcExportRequestSchema,
+  ImportMfcExportResponseSchema,
+  UnresolvedMfcRowSchema,
+  ImportService,
+  file_coordinator_v1_import,
+} from './gen/coordinator/v1/import_pb.js';
+export type {
+  ImportMfcExportRequest,
+  ImportMfcExportResponse,
+  UnresolvedMfcRow,
+} from './gen/coordinator/v1/import_pb.js';
+
+export {
+  MAX_FUTURE_SKEW_MS,
+  MAX_HLC_COUNTER,
+  SERVER_DEVICE_ID,
+  VersionError,
+  canonicalInstant,
+  canonicalVersion,
+  compareVersion,
+  isCanonicalVersion,
+  normaliseDeviceId,
+  parseVersion,
+} from './version.js';
+export type { ParsedVersion } from './version.js';
+
+export { Hlc } from './hlc.js';
+export type { HlcClock, HlcOptions, HlcState } from './hlc.js';
+
+export {
+  HOLDING_STATUSES,
+  PUSH_REJECT_REASONS,
+  USER_FACET_FIELDS,
+  USER_FACET_PAYLOAD_SCHEMAS,
+  parseUserFacetKey,
+  userFacetKey,
+} from './sync-vocabulary.js';
+export type {
+  HoldingStatus,
+  PushRejectReason,
+  UserFacetField,
+  UserFacetKey,
+} from './sync-vocabulary.js';

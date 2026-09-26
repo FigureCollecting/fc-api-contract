@@ -1,0 +1,89 @@
+// ============================================================================
+// coordinator.v1 — importing a user's MyFigureCollection export.
+//
+// ONLINE ONLY. The phone uploads the CSV text; the coordinator resolves each
+// MFC id to a spine product and writes the user's holding facets through the
+// same apply path as SyncService.Push, so the import reaches every device as
+// ordinary Delta events.
+//
+// VERSIONING. Every write is versioned
+//
+//     <export_date>T00:00:00.000000Z#<per-user import counter>#<reserved server device>
+//
+// The reserved server device is the all-zero id (sync.proto rule 5). The
+// per-user import counter increases with every import, so a second export
+// stamped with the same date still orders above the first. Any device edit
+// made on or after the export date (UTC) outranks the import.
+//
+// SNAPSHOT DIFF. A row in the export sets holding/{head_id}/status and, where
+// the columns exist, count, score and note. A holding absent from the export
+// is removed (a status tombstone) only when the import itself wrote its
+// current status, which the version's device id records. The import never
+// removes a holding a device wrote.
+// ============================================================================
+
+syntax = "proto3";
+
+package coordinator.v1;
+
+message ImportMfcExportRequest {
+  // The export as UTF-8 text, verbatim. At most 2 MiB; larger is
+  // INVALID_ARGUMENT. Columns are found by header, because MFC lets the user
+  // choose them: ID and Status are required, a ';' delimiter and quoted
+  // fields are accepted, and a duplicated header (MFC writes Price twice) is
+  // tolerated.
+  string csv_text = 1;
+
+  // The calendar date MFC stamped on the export, "YYYY-MM-DD".
+  string export_date = 2;
+}
+
+message ImportMfcExportResponse {
+  // Rows whose MFC id resolved to a product.
+  // added + moved + unchanged == resolved.
+  uint32 resolved = 1;
+
+  // Rows whose MFC id matched no product. Nothing is written for them.
+  repeated UnresolvedMfcRow unresolved = 2;
+
+  // Resolved rows the user did not hold before.
+  uint32 added = 3;
+
+  // Resolved rows whose status changed, e.g. Ordered to Owned.
+  uint32 moved = 4;
+
+  // Resolved rows whose status was already as exported.
+  uint32 unchanged = 5;
+
+  // Import-written holdings absent from this export, now tombstoned.
+  uint32 removed = 6;
+
+  // Feed events this import produced across all four facet kinds. A
+  // re-import of the same export produces 0.
+  uint32 facets_written = 7;
+}
+
+message UnresolvedMfcRow {
+  // The MFC item id as it appears in the export.
+  string mfc_id = 1;
+
+  // The export's Status value for the row, verbatim.
+  string status = 2;
+
+  // 1-based line number in csv_text, header included.
+  uint32 line = 3;
+}
+
+// ---------------------------------------------------------------------------
+// ImportService
+//
+// ERROR CONTRACT:
+//   * a missing ID or Status column -> INVALID_ARGUMENT naming the column.
+//   * csv_text over 2 MiB, or export_date not "YYYY-MM-DD" -> INVALID_ARGUMENT.
+//   * missing or invalid OIDC token or DPoP proof -> UNAUTHENTICATED.
+//   * spine unreachable -> UNAVAILABLE; nothing is written. A retry is safe:
+//     re-importing the same export writes nothing new.
+// ---------------------------------------------------------------------------
+service ImportService {
+  rpc ImportMfcExport(ImportMfcExportRequest) returns (ImportMfcExportResponse);
+}
