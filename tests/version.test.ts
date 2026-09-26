@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_FUTURE_SKEW_MS,
@@ -22,6 +23,7 @@ interface Vectors {
   sorted: string[];
   canonicalInstant: Array<{ input: string; output?: string; error?: boolean; note: string }>;
   canonicalVersion: Array<{ instant: string; counter: number; deviceId: string; output?: string; error?: boolean; note: string }>;
+  collationTraps: Array<{ a: string; b: string; bytewise: -1 | 1; glibcEnUs: -1 | 1; icuEnUs: -1 | 1; note: string }>;
 }
 
 const vectors = JSON.parse(
@@ -62,9 +64,13 @@ describe('golden vectors', () => {
   });
 
   it('gives a total order: sorting any permutation reproduces the golden sequence', () => {
-    const shuffled = [...vectors.sorted].reverse();
-    shuffled.push(shuffled.shift()!);
-    expect(shuffled.sort(compareVersion)).toEqual(vectors.sorted);
+    const n = vectors.sorted.length;
+    fc.assert(
+      fc.property(fc.shuffledSubarray(vectors.sorted, { minLength: n, maxLength: n }), (shuffled) => {
+        expect([...shuffled].sort(compareVersion)).toEqual(vectors.sorted);
+      }),
+      { numRuns: 1_000 },
+    );
   });
 
   it('agrees with bytewise order on every pair of valid tokens, which is what a C-collation column does', () => {
@@ -75,6 +81,24 @@ describe('golden vectors', () => {
         expect(compareVersion(a, b)).toBe(Math.sign(Buffer.compare(bytes(a), bytes(b))));
       }
     }
+  });
+
+  it('agrees with ICU en-US on every pair of valid tokens: the grammar is collation-invariant', () => {
+    const all = [...vectors.sorted, ...vectors.valid.map((v) => v.version)];
+    for (const a of all) {
+      for (const b of all) {
+        expect(Math.sign(a.localeCompare(b, 'en-US'))).toBe(compareVersion(a, b));
+      }
+    }
+  });
+
+  it.each(vectors.collationTraps)('names a pair a locale collation misorders: $note', ({ a, b, bytewise, icuEnUs, glibcEnUs }) => {
+    expect(isCanonicalVersion(a)).toBe(true);
+    expect(isCanonicalVersion(b)).toBe(false);
+    expect(() => compareVersion(a, b)).toThrow(VersionError);
+    expect(Math.sign(Buffer.compare(Buffer.from(a), Buffer.from(b)))).toBe(bytewise);
+    expect(Math.sign(a.localeCompare(b, 'en-US'))).toBe(icuEnUs);
+    expect(bytewise === glibcEnUs && bytewise === icuEnUs).toBe(false);
   });
 
   it.each(vectors.canonicalInstant)('canonicalInstant("$input") ($note)', ({ input, output, error }) => {
@@ -107,6 +131,12 @@ describe('canonicalInstant', () => {
 
   it('rejects an offset with minutes past 59', () => {
     expect(() => canonicalInstant('2026-09-14T11:30:00+09:60')).toThrow(VersionError);
+  });
+
+  it('rejects an offset past 18 hours', () => {
+    expect(() => canonicalInstant('2026-09-14T11:30:00+99:00')).toThrow(VersionError);
+    expect(() => canonicalInstant('2026-09-14T11:30:00-18:01')).toThrow(VersionError);
+    expect(canonicalInstant('2026-09-14T11:30:00-18:00')).toBe('2026-09-15T05:30:00.000000Z');
   });
 });
 

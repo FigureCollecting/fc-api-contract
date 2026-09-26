@@ -6,6 +6,7 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, im
 const sync = read('proto/coordinator/v1/sync.proto');
 const catalog = read('proto/coordinator/v1/catalog.proto');
 const importProto = read('proto/coordinator/v1/import.proto');
+const readme = read('README.md');
 const pkg = JSON.parse(read('package.json')) as {
   version: string;
   files: string[];
@@ -32,6 +33,22 @@ describe('sync.proto', () => {
     expect(text).toMatch(/COLLATE "C"/);
   });
 
+  it('trusts the wall clock after a forward gap and recovers a jump through rebase', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/clamped only when the offset looks suspect/i);
+    expect(text).toMatch(/a sleep \(monotonic time stalls\) or a wall-clock jump/i);
+    expect(text).toMatch(/calls Hlc\.rebase\(\), re-observes the facet's base version and re-mints/i);
+    expect(text).toMatch(/never clamps an observed token/i);
+  });
+
+  it('rests the collation rule on out-of-grammar tokens, which is where collations disagree', () => {
+    const text = prose(sync);
+    expect(text).not.toMatch(/ignores '#' at the first level/);
+    expect(text).toMatch(/order the same under C, glibc and ICU/i);
+    expect(text).toMatch(/rejects an out-of-grammar token before it is stored/i);
+    expect(text).toMatch(/COLLATE "C"/);
+  });
+
   it('states the future-skew bound as a number', () => {
     expect(prose(sync)).toMatch(/server_now \+ 5 minutes/);
   });
@@ -49,6 +66,18 @@ describe('sync.proto', () => {
     }
     expect(text).toMatch(/written against the head_id at write time and never re-keyed/i);
     expect(text).toMatch(/edited_at/);
+  });
+
+  it('keys every facet of a holding by its status facet\'s head_id and says which status shows after a merge', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/keyed by the head_id its status facet was first written under, never by the ProductCard\.head_id/i);
+    expect(text).toMatch(/the status with the higher version is displayed/i);
+  });
+
+  it('says the payload schemas check writes only, so an additive property cannot break an installed phone', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/The schemas check writes only/);
+    expect(text).toMatch(/10,000 code points/);
   });
 
   it('keeps the deferred Resync and Ack out of the wire and says so', () => {
@@ -76,6 +105,7 @@ describe('catalog.proto', () => {
     expect(text).toMatch(/survivor/i);
     expect(text).toMatch(/requested_as/);
     expect(text).toMatch(/never re-keyed/i);
+    expect(text).toMatch(/which status is shown/i);
   });
 
   it('marks SearchProducts UNIMPLEMENTED until served', () => {
@@ -89,6 +119,27 @@ describe('import.proto', () => {
     expect(text).toMatch(/reserved server device/i);
     expect(text).toMatch(/per-user import counter/i);
     expect(text).toMatch(/never removes a holding a device wrote/i);
+  });
+
+  it('keys import writes the way rule 6 keys device writes', () => {
+    expect(prose(importProto)).toMatch(/already holds under a merged head_id writes under that head_id/i);
+  });
+
+  it('never versions an import in the future', () => {
+    const text = prose(importProto);
+    expect(text).toMatch(/whichever is earlier/i);
+    expect(text).toMatch(/export_date later than the server's current UTC date plus one day -> INVALID_ARGUMENT/i);
+  });
+
+  it('counts a resolved row whose write lost to a newer device edit', () => {
+    expect(prose(importProto)).toMatch(/added \+ moved \+ unchanged \+ kept_newer == resolved/);
+  });
+});
+
+describe('README', () => {
+  it('does not rest the collation rule on # being ignored', () => {
+    expect(readme).not.toMatch(/which ignores `#`/);
+    expect(readme).toMatch(/out-of-grammar token/);
   });
 });
 

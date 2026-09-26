@@ -108,8 +108,11 @@ outright. Variable precision breaks it more quietly: PostgreSQL renders a zero f
 
 The device id is the enrolled device's uuid, lowercase and dashless; the MFC import writes under the
 reserved all-zero id. Every segment is fixed width, so bytewise order is version order and the
-device id makes it total. Compare with `compareVersion()` or on a `TEXT COLLATE "C"` column, never
-with `<` under a locale collation, which ignores `#`. `sync.proto` rule 5 has the ordering table;
+device id makes it total. Tokens in the grammar order the same under C, glibc and ICU collations,
+but an out-of-grammar token (an uppercase or dashed device id) does not, so the server rejects one
+before storing it and compares with `compareVersion()` or on a `TEXT COLLATE "C"` column, never
+with `<` under a locale collation. The `Hlc` trusts the wall clock after a sleep and recovers from
+a clock jump through `rebase()`. `sync.proto` rule 5 has the ordering table and the clock rules;
 `golden/version-vectors.json` has the cases.
 
 A grammar change passes `buf breaking`, so it is a semantic break buf cannot see. 0.2.0 made one

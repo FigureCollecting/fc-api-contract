@@ -11,13 +11,17 @@ import {
   StatusResponseSchema,
   SyncEventSchema,
   SyncOp,
+  USER_FACET_FIELDS,
+  userFacetKey,
 } from '../src/index.js';
 
+const HEAD = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+const STATUS_KEY = userFacetKey(HEAD, 'status');
 const UPSERT = {
-  facetKey: 'holding:01J8Z9/condition',
-  version: '2026-09-14T11:30:00.123456Z',
+  facetKey: STATUS_KEY,
+  version: '2026-09-14T11:30:00.123456Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e',
   op: SyncOp.UPSERT,
-  payload: JSON.stringify({ condition: 'mint', editedAt: '2026-09-14T06:29:58.500-05:00' }),
+  payload: JSON.stringify({ status: 'owned', edited_at: '2026-09-14T06:29:58.500-05:00', tz: 'America/Chicago' }),
 };
 
 describe('SyncEvent', () => {
@@ -33,8 +37,8 @@ describe('SyncEvent', () => {
 
   it('round-trips a tombstone with an empty payload', () => {
     const msg = create(SyncEventSchema, {
-      facetKey: 'holding:01J8Z9/condition',
-      version: '2026-09-14T11:31:00.000000Z',
+      facetKey: STATUS_KEY,
+      version: '2026-09-14T11:31:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e',
       op: SyncOp.DELETE,
       payload: '',
     });
@@ -47,7 +51,7 @@ describe('SyncEvent', () => {
   it('keeps version a raw string whose lexicographic order is the instant order', () => {
     const decoded = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, UPSERT)));
 
-    expect(decoded.version).toBe('2026-09-14T11:30:00.123456Z');
+    expect(decoded.version).toBe(UPSERT.version);
     // The client's merge rule is `version > local[facet]` on these strings. It
     // is only correct while the server emits normalised UTC, so the contract
     // test states the property rather than trusting the comment.
@@ -57,12 +61,13 @@ describe('SyncEvent', () => {
 
   it('never restamps the user-visible edit time carried inside payload', () => {
     const decoded = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, UPSERT)));
-    const payload = JSON.parse(decoded.payload) as { editedAt: string };
+    const payload = JSON.parse(decoded.payload) as { edited_at: string; tz: string };
 
     // The merge token is UTC; what the user sees is their own local edit time,
     // offset and all, untouched by the wire.
-    expect(payload.editedAt).toBe('2026-09-14T06:29:58.500-05:00');
-    expect(payload.editedAt).not.toBe(decoded.version);
+    expect(payload.edited_at).toBe('2026-09-14T06:29:58.500-05:00');
+    expect(payload.tz).toBe('America/Chicago');
+    expect(payload.edited_at).not.toBe(decoded.version);
   });
 
   it('preserves an op number it does not know, so an old app degrades instead of corrupting', () => {
@@ -100,7 +105,7 @@ describe('Delta', () => {
   });
 
   it('round-trips a page and keeps event order', () => {
-    const second = { ...UPSERT, version: '2026-09-14T11:32:00.000000Z', payload: '{"condition":"used"}' };
+    const second = { ...UPSERT, version: '2026-09-14T11:32:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e', payload: '{"status":"wished","edited_at":"2026-09-14T06:32:00-05:00","tz":"America/Chicago"}' };
     const msg = create(DeltaResponseSchema, {
       events: [UPSERT, second],
       nextCursor: 'seq:8419',
@@ -146,7 +151,7 @@ describe('Push', () => {
     ];
     const msg = create(PushResponseSchema, {
       results: outcomes.map((outcome, i) => ({
-        facetKey: `holding:01J8Z9/f${i}`,
+        facetKey: userFacetKey(HEAD, USER_FACET_FIELDS[i % USER_FACET_FIELDS.length]!),
         outcome,
         version: '2026-09-14T11:30:00.123456Z',
       })),
@@ -159,13 +164,13 @@ describe('Push', () => {
 
   it('carries the server facet whole on a non-applied result so the client can converge', () => {
     const current = {
-      facetKey: 'holding:01J8Z9/condition',
+      facetKey: STATUS_KEY,
       version: '2026-09-14T12:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a',
       op: SyncOp.UPSERT,
-      payload: '{"condition":"used"}',
+      payload: '{"status":"ordered","edited_at":"2026-09-14T07:00:00-05:00","tz":"America/Chicago"}',
     };
     const msg = create(PushResultSchema, {
-      facetKey: 'holding:01J8Z9/condition',
+      facetKey: STATUS_KEY,
       outcome: PushOutcome.STALE,
       version: current.version,
       current,
@@ -176,7 +181,7 @@ describe('Push', () => {
     // losing payload drops the Delta event at that version as not newer.
     expect(decoded.outcome).toBe(PushOutcome.STALE);
     expect(decoded.current?.version).toBe(current.version);
-    expect(decoded.current?.payload).toBe('{"condition":"used"}');
+    expect(decoded.current?.payload).toBe(current.payload);
     expect(decoded.current?.op).toBe(SyncOp.UPSERT);
   });
 

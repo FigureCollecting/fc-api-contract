@@ -33,7 +33,7 @@ const VERSION_RE =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})Z(?:#(\d{10})#([0-9a-f]{32}))?$/;
 
 // Lenient input for canonicalInstant: ISO-8601 or PostgreSQL's text output,
-// any offset, 0 to 6 fractional digits.
+// any offset up to ±18:00, 0 to 6 fractional digits.
 const LOOSE_INSTANT_RE =
   /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}(?::?\d{2})?)$/;
 
@@ -134,7 +134,7 @@ export function canonicalInstant(input: string | Date): string {
     const digits = zone.slice(1).replace(':', '');
     const oh = Number(digits.slice(0, 2));
     const om = digits.length > 2 ? Number(digits.slice(2)) : 0;
-    if (om > 59) throw new VersionError(`bad offset in ${JSON.stringify(input)}`);
+    if (om > 59 || oh * 60 + om > 18 * 60) throw new VersionError(`bad offset in ${JSON.stringify(input)}`);
     offsetMinutes = (zone[0] === '-' ? -1 : 1) * (oh * 60 + om);
   }
   return microsToInstant(micros - BigInt(offsetMinutes) * 60_000_000n);

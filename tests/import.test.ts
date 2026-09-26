@@ -29,14 +29,15 @@ describe('ImportService', () => {
       unresolved: [{ mfcId: '3743689', status: 'Wished', line: 812 }],
       added: 1090,
       moved: 4,
-      unchanged: 6,
+      unchanged: 3,
+      keptNewer: 3,
       removed: 2,
       facetsWritten: 1310,
     });
     const decoded = fromJson(ImportMfcExportResponseSchema, toJson(ImportMfcExportResponseSchema, msg));
 
     expect(equals(ImportMfcExportResponseSchema, msg, decoded)).toBe(true);
-    expect(decoded.added + decoded.moved + decoded.unchanged).toBe(decoded.resolved);
+    expect(decoded.keptNewer).toBe(3);
     expect(decoded.unresolved[0]).toMatchObject({ mfcId: '3743689', status: 'Wished', line: 812 });
   });
 });

@@ -8,18 +8,22 @@
 //
 // VERSIONING. Every write is versioned
 //
-//     <export_date>T00:00:00.000000Z#<per-user import counter>#<reserved server device>
+//     <instant>#<per-user import counter>#<reserved server device>
 //
+// where <instant> is midnight UTC of export_date or the server's clock at
+// import, whichever is earlier, so an import never carries a future version.
 // The reserved server device is the all-zero id (sync.proto rule 5). The
 // per-user import counter increases with every import, so a second export
 // stamped with the same date still orders above the first. Any device edit
-// made on or after the export date (UTC) outranks the import.
+// made after that instant outranks the import.
 //
 // SNAPSHOT DIFF. A row in the export sets holding/{head_id}/status and, where
-// the columns exist, count, score and note. A holding absent from the export
-// is removed (a status tombstone) only when the import itself wrote its
-// current status, which the version's device id records. The import never
-// removes a holding a device wrote.
+// the columns exist, count, score and note. Keys follow sync.proto rule 6: a
+// row for a product the user already holds under a merged head_id writes
+// under that head_id. A holding absent from the export is removed (a status
+// tombstone) only when the import itself wrote its current status, which the
+// version's device id records. The import never removes a holding a device
+// wrote.
 // ============================================================================
 
 syntax = "proto3";
@@ -40,7 +44,7 @@ message ImportMfcExportRequest {
 
 message ImportMfcExportResponse {
   // Rows whose MFC id resolved to a product.
-  // added + moved + unchanged == resolved.
+  // added + moved + unchanged + kept_newer == resolved.
   uint32 resolved = 1;
 
   // Rows whose MFC id matched no product. Nothing is written for them.
@@ -61,6 +65,10 @@ message ImportMfcExportResponse {
   // Feed events this import produced across all four facet kinds. A
   // re-import of the same export produces 0.
   uint32 facets_written = 7;
+
+  // Resolved rows whose status the import did not write, because a device
+  // edit to it is newer than the import's version.
+  uint32 kept_newer = 8;
 }
 
 message UnresolvedMfcRow {
@@ -80,6 +88,9 @@ message UnresolvedMfcRow {
 // ERROR CONTRACT:
 //   * a missing ID or Status column -> INVALID_ARGUMENT naming the column.
 //   * csv_text over 2 MiB, or export_date not "YYYY-MM-DD" -> INVALID_ARGUMENT.
+//   * export_date later than the server's current UTC date plus one day
+//     -> INVALID_ARGUMENT. MFC stamps the date in its own zone, which can run
+//     a day ahead of UTC; anything later is a typo or a parse bug.
 //   * missing or invalid OIDC token or DPoP proof -> UNAUTHENTICATED.
 //   * spine unreachable -> UNAVAILABLE; nothing is written. A retry is safe:
 //     re-importing the same export writes nothing new.

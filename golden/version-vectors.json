@@ -1,5 +1,5 @@
 {
-  "$comment": "Golden vectors for coordinator.v1 SyncEvent.version. Every implementation (the TS helpers in this package, fc-coordinator's handler and SQL paths, fc-mobile) must agree with every case. Grammar: <instant>[#<counter>#<device>], instant = YYYY-MM-DDTHH:MM:SS.ffffffZ (UTC, exactly six fractional digits), counter = 10 decimal digits, device = 32 lowercase hex (a dashless uuid). Order is bytewise over the ASCII text; never compare under a locale collation.",
+  "$comment": "Golden vectors for coordinator.v1 SyncEvent.version. Every implementation (the TS helpers in this package, fc-coordinator's handler and SQL paths, fc-mobile) must agree with every case. Grammar: <instant>[#<counter>#<device>], instant = YYYY-MM-DDTHH:MM:SS.ffffffZ (UTC, exactly six fractional digits), counter = 10 decimal digits, device = 32 lowercase hex (a dashless uuid). Order is bytewise over the ASCII text. Tokens in the grammar order the same under C, glibc and ICU collations; collationTraps are out-of-grammar pairs that do not, which is why a server rejects an out-of-grammar token before storing it.",
   "serverDeviceId": "00000000000000000000000000000000",
   "valid": [
     { "version": "2026-09-14T11:30:00.123456Z", "instant": "2026-09-14T11:30:00.123456Z", "micros": "1789385400123456", "counter": null, "deviceId": null, "note": "bare instant, the form server-owned facets use" },
@@ -68,6 +68,9 @@
     { "input": "2026-09-14T06:29:58.500-05:00", "output": "2026-09-14T11:29:58.500000Z", "note": "negative offset" },
     { "input": "2026-09-14T00:30:00.000000+05:30", "output": "2026-09-13T19:00:00.000000Z", "note": "offset crosses a day boundary" },
     { "input": "2026-09-14T11:30:00+0900", "output": "2026-09-14T02:30:00.000000Z", "note": "basic-format offset" },
+    { "input": "2026-09-14T11:30:00+18:00", "output": "2026-09-13T17:30:00.000000Z", "note": "the widest offset accepted" },
+    { "input": "2026-09-14T11:30:00+18:01", "error": true, "note": "offset past 18 hours" },
+    { "input": "2026-09-14T11:30:00+99:00", "error": true, "note": "offset hour past 18" },
     { "input": "2026-09-14T11:30:00.1234567Z", "error": true, "note": "more than six fractional digits would lose precision" },
     { "input": "2026-09-14T11:30:00", "error": true, "note": "no zone" },
     { "input": "2026-02-30T00:00:00Z", "error": true, "note": "impossible calendar date" },
@@ -80,5 +83,9 @@
     { "instant": "2026-09-14T11:30:00.123456Z", "counter": 10000000000, "deviceId": "0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "error": true, "note": "counter wider than ten digits" },
     { "instant": "2026-09-14T11:30:00.123456Z", "counter": 1.5, "deviceId": "0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "error": true, "note": "fractional counter" },
     { "instant": "2026-09-14T11:30:00.123456Z", "counter": 0, "deviceId": "not-a-device", "error": true, "note": "device id that is not a uuid" }
+  ],
+  "collationTraps": [
+    { "a": "2026-09-14T11:30:00.123456Z#0000000007#a0000000000000000000000000000000", "b": "2026-09-14T11:30:00.123456Z#0000000007#B0000000000000000000000000000000", "bytewise": 1, "glibcEnUs": -1, "icuEnUs": -1, "note": "b has an uppercase device id; en_US folds case, so bytewise and locale order disagree. Reject b before storage." },
+    { "a": "2026-09-14T11:30:00.123456Z#0000000007#0f3a5c7e000000000000000000000000", "b": "2026-09-14T11:30:00.123456Z#0000000007#0f3a5c7e-9b1d-2f4a-6c8e-0b2d4f6a8c0e", "bytewise": 1, "glibcEnUs": -1, "icuEnUs": 1, "note": "b has a dashed device id; glibc en_US ignores '-', so the pair orders by the digits after it. Reject b before storage." }
   ]
 }

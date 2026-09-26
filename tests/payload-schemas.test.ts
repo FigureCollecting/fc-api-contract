@@ -34,6 +34,8 @@ describe('payload schemas', () => {
     ['score', { score: 10, ...DISPLAY }],
     ['note', { note: '', ...DISPLAY }],
     ['note', { note: 'box damaged, figure fine — 箱に傷', ...DISPLAY }],
+    ['note', { note: '🎎'.repeat(10_000), ...DISPLAY }], // 10,000 code points, 20,000 UTF-16 units
+    ['status', { status: 'owned', edited_at: '2026-09-14T23:59:59.999+14:00', tz: 'Pacific/Kiritimati' }],
   ] as const)('%s accepts %o', (field, payload) => {
     const v = validator(field);
     expect(v(payload), JSON.stringify(v.errors)).toBe(true);
@@ -54,7 +56,24 @@ describe('payload schemas', () => {
     ['score', 'past 10', { score: 11, ...DISPLAY }],
     ['note', 'a note past 10,000 characters', { note: 'x'.repeat(10_001), ...DISPLAY }],
     ['note', 'no note', { ...DISPLAY }],
+    ['note', 'a note past 10,000 code points', { note: '🎎'.repeat(10_001), ...DISPLAY }],
   ] as const)('%s rejects a payload with %s', (field, _why, payload) => {
     expect(validator(field)(payload)).toBe(false);
   });
+
+  const BODY: Record<UserFacetField, object> = { status: { status: 'owned' }, count: { count: 1 }, score: { score: 1 }, note: { note: '' } };
+  const BAD_DISPLAY = [
+    ['month 13', { edited_at: '2026-13-14T06:29:58-05:00', tz: DISPLAY.tz }],
+    ['day 32', { edited_at: '2026-09-32T06:29:58-05:00', tz: DISPLAY.tz }],
+    ['hour 24', { edited_at: '2026-09-14T24:00:00Z', tz: DISPLAY.tz }],
+    ['an offset past 18 hours', { edited_at: '2026-09-14T06:29:58+19:00', tz: DISPLAY.tz }],
+    ['a tz with a space', { edited_at: DISPLAY.edited_at, tz: 'America/New York' }],
+    ['a tz with an empty segment', { edited_at: DISPLAY.edited_at, tz: 'America//Chicago' }],
+  ] as const;
+  it.each((Object.keys(BODY) as UserFacetField[]).flatMap((field) => BAD_DISPLAY.map(([why, d]) => [field, why, d] as const)))(
+    '%s rejects display fields with %s',
+    (field, _why, display) => {
+      expect(validator(field)({ ...BODY[field], ...display })).toBe(false);
+    },
+  );
 });

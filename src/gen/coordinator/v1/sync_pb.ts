@@ -91,12 +91,30 @@
 //                                               counter outranks device; #10 > #9
 //     < 2026-09-14T11:30:00.123457Z                     a later instant beats any suffix
 //
-//     Compare versions bytewise and nowhere else. In PostgreSQL that means a
-//     column declared TEXT COLLATE "C" or a comparison in the handler, never
-//     `<` on a column under a locale collation: en_US.utf8 ignores '#' at the
-//     first level and misorders the suffixes. The package ships
-//     compareVersion() and golden/version-vectors.json, which every
-//     implementation tests against.
+//     Compare versions bytewise and nowhere else. Tokens in the grammar order
+//     the same under C, glibc and ICU collations, because every segment is
+//     fixed-width digits or lowercase hex at a fixed position. Tokens outside
+//     it need not: an uppercase or a dashed device id can order differently
+//     under en_US. So the server rejects an out-of-grammar token before it is
+//     stored (version_malformed), and PostgreSQL compares on a column
+//     declared TEXT COLLATE "C" or in the handler, never with `<` under a
+//     locale collation. The package ships compareVersion() and
+//     golden/version-vectors.json, whose collationTraps are the pairs to test
+//     that rejection with; every implementation tests against it.
+//
+//     THE CLOCK. The client's Hlc ticks on its wall clock plus the offset
+//     measured from the latest Status. While the anchor is fresh (since the
+//     sample, the wall clock has not run ahead of monotonic time by more
+//     than 5 minutes) a tick is capped at the sample plus elapsed monotonic
+//     time plus 5 minutes, which binds only when a long round trip makes the
+//     offset suspect. A larger forward gap is a sleep (monotonic time
+//     stalls) or a wall-clock jump, and two clocks cannot tell them apart, so
+//     the Hlc trusts the wall: an edit made after a sleep still outranks one
+//     made before it. The server's version_future check catches a jump; the
+//     client then takes a fresh Status, calls Hlc.rebase(), re-observes the
+//     facet's base version and re-mints. The Hlc never clamps an observed
+//     token: the server bounds every token on the feed, and a clamp there
+//     would mint an edit below its base.
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
 //     buf cannot see a grammar change; this comment and the golden vectors
@@ -109,7 +127,7 @@
 //         holding/{head_id}/status   {"status": "owned"|"ordered"|"wished", ...}
 //         holding/{head_id}/count    {"count": 1..9999, ...}
 //         uf/{head_id}/score         {"score": 1..10, ...}
-//         uf/{head_id}/note          {"note": "<= 10,000 chars", ...}
+//         uf/{head_id}/note          {"note": "<= 10,000 code points", ...}
 //
 //     head_id is the spine product id as PostgreSQL renders a uuid:
 //     lowercase, dashed. One status register per (user, product) is the
@@ -117,12 +135,22 @@
 //     exists while its status facet is live; count, score and note are
 //     shown only alongside a live status. Every payload also carries
 //     edited_at (ISO-8601 with the device's local offset) and tz (IANA
-//     name), for display only. JSON Schemas ship in schemas/.
+//     name), for display only. JSON Schemas ship in schemas/. The schemas
+//     check writes only: the client before it mints, the server on Push. A
+//     reader never validates an inbound payload against them, so a property
+//     added later cannot break an installed phone.
 //
 //     Keys are written against the head_id at write time and never re-keyed.
-//     After an ER merge the old head redirects to the survivor;
-//     CatalogService.GetProducts resolves the redirect and the client
-//     displays through it. Re-keying or merging holdings is a later change.
+//     Every facet of a holding is keyed by the head_id its status facet was
+//     first written under, never by the ProductCard.head_id on screen. After
+//     an ER merge the card names the survivor, and a score keyed on the
+//     survivor would sit beside no live status and stay hidden. So a write
+//     for a card uses the requested_as ref that holds a live status; only a
+//     card with none uses card.head_id. When two held ids merge into one
+//     card, the status with the higher version is displayed (a tombstone
+//     counts as no status), with the count, score and note keyed beside it,
+//     and new writes go to its head_id. Re-keying or merging holdings is a
+//     later change.
 //
 //  7. DEFERRED, DELIBERATELY. There is no Resync or prune signal and no Ack
 //     RPC in 0.2.0: the feed never prunes yet. The recovery for an unreadable
@@ -549,8 +577,9 @@ export enum PushOutcome {
    *                             DPoP-bound device
    *   payload_invalid           the payload fails its JSON Schema, an UPSERT
    *                             is empty, a DELETE is not, or op is unknown
-   * Retrying the same event cannot succeed. The client re-mints (for
-   * version_future, after a fresh Status measurement) or drops the edit and
+   * Retrying the same event cannot succeed. For version_future the client
+   * takes a fresh Status, calls Hlc.rebase(), re-observes the facet's base
+   * version and re-mints (rule 5); for any other code it drops the edit and
    * tells the user.
    *
    * @generated from enum value: PUSH_OUTCOME_REJECTED = 5;
