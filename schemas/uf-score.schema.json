@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/uf-score.schema.json",
   "title": "uf/{head_id}/score payload",
-  "description": "UPSERT payload of uf/{head_id}/score. Clearing the score is a DELETE.",
+  "description": "UPSERT payload of uf/{head_id}/score. Clearing the score is a DELETE. Serialized, at most 134 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [

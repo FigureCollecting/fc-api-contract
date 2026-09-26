@@ -54,6 +54,14 @@
 //     every JSON number to float64. Facet payloads carry prices and
 //     identifiers as strings and must stay that way end to end.
 //
+//     A pushed payload over 65,536 bytes (MAX_PAYLOAD_BYTES, counted as
+//     UTF-8) is REJECTED payload_invalid: payload over 65536 bytes. The cap
+//     bounds what the server parses before any schema runs. A schema-valid
+//     payload as JSON.stringify writes it is at most 60,133 bytes (a
+//     10,000-code-point note of six-byte escapes, rule 6), so a client that
+//     writes that way never meets the cap; one that adds whitespace or
+//     escapes more characters can.
+//
 //  4. DISPLAY TIME IS NEVER RESTAMPED. `version` is a merge token, not the
 //     thing the UI shows. The user's local edit time travels inside
 //     `payload` (edited_at plus tz) and is shown as the user wrote it.
@@ -268,8 +276,8 @@ export type SyncEvent = Message<"coordinator.v1.SyncEvent"> & {
   op: SyncOp;
 
   /**
-   * The facet value as JSON TEXT (rule 3). Empty when op is
-   * SYNC_OP_DELETE.
+   * The facet value as JSON TEXT (rule 3), at most MAX_PAYLOAD_BYTES (65,536)
+   * UTF-8 bytes on Push. Empty when op is SYNC_OP_DELETE.
    *
    * @generated from field: string payload = 4;
    */
@@ -364,17 +372,18 @@ export const DeltaResponseSchema: GenMessage<DeltaResponse> = /*@__PURE__*/
  */
 export type PushRequest = Message<"coordinator.v1.PushRequest"> & {
   /**
-   * Client-chosen idempotency key, unique per user: 1 to 128 printable ASCII
-   * characters, no space; anything else is INVALID_ARGUMENT. A retry of the
-   * same batch MUST carry the same client_id and the same events. A replay
-   * (same client_id, same events) returns each event's recorded outcome and
-   * reason, and never re-applies: an event first APPLIED is answered
-   * DUPLICATE, one first REJECTED is REJECTED again with the same reason, one
-   * first STALE is STALE again and one first REVIEW is REVIEW again.
-   * `current` on every replayed user-owned result is the facet as the server
-   * holds it at the replay. The same client_id with different events is
-   * INVALID_ARGUMENT. This is what makes an unacknowledged push safe to retry
-   * on reconnect.
+   * Client-chosen idempotency key, unique per user: 1 to 128 characters, each
+   * printable ASCII 0x21-0x7E (no space, control or non-ASCII character);
+   * anything else is INVALID_ARGUMENT, checked before the transaction opens.
+   * A retry of the same batch MUST carry the same client_id and the same
+   * events. A replay (same client_id, same events) returns each event's
+   * recorded outcome and reason, and never re-applies: an event first APPLIED
+   * is answered DUPLICATE, one first REJECTED is REJECTED again with the same
+   * reason, one first STALE is STALE again and one first REVIEW is REVIEW
+   * again. `current` on every replayed user-owned result is the facet as the
+   * server holds it at the replay. The same client_id with different events
+   * is INVALID_ARGUMENT. This is what makes an unacknowledged push safe to
+   * retry on reconnect.
    *
    * @generated from field: string client_id = 1;
    */
@@ -653,8 +662,9 @@ export enum PushOutcome {
    *   facet_key_not_user_owned  the key is not one of rule 6's four forms
    *   device_mismatch           the version's device id is not the caller's
    *                             DPoP-bound device
-   *   payload_invalid           the payload fails its JSON Schema, an UPSERT
-   *                             is empty, a DELETE is not, or op is unknown
+   *   payload_invalid           the payload is over MAX_PAYLOAD_BYTES (rule 3),
+   *                             fails its JSON Schema, an UPSERT is empty, a
+   *                             DELETE is not, or op is unknown
    * The server runs the REJECTED checks in the listed order (version_malformed,
    * version_future, facet_key_not_user_owned, device_mismatch,
    * payload_invalid), all before any STALE, REVIEW or APPLIED routing, so an
@@ -693,12 +703,29 @@ export const PushOutcomeSchema: GenEnum<PushOutcome> = /*@__PURE__*/
  * ERROR CONTRACT:
  *   * an unreadable cursor -> INVALID_ARGUMENT. The client's recovery is a
  *     full replay from an empty cursor, which is always safe.
- *   * a client_id that is not 1 to 128 printable ASCII characters, no space
- *     -> INVALID_ARGUMENT: without one a retry cannot be recognised, and a
- *     silently non-idempotent push is worse than a rejected one.
+ *   * a client_id that is not 1 to 128 characters, each printable ASCII
+ *     0x21-0x7E -> INVALID_ARGUMENT, checked before the transaction opens:
+ *     without one a retry cannot be recognised, and a silently
+ *     non-idempotent push is worse than a rejected one.
  *   * a client_id already recorded with different events ->
  *     INVALID_ARGUMENT: a replay must be the same batch, or its recorded
  *     outcomes would answer events it never carried.
+ *   * a request message over 16 MiB (16,777,216 bytes) -> RESOURCE_EXHAUSTED.
+ *     The limit applies to the PushRequest as the server reads it: its bytes
+ *     in the encoding sent, binary or JSON, after decompression. Nothing is
+ *     written and nothing is recorded under the client_id; the client splits
+ *     the batch and pushes each part under a new client_id. A conforming
+ *     client keeps each batch's binary-encoded size at or under 8 MiB
+ *     (8,388,608 bytes); its JSON encoding is then within 16 MiB, so it never
+ *     meets this error.
+ *   * the user's push queue is full -> UNAVAILABLE: too many of that user's
+ *     pushes are already waiting. Nothing is written and nothing is recorded
+ *     under the client_id; like a lock timeout, the client backs off and
+ *     retries later with the same client_id and the same events.
+ *   * a lock timeout -> UNAVAILABLE. The transaction rolled back, so nothing
+ *     is written and nothing is recorded under the client_id; the client
+ *     retries with the same client_id and the same events, which is safe
+ *     whether or not an earlier attempt landed.
  *   * a rejected individual event is NOT an RPC error. It comes back as a
  *     PushResult with a non-APPLIED outcome (STALE, REVIEW or REJECTED),
  *     because a batch with one bad event must not fail the other nineteen.

@@ -17,6 +17,10 @@ export const PUSH_REJECT_REASONS = [
 ] as const;
 export type PushRejectReason = (typeof PUSH_REJECT_REASONS)[number];
 
+// A pushed SyncEvent payload over this many UTF-8 bytes is REJECTED payload_invalid
+// ("payload over 65536 bytes"); every schema-valid payload JSON.stringify writes fits under it.
+export const MAX_PAYLOAD_BYTES = 65_536;
+
 /** Package-relative path of each field's payload JSON Schema (exported as ./schemas/*). */
 export const USER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<UserFacetField, string>> = {
   status: 'schemas/holding-status.schema.json',
