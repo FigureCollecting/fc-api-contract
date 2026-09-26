@@ -18,6 +18,18 @@ const pkg = JSON.parse(read('package.json')) as {
 
 // Collapse comment markers and whitespace so a rule reflowed across lines still matches.
 const prose = (proto: string) => proto.replace(/^\s*(\/\/|\*) ?/gm, '').replace(/\s+/g, ' ');
+// The SyncService ERROR CONTRACT, one string per bullet, so an assertion cannot be met by a neighbouring entry.
+const errorEntries = () =>
+  prose(sync.slice(sync.indexOf('ERROR CONTRACT:') + 'ERROR CONTRACT:'.length, sync.indexOf('service SyncService {')))
+    .replace(/ -{10,} ?$/, '')
+    .split(' * ')
+    .map((e) => e.trim())
+    .filter((e) => e !== '');
+const errorEntry = (start: string) => {
+  const found = errorEntries().filter((e) => e.startsWith(start));
+  expect(found, start).toHaveLength(1);
+  return found[0]!;
+};
 
 describe('sync.proto', () => {
   it('no longer tells a client to keep its losing payload under the server version', () => {
@@ -116,8 +128,7 @@ describe('sync.proto', () => {
   it('states the client_id grammar, that anything else is INVALID_ARGUMENT, and that it is checked before the transaction', () => {
     const clientId = prose(sync.slice(sync.indexOf('message PushRequest {'), sync.indexOf('string client_id = 1;')));
     expect(clientId).toMatch(/1 to 128 characters, each printable ASCII 0x21-0x7E \(no space, control or non-ASCII character\); anything else is INVALID_ARGUMENT, checked before the transaction opens/i);
-    const errors = prose(sync.slice(sync.indexOf('ERROR CONTRACT:'), sync.indexOf('service SyncService {')));
-    expect(errors).toMatch(/a client_id that is not 1 to 128 characters, each printable ASCII 0x21-0x7E, -> INVALID_ARGUMENT, checked before the transaction opens/i);
+    expect(errorEntry('a client_id that is not')).toMatch(/^a client_id that is not 1 to 128 characters, each printable ASCII 0x21-0x7E -> INVALID_ARGUMENT, checked before the transaction opens:/i);
   });
 
   it('rebases after any REJECTED edit past the fresh Status sample, not only version_future', () => {
@@ -207,15 +218,22 @@ describe('sync.proto', () => {
     expect(rejected).toMatch(/payload_invalid .*is over MAX_PAYLOAD_BYTES/i);
   });
 
-  it('answers an oversized request or a full queue RESOURCE_EXHAUSTED and a lock timeout UNAVAILABLE', () => {
-    const contract = prose(sync.slice(sync.indexOf('ERROR CONTRACT:'), sync.indexOf('service SyncService')));
-    expect(contract).toMatch(/a request body over 16 MiB \(16,777,216 bytes\) -> RESOURCE_EXHAUSTED/i);
-    expect(contract).toMatch(/the client splits the batch/i);
-    expect(contract).toMatch(/the user's push queue is full -> RESOURCE_EXHAUSTED/i);
-    expect(contract).toMatch(/retries later with the same client_id and the same events/i);
-    expect(contract).toMatch(/a lock timeout -> UNAVAILABLE/i);
-    expect(contract).toMatch(/UNAVAILABLE\. The transaction rolled back, .*the client retries with the same client_id and the same events/i);
-    expect(contract).toMatch(/nothing is written and nothing is recorded under the client_id/i);
+  it('answers an oversized request RESOURCE_EXHAUSTED, and a full queue or a lock timeout UNAVAILABLE', () => {
+    const oversized = errorEntry('a request message over 16 MiB');
+    expect(oversized).toMatch(/^a request message over 16 MiB \(16,777,216 bytes\) -> RESOURCE_EXHAUSTED\. /);
+    expect(oversized).toMatch(/The limit applies to the PushRequest as the server reads it: its bytes in the encoding sent, binary or JSON, after decompression\. /);
+    expect(oversized).toMatch(/Nothing is written and nothing is recorded under the client_id; the client splits the batch and pushes each part under a new client_id\. /);
+    expect(oversized).toMatch(/A conforming client keeps each batch's binary-encoded size at or under 8 MiB \(8,388,608 bytes\); /);
+    const queue = errorEntry("the user's push queue is full");
+    expect(queue).toMatch(/^the user's push queue is full -> UNAVAILABLE: /);
+    expect(queue).toMatch(/Nothing is written and nothing is recorded under the client_id; like a lock timeout, the client backs off and retries later with the same client_id and the same events\.$/);
+    const lock = errorEntry('a lock timeout');
+    expect(lock).toMatch(/^a lock timeout -> UNAVAILABLE\. The transaction rolled back, so nothing is written and nothing is recorded under the client_id; the client retries with the same client_id and the same events/);
+    // One code, one recovery: RESOURCE_EXHAUSTED always means split, UNAVAILABLE always means retry as is.
+    expect(errorEntries().filter((e) => e.includes('RESOURCE_EXHAUSTED'))).toEqual([oversized]);
+    const unavailable = errorEntries().filter((e) => e.includes('UNAVAILABLE'));
+    expect(unavailable).toEqual([queue, lock]);
+    for (const e of unavailable) expect(e).not.toMatch(/new client_id/);
   });
 
   it('keeps the deferred Resync and Ack out of the wire and says so', () => {

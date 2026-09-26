@@ -473,19 +473,24 @@ message StatusResponse {
 //   * an unreadable cursor -> INVALID_ARGUMENT. The client's recovery is a
 //     full replay from an empty cursor, which is always safe.
 //   * a client_id that is not 1 to 128 characters, each printable ASCII
-//     0x21-0x7E, -> INVALID_ARGUMENT, checked before the transaction opens:
+//     0x21-0x7E -> INVALID_ARGUMENT, checked before the transaction opens:
 //     without one a retry cannot be recognised, and a silently
 //     non-idempotent push is worse than a rejected one.
 //   * a client_id already recorded with different events ->
 //     INVALID_ARGUMENT: a replay must be the same batch, or its recorded
 //     outcomes would answer events it never carried.
-//   * a request body over 16 MiB (16,777,216 bytes) -> RESOURCE_EXHAUSTED.
-//     Nothing is written and nothing is recorded under the client_id; the
-//     client splits the batch and pushes each part under a new client_id.
-//   * the user's push queue is full -> RESOURCE_EXHAUSTED: too many of that
-//     user's pushes are already waiting. Nothing is written and nothing is
-//     recorded under the client_id; the client backs off and retries later
-//     with the same client_id and the same events.
+//   * a request message over 16 MiB (16,777,216 bytes) -> RESOURCE_EXHAUSTED.
+//     The limit applies to the PushRequest as the server reads it: its bytes
+//     in the encoding sent, binary or JSON, after decompression. Nothing is
+//     written and nothing is recorded under the client_id; the client splits
+//     the batch and pushes each part under a new client_id. A conforming
+//     client keeps each batch's binary-encoded size at or under 8 MiB
+//     (8,388,608 bytes); its JSON encoding is then within 16 MiB, so it never
+//     meets this error.
+//   * the user's push queue is full -> UNAVAILABLE: too many of that user's
+//     pushes are already waiting. Nothing is written and nothing is recorded
+//     under the client_id; like a lock timeout, the client backs off and
+//     retries later with the same client_id and the same events.
 //   * a lock timeout -> UNAVAILABLE. The transaction rolled back, so nothing
 //     is written and nothing is recorded under the client_id; the client
 //     retries with the same client_id and the same events, which is safe
