@@ -253,13 +253,27 @@ describe('Hlc.observe', () => {
     expect(compareVersion(base, hlc.tick(undefined))).toBe(-1);
   });
 
-  it('folds a far-future token unclamped: bounding feed tokens is the server\'s job', () => {
-    const hlc = new Hlc({ deviceId: DEVICE, clock: new FakeClock() });
-    hlc.measure(iso(T0), 0);
-    const token = `2099-01-01T00:00:00.000000Z#0000000001#${SERVER_DEVICE_ID}`;
-    hlc.observe(token);
+  it('keeps the bound on a server token at the skew, observed or as a base; a token past it is outside the contract', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    const atSkew = `${iso(T0 + MAX_FUTURE_SKEW_MS)}#0000000001#${SERVER_DEVICE_ID}`;
+    const pastSkew = `${iso(T0 + MAX_FUTURE_SKEW_MS + 60_000)}#0000000001#${SERVER_DEVICE_ID}`;
+    const run = (fold: (hlc: Hlc, token: string) => string, token: string) => {
+      const hlc = new Hlc({ deviceId: DEVICE, clock: new FakeClock() });
+      hlc.measure(iso(T0), 0);
+      hlc.rebase();
+      const next = fold(hlc, token);
+      expect(hlc.fresh).toBe(true);
+      expect(compareVersion(token, next)).toBe(-1);
+      return parseVersion(next)!.micros;
+    };
+    const observed = (hlc: Hlc, token: string) => { hlc.observe(token); return hlc.tick(undefined); };
+    const asBase = (hlc: Hlc, token: string) => hlc.tick(token);
 
-    expect(compareVersion(token, hlc.tick(undefined))).toBe(-1);
+    // The server emits nothing past server_now + skew (sync.proto rule 5), so the Hlc folds tokens unclamped.
+    expect(run(observed, atSkew) <= bound).toBe(true);
+    expect(run(asBase, atSkew) <= bound).toBe(true);
+    expect(run(observed, pastSkew) > bound).toBe(true);
+    expect(run(asBase, pastSkew) > bound).toBe(true);
   });
 
   it('carries 1 us past the cap after a token at the cap with an exhausted counter, because order outranks the bound', () => {

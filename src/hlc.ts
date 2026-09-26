@@ -1,8 +1,10 @@
 // Mints SyncEvent.version tokens (sync.proto rule 5). A tick beats its base and every tick and token since
 // the last rebase; once anchored it is >= sample + monotonic elapsed, and <= server-now + clamp (+1 us on a
-// carry) while fresh and every earlier edit minted past the bound has been answered, and re-minted if REJECTED
-// version_future or dropped after a rebase for any other code. The clamp is the server's version_future skew
-// (MAX_FUTURE_SKEW_MS; any other clamp is refused), and the bound assumes monotonic time keeping server rate.
+// carry) while fresh and every earlier edit minted past the bound has been answered, or re-minted after a
+// rebase if unpushed, and re-minted if REJECTED version_future or dropped after a rebase for any other code.
+// The clamp is the server's version_future skew (MAX_FUTURE_SKEW_MS; any other clamp is refused), and the
+// bound assumes monotonic time keeping server rate and every token folded in, observed or handed to tick,
+// being at most server-now + clamp as the server guarantees.
 import {
   MAX_FUTURE_SKEW_MS,
   MAX_HLC_COUNTER,
@@ -132,8 +134,12 @@ export class Hlc {
 
   /**
    * Fold in a token seen from elsewhere (a Delta event) so the next tick
-   * beats it. Never clamped: the server bounds every token on the feed, and
-   * clamping here would mint an edit below its base.
+   * beats it. Never clamped: clamping here would mint an edit below its base.
+   * Every version the server emits, in Delta or as `current`, is at most
+   * server_now + 5 minutes when emitted: a pushed one by the check order, the
+   * import by min(export_date, server_now), and every other server write,
+   * server-owned facets included, at most server_now. The Hlc folds tokens
+   * unclamped, so the bound depends on this.
    */
   observe(version: string): void {
     const parsed = parseVersion(version);
@@ -150,7 +156,8 @@ export class Hlc {
 
   /**
    * Drop whatever the clock holds beyond the anchored present: tokens minted
-   * or observed while a clock ran ahead. After a Push is REJECTED
+   * or observed while a clock ran ahead. Call it after each session's first
+   * Status (a no-op when the clock is not ahead). After a Push is REJECTED
    * version_future, take a fresh Status (measure), rebase, adopt `current`,
    * then re-mint with tick(base). Re-mint every other unpushed edit minted
    * before the rebase whose version is past the new present (above
@@ -160,8 +167,9 @@ export class Hlc {
    * client_id, and it is re-minted only if that answer is REJECTED. Until it
    * is answered, later ticks on that facet, and through the clock every later
    * tick, may pass the bound (server-now + clamp), which holds while fresh and
-   * every earlier edit minted past the bound has been answered, and re-minted
-   * if REJECTED version_future or dropped after a rebase for any other code.
+   * every earlier edit minted past the bound has been answered, or re-minted
+   * after a rebase if unpushed, and re-minted if REJECTED version_future or
+   * dropped after a rebase for any other code.
    * Returns whether the state moved.
    */
   rebase(): boolean {

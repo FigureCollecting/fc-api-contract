@@ -109,17 +109,27 @@
 //     is fresh (since the sample, the wall clock has not run ahead of
 //     monotonic time by more than 5 minutes) a tick is also capped at the
 //     sample plus elapsed monotonic time plus 5 minutes, which binds only
-//     when a long round trip makes the offset suspect. So once anchored and
-//     rebased, a tick never passes server-now plus the clamp while the
-//     anchor is fresh and every earlier edit minted past the bound has been
-//     answered, and re-minted if REJECTED version_future or dropped after a
-//     rebase for any other code (bar a 1 us carry past a token at the bound
-//     whose counter is exhausted). That rests on the server's check order:
-//     the server runs every REJECTED check (version_malformed,
-//     version_future, facet_key_not_user_owned, device_mismatch,
-//     payload_invalid) before any STALE, REVIEW or APPLIED routing, so an
-//     event past server_now + 5 minutes is REJECTED version_future whatever
-//     the field's policy and whatever the stored version.
+//     when a long round trip makes the offset suspect. The client calls
+//     Hlc.rebase() after each session's first Status (a no-op when the clock
+//     is not ahead). So once anchored and rebased, a tick never passes
+//     server-now plus the clamp while the anchor is fresh and every earlier
+//     edit minted past the bound has been answered, or re-minted after a
+//     rebase if unpushed, and re-minted if REJECTED version_future or
+//     dropped after a rebase for any other code (bar a 1 us carry past a
+//     token at the bound whose counter is exhausted). That rests on the
+//     server's check order: the server runs the REJECTED checks in the
+//     listed order (version_malformed, version_future,
+//     facet_key_not_user_owned, device_mismatch, payload_invalid), all
+//     before any STALE, REVIEW or APPLIED routing, so an event past
+//     server_now + 5 minutes is REJECTED version_future unless an
+//     earlier-listed check fails, whatever the field's policy and whatever
+//     the stored version. Every version the server emits, in Delta or as
+//     `current`, is at most server_now + 5 minutes when emitted: a pushed
+//     one by the check order, the import by min(export_date, server_now),
+//     and every other server write, server-owned facets included, at most
+//     server_now. The Hlc folds tokens unclamped, so the bound depends on
+//     this. server_now is one clock: the one Status samples and the one
+//     version_future checks against.
 //
 //     A larger forward gap is a sleep (monotonic time stalls) or a wall-clock
 //     jump, and two clocks cannot tell them apart, so the Hlc trusts the wall:
@@ -130,12 +140,13 @@
 //     inflated version and outranks edits other devices made in between. A
 //     tick past the bound is carried two ways: it holds the clock ahead, and
 //     as a base it lifts the next edit on its facet. Until real time overtakes
-//     it or it is answered, and re-minted if REJECTED, later ticks may pass
-//     the bound even on a fresh anchor. The same holds before a session's
-//     first Status, when the Hlc runs on the offset restored from the last
-//     one: if the wall clock was corrected in between, ticks are off by that
-//     old offset. A phone on automatic time keeps its offset near zero and is
-//     unaffected by either.
+//     it or it has been answered, or re-minted after a rebase if unpushed,
+//     and re-minted if REJECTED version_future or dropped after a rebase for
+//     any other code, later ticks may pass the bound even on a fresh anchor.
+//     The same holds before a session's first Status, when the Hlc runs on
+//     the offset restored from the last one: if the wall clock was corrected
+//     in between, ticks are off by that old offset. A phone on automatic time
+//     keeps its offset near zero and is unaffected by either.
 //
 //     THE FACET FLOOR. Before minting any edit the client hands the facet's
 //     current local version to Hlc.tick(base) (undefined when it holds none),
@@ -143,9 +154,10 @@
 //     below versions the client already holds. After a push is REJECTED
 //     version_future the client takes a fresh Status, calls Hlc.rebase(),
 //     adopts `current` and re-mints with Hlc.tick(base). After any REJECTED
-//     edit whose version is past the present, whatever the code, the client
-//     takes a fresh Status and calls Hlc.rebase() before it mints again: a
-//     dropped edit held the clock ahead too. Every other pending (unpushed)
+//     edit, whatever the code, the client takes a fresh Status and, if the
+//     edit's version is past the fresh Status sample (server_now_iso), calls
+//     Hlc.rebase() before it mints again: a dropped edit held the clock ahead
+//     too. Every other pending (unpushed)
 //     edit minted before the rebase whose version is past the new present is
 //     re-minted the same way, on its facet's server version, and a later edit
 //     on that facet takes the re-minted version as its base: handed to tick
@@ -155,9 +167,9 @@
 //     each event's recorded outcome (PushRequest.client_id), so it is
 //     re-minted only if that answer is REJECTED. Until it is answered, later
 //     ticks on that facet, and through the clock every later tick, may pass
-//     the bound. The Hlc never clamps a base or an observed token: the server
-//     bounds every token on the feed, and a clamp there would mint an edit
-//     below its base.
+//     the bound. The Hlc never clamps a base or an observed token: a clamp
+//     there would mint an edit below its base, and every version the server
+//     emits is bounded (THE CLOCK).
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
 //     buf cannot see a grammar change; this comment and the golden vectors
@@ -345,10 +357,11 @@ enum PushOutcome {
   //                             DPoP-bound device
   //   payload_invalid           the payload fails its JSON Schema, an UPSERT
   //                             is empty, a DELETE is not, or op is unknown
-  // The server runs every REJECTED check (version_malformed, version_future,
-  // facet_key_not_user_owned, device_mismatch, payload_invalid) before any
-  // STALE, REVIEW or APPLIED routing, so an event past server_now + 5 minutes
-  // is REJECTED version_future whatever the field's policy and whatever the
+  // The server runs the REJECTED checks in the listed order (version_malformed,
+  // version_future, facet_key_not_user_owned, device_mismatch,
+  // payload_invalid), all before any STALE, REVIEW or APPLIED routing, so an
+  // event past server_now + 5 minutes is REJECTED version_future unless an
+  // earlier-listed check fails, whatever the field's policy and whatever the
   // stored version: rule 5's bound depends on it.
   // Retrying the same event cannot succeed: a replay under the same
   // client_id is REJECTED again with the same reason. For version_future the
@@ -356,9 +369,10 @@ enum PushOutcome {
   // re-mints with Hlc.tick(base) (rule 5), then re-mints the same way, on
   // its facet's server version, every other unpushed edit minted before the
   // rebase whose version is past the new present; for any other code it
-  // drops the edit and tells the user. After any REJECTED edit whose version
-  // is past the present, whatever the code, the client takes a fresh Status
-  // and calls Hlc.rebase() before it mints again. Before minting any edit,
+  // drops the edit and tells the user. After any REJECTED edit, whatever the
+  // code, the client takes a fresh Status and, if the edit's version is past
+  // the fresh Status sample (server_now_iso), calls Hlc.rebase() before it
+  // mints again. Before minting any edit,
   // not only a re-mint, the client hands Hlc.tick the facet's current local
   // version: a rebase can lower the clock below versions it holds for other
   // facets.
