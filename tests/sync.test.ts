@@ -142,6 +142,7 @@ describe('Push', () => {
       PushOutcome.DUPLICATE,
       PushOutcome.STALE,
       PushOutcome.REVIEW,
+      PushOutcome.REJECTED,
     ];
     const msg = create(PushResponseSchema, {
       results: outcomes.map((outcome, i) => ({
@@ -156,18 +157,41 @@ describe('Push', () => {
     expect(decoded.results.map((r) => r.outcome)).toEqual(outcomes);
   });
 
-  it('returns a server version on a non-applied result so the client can converge', () => {
+  it('carries the server facet whole on a non-applied result so the client can converge', () => {
+    const current = {
+      facetKey: 'holding:01J8Z9/condition',
+      version: '2026-09-14T12:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a',
+      op: SyncOp.UPSERT,
+      payload: '{"condition":"used"}',
+    };
     const msg = create(PushResultSchema, {
       facetKey: 'holding:01J8Z9/condition',
       outcome: PushOutcome.STALE,
-      version: '2026-09-14T12:00:00.000000Z',
+      version: current.version,
+      current,
     });
     const decoded = fromJson(PushResultSchema, toJson(PushResultSchema, msg));
 
-    // A STALE result without a version would force a full Delta just to learn
-    // what the client already lost.
+    // Version alone is the 0.1.0 defect: a client storing it next to its own
+    // losing payload drops the Delta event at that version as not newer.
     expect(decoded.outcome).toBe(PushOutcome.STALE);
-    expect(decoded.version).toBe('2026-09-14T12:00:00.000000Z');
+    expect(decoded.current?.version).toBe(current.version);
+    expect(decoded.current?.payload).toBe('{"condition":"used"}');
+    expect(decoded.current?.op).toBe(SyncOp.UPSERT);
+  });
+
+  it('round-trips a REJECTED result with its reason and no current value', () => {
+    const msg = create(PushResultSchema, {
+      facetKey: 'price/x',
+      outcome: PushOutcome.REJECTED,
+      reason: 'facet_key_not_user_owned: price/ is server-owned',
+    });
+    const decoded = fromBinary(PushResultSchema, toBinary(PushResultSchema, msg));
+
+    expect(decoded.outcome).toBe(PushOutcome.REJECTED);
+    expect(decoded.reason.split(':')[0]).toBe('facet_key_not_user_owned');
+    expect(decoded.current).toBeUndefined();
+    expect(decoded.version).toBe('');
   });
 });
 

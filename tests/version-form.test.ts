@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { SyncEventSchema, SyncOp } from '../src/index.js';
 
-// The canonical spelling of SyncEvent.version and PushResult.version, as
-// sync.proto rule 2 pins it: UTC, trailing Z, EXACTLY six fractional digits.
-// Defined here rather than shipped as a helper — plan §A.3 keeps helpers in
-// fc-shared. The contract states the form; this file is what enforces it.
+// The canonical spelling of the INSTANT part of SyncEvent.version, as sync.proto
+// rule 2 pins it: UTC, trailing Z, EXACTLY six fractional digits. The full
+// grammar, with the HLC suffix, is driven by golden/version-vectors.json in
+// version.test.ts; this file keeps the reasoning for the instant form.
 const CANONICAL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 
 const protoText = readFileSync(
@@ -56,20 +56,20 @@ describe('version lexical form', () => {
     expect([c, a, b].slice().sort()).toEqual([a, b, c]);
   });
 
-  it('leaves room for the HLC counter as a fixed-width sortable suffix', () => {
-    // Rule 4's merge token. Appending a fixed-width counter keeps the
-    // comparison lexicographic, so an old client that never learned about the
-    // counter still orders events correctly.
+  it('extends the instant with a fixed-width counter and device suffix that keeps the order lexicographic', () => {
+    // Rule 4's merge token. Fixed width is what keeps the comparison a plain
+    // string comparison on every client, including ones that never parse it.
     const base = '2026-09-14T11:30:00.123456Z';
-    const tick1 = `${base}#0000000001`;
-    const tick2 = `${base}#0000000002`;
+    const dev = '0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e';
+    const tick1 = `${base}#0000000001#${dev}`;
+    const tick2 = `${base}#0000000002#${dev}`;
     const later = '2026-09-14T11:30:00.123457Z';
 
-    expect(base < tick1).toBe(true); // no counter sorts first at the same instant
+    expect(base < tick1).toBe(true); // no suffix sorts first at the same instant
     expect(tick1 < tick2).toBe(true);
-    expect(tick2 < later).toBe(true); // a later instant still wins over any counter
-    // Variable width would break it, which is why the suffix must be padded.
-    expect(`${base}#10` < `${base}#9`).toBe(true);
+    expect(tick2 < later).toBe(true); // a later instant still wins over any suffix
+    // Variable width would break it, which is why the counter must be padded.
+    expect(`${base}#10#${dev}` < `${base}#9#${dev}`).toBe(true);
   });
 
   it('carries a canonical version through the codec unchanged', () => {
