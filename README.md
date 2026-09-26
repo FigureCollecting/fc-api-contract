@@ -12,9 +12,12 @@ published to GitHub Packages as `@figurecollecting/fc-api-contract`.
 | **`fc-shared`** | Hand-written, human-facing TypeScript: UI vocabulary, the api client shape, stores, helpers. Where it describes the same concept as a message here, it **re-exports** the generated type rather than redeclaring it — a redeclared type is how `figureDisplayMeta.ts` became a stale mirror. |
 | **`fc-ingest-contract`** | The **spine** contract (`ingest.v1`, `read.v1`), spoken inside the mesh between the scraper, fc-aggregation and the coordinator. The coordinator depends on both packages: on the spine contract because it *calls* the spine, on this one because it *serves* the client. |
 
-There are deliberately **no helper functions** in this package. If you want a convenience wrapper,
-it belongs in `fc-shared`; putting one here would create a second place to look for the same
-concept.
+The package ships a few **hand-written helpers**, and only for grammars that are part of the wire
+contract: the `version` token (`parseVersion`, `compareVersion`, `canonicalInstant`,
+`canonicalVersion`, and the `Hlc` that mints tokens) and the user-owned facet keys
+(`parseUserFacetKey`, `userFacetKey`). The coordinator and every client must order and validate
+these identically, so they live next to the protos with a shared test file,
+`golden/version-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
 
 ## The compatibility rule
 
@@ -60,9 +63,15 @@ In practice:
 
 ```
 proto/coordinator/v1/compare.proto   Compare pass-through (spine read.v1, carried verbatim)
-proto/coordinator/v1/sync.proto      SyncEvent + Delta / Push / Status
+proto/coordinator/v1/sync.proto      SyncEvent + Delta / Push / Status, version and facet-key grammar
+proto/coordinator/v1/catalog.proto   ProductCard reads: GetProducts / GetProductImages / SearchProducts
+proto/coordinator/v1/import.proto    ImportMfcExport
 src/gen/                             generated TypeScript — COMMITTED, never hand-edited
-src/index.ts                         the only hand-written file: a re-export barrel
+src/index.ts                         re-export barrel
+src/version.ts, src/hlc.ts           version grammar, comparator, HLC
+src/sync-vocabulary.ts               user-owned facet keys, holding states, REJECTED reason codes
+golden/version-vectors.json          version cases every implementation tests against
+schemas/                             JSON Schemas for the four user-owned facet payloads
 tests/                               codec round-trips and the invariants the comments claim
 ```
 
@@ -73,7 +82,9 @@ then prove the committed output is what the protos actually produce (`npm run ge
 nor drift-checked.
 
 **Payloads cross the wire as JSON text, never `google.protobuf.Struct`.** `CompareResponse.result_json`
-and `SyncEvent.payload` are strings. `Struct` folds every JSON number to float64, which silently
+and `SyncEvent.payload` are strings. `ProductCard` is the one typed read: the coordinator maps the
+spine's JSON onto it through an allowlist, because a card is cached on the phone and an unknown key
+or an original's image URL must never reach it. Its values are still strings. `Struct` folds every JSON number to float64, which silently
 corrupts a long product code or a trailing-zero price. Instants are raw ISO-8601 strings for the
 same reason, never `google.protobuf.Timestamp`: PostgreSQL is the arbiter of meaning and the wire
 carries the token it arbitrated. This is inherited verbatim from `read.v1`.
@@ -83,21 +94,32 @@ carries the token it arbitrated. This is inherited verbatim from `read.v1`.
 `SyncEvent.version` is the merge token: a client applies an event when `version > local[facet_key]`.
 That is a **string** comparison, so the spelling is part of the contract.
 
-**Canonical form: UTC, a trailing `Z`, exactly six fractional digits** — `2026-09-14T11:30:00.123456Z`.
+**Instant: UTC, a trailing `Z`, exactly six fractional digits** — `2026-09-14T11:30:00.123456Z`.
+An offset spelling (`+09:00`) breaks the identity between lexicographic order and instant order
+outright. Variable precision breaks it more quietly: PostgreSQL renders a zero fraction as
+`...:00Z`, and `.` sorts below `Z`, so `2026-09-14T11:30:00Z` sorts *greater* than
+`2026-09-14T11:30:00.000000Z` — one instant, two spellings, inverted.
 
-Both halves matter. An offset spelling (`+09:00`) breaks the identity between lexicographic order
-and instant order outright. Variable precision breaks it more quietly: PostgreSQL renders a zero
-fraction as `...:00Z`, and `.` sorts below `Z`, so `2026-09-14T11:30:00Z` sorts *greater* than
-`2026-09-14T11:30:00.000000Z` — one instant, two spellings, inverted. A redelivered event in the
-other spelling then re-applies, which is exactly the "replay from cursor 0 reaches the same state"
-property the sync feed must have.
+**User-owned facets carry the HLC form** (0.2.0), `<instant>#<10-digit counter>#<32-hex device id>`:
 
-Treat the token as **opaque and lexicographically ordered**, not as a date. That is what leaves
-room for the HLC: when the logical counter arrives it must be a fixed-width, zero-padded, sortable
-**suffix** (`2026-09-14T11:30:00.123456Z#0000000007`), never a separate field. A separate field
-would pass `buf breaking` — additions are additive — and still break every phone already in the
-field, because they compare `version` alone and would silently lose the tie-break. buf cannot see
-that; the rule in `sync.proto` is the only guard.
+```
+2026-09-14T11:30:00.123456Z#0000000007#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e
+```
+
+The device id is the enrolled device's uuid, lowercase and dashless; the MFC import writes under the
+reserved all-zero id. Every segment is fixed width, so bytewise order is version order and the
+device id makes it total. Tokens in the grammar order the same under C, glibc and ICU collations,
+but an out-of-grammar token (an uppercase or dashed device id) does not, so the server rejects one
+before storing it and compares with `compareVersion()` or on a `TEXT COLLATE "C"` column, never
+with `<` under a locale collation. The `Hlc` mints each edit above its facet's local version
+(`tick(base)`), trusts the wall clock after a sleep and recovers from a clock jump through
+`rebase()`. `sync.proto` rule 5 has the ordering table and the clock rules;
+`golden/version-vectors.json` has the cases.
+
+A grammar change passes `buf breaking`, so it is a semantic break buf cannot see. 0.2.0 made one
+(0.1.0 sketched `<instant>#<counter>` with no device id) and it is safe only because no 0.1.0
+`SyncService` consumer exists. The grammar is frozen from here: extend it only by a further
+fixed-width suffix, never by a separate field.
 
 ## Two doctrines the messages encode
 

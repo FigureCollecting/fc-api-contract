@@ -15,7 +15,7 @@
 // per-record — two devices editing different facets of the same holding both
 // win, which is the property bare record-level LWW throws away.
 //
-// FOUR RULES THIS SHAPE ENCODES:
+// SEVEN RULES THIS SHAPE ENCODES:
 //
 //  1. PAGING IS ON A SERVER SEQUENCE, NEVER A TIMESTAMP. `cursor` is opaque
 //     to the client and positional server-side. Timestamp paging silently
@@ -25,9 +25,9 @@
 //     without a wire break.
 //
 //  2. `version` IS AN OPAQUE, LEXICOGRAPHICALLY-ORDERED STRING TOKEN — the
-//     facet's `as_of`, never google.protobuf.Timestamp. Same fidelity
-//     doctrine as the spine: a PG-arbitrated instant must not round-trip
-//     through epoch seconds+nanos.
+//     facet's `as_of` plus the HLC suffix of rule 5, never
+//     google.protobuf.Timestamp. Same fidelity doctrine as the spine: a
+//     PG-arbitrated instant must not round-trip through epoch seconds+nanos.
 //
 //     The merge rule is a STRING comparison, so the spelling is part of the
 //     contract, not a formatting detail. The canonical form is UTC, a
@@ -47,38 +47,176 @@
 //     state. Emitting the canonical form is the SERVER's obligation.
 //
 //     Because the token is opaque and compared only as text, it can carry
-//     more than an instant later (rule 4) — provided the extension is a
+//     more than an instant (rule 5), provided every extension is a
 //     fixed-width sortable suffix.
 //
 //  3. `payload` IS JSON TEXT, never google.protobuf.Struct. Struct folds
 //     every JSON number to float64. Facet payloads carry prices and
 //     identifiers as strings and must stay that way end to end.
 //
-//  4. DISPLAY TIME IS NEVER RESTAMPED, AND THE MERGE TOKEN MAY GROW A
-//     COUNTER. `version` is a merge token, not the thing the UI shows. The
-//     user's local edit time travels inside `payload` and is shown as the
-//     user wrote it. Conflating the two is how "edited just now" appears on a
-//     record edited last Tuesday.
+//  4. DISPLAY TIME IS NEVER RESTAMPED. `version` is a merge token, not the
+//     thing the UI shows. The user's local edit time travels inside
+//     `payload` (edited_at plus tz) and is shown as the user wrote it.
+//     Conflating the two is how "edited just now" appears on a record edited
+//     last Tuesday.
 //
-//     The merge token is an HLC anchored to a measured per-connection server
-//     offset (StatusResponse.server_now_iso), clamped only when the offset is
-//     implausible. An HLC is not a plain instant: it carries a logical
-//     counter to break ties at the same physical time. There is exactly one
-//     way to land that counter compatibly — append it to `version` as a
-//     fixed-width, zero-padded, sortable suffix:
+//  5. THE VERSION GRAMMAR (0.2.0). A user-owned facet is versioned by an HLC
+//     anchored to a measured per-connection server offset
+//     (StatusResponse.server_now_iso) and clamped only when the offset looks
+//     suspect. Its token is the instant plus two fixed-width suffixes:
 //
-//         2026-09-14T11:30:00.123456Z#0000000007
+//         <instant>#<10-digit counter>#<32-hex device id>
+//         2026-09-14T11:30:00.123456Z#0000000007#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e
 //
-//     which keeps `version > local[facet]` correct on every client already in
-//     the field, including ones that never heard of the counter (an
-//     unsuffixed token sorts first at the same instant, the right answer for
-//     counter 0). The padding is not cosmetic: `#10` must not sort below
-//     `#9`.
+//     The device id is the DPoP-enrolled device's uuid spelled as a
+//     lowercase, dashless uuid (32 hex digits). Server-originated writes to a
+//     user facet (the MFC import) use the reserved all-zero device id. The
+//     bare <instant> form remains legal for server-owned facets; a Push of a
+//     user-owned facet must carry the full form. The 0.1.0 sketch
+//     `<instant>#<counter>` with no device id is not a valid token.
 //
-//     Adding the counter as a SEPARATE FIELD would pass `buf breaking` —
-//     additions are additive — and would still be a semantic break, because
-//     old phones comparing `version` alone would silently lose the tie-break.
-//     buf cannot see that. This rule is the only guard against it.
+//     Without the device id two devices could mint equal versions for
+//     different values, and each replica would keep whichever arrived first.
+//     With it, the order is total. Every segment is fixed width over ASCII,
+//     so a bytewise comparison of the text IS the order:
+//
+//       2026-09-14T11:30:00.123456Z                                       bare instant
+//     < 2026-09-14T11:30:00.123456Z#0000000000#00000000000000000000000000000000
+//                                                          server (import) device
+//     < 2026-09-14T11:30:00.123456Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e
+//     < 2026-09-14T11:30:00.123456Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a
+//                                                          device breaks the tie
+//     < 2026-09-14T11:30:00.123456Z#0000000009#ffffffffffffffffffffffffffffffff
+//     < 2026-09-14T11:30:00.123456Z#0000000010#00000000000000000000000000000000
+//                                               counter outranks device; #10 > #9
+//     < 2026-09-14T11:30:00.123457Z                     a later instant beats any suffix
+//
+//     Compare versions bytewise and nowhere else. Tokens in the grammar order
+//     the same under C, glibc and ICU collations, because every segment is
+//     fixed-width digits or lowercase hex at a fixed position. Tokens outside
+//     it need not: an uppercase or a dashed device id can order differently
+//     under en_US. So the server rejects an out-of-grammar token before it is
+//     stored (version_malformed), and PostgreSQL compares on a column
+//     declared TEXT COLLATE "C" or in the handler, never with `<` under a
+//     locale collation. The package ships compareVersion() and
+//     golden/version-vectors.json, whose collationTraps are the pairs to test
+//     that rejection with; every implementation tests against it.
+//
+//     THE CLOCK. The client's Hlc ticks on its wall clock plus the offset
+//     measured from the latest Status, and never below that Status sample
+//     plus the monotonic time elapsed since it, so a backward wall-clock
+//     correction mid-session cannot mint below the sample. While the anchor
+//     is fresh (since the sample, the wall clock has not run ahead of
+//     monotonic time by more than 5 minutes) a tick is also capped at the
+//     sample plus elapsed monotonic time plus 5 minutes, which binds only
+//     when a long round trip makes the offset suspect. The client calls
+//     Hlc.rebase() after each session's first Status (a no-op when the clock
+//     is not ahead). So once anchored and rebased, a tick never passes
+//     server-now plus the clamp (assuming the client's monotonic time keeps
+//     server rate) while the anchor is fresh and every earlier edit minted
+//     past the bound has been answered, or re-minted after a rebase if
+//     unpushed, and re-minted if REJECTED version_future or dropped, after a
+//     rebase if past the fresh Status sample, for any other code (bar a 1 us
+//     carry past a token at the bound whose counter is exhausted). That rests
+//     on the server's check order: the server runs the REJECTED checks in the
+//     listed order (version_malformed, version_future,
+//     facet_key_not_user_owned, device_mismatch, payload_invalid), all
+//     before any STALE, REVIEW or APPLIED routing, so an event past
+//     server_now + 5 minutes is REJECTED version_future unless an
+//     earlier-listed check fails, whatever the field's policy and whatever
+//     the stored version. Every version the server emits, in Delta or as
+//     `current`, is at most server_now + 5 minutes when emitted: a pushed
+//     one by the check order, the import by min(export_date, server_now),
+//     and every other server write, server-owned facets included, at most
+//     server_now. The Hlc folds tokens unclamped, so the bound depends on
+//     this. server_now is one clock that never steps back: the one Status
+//     samples and the one version_future checks against.
+//
+//     A larger forward gap is a sleep (monotonic time stalls) or a wall-clock
+//     jump, and two clocks cannot tell them apart, so the Hlc trusts the wall:
+//     an edit made after a sleep still outranks one made before it. The
+//     trade-off: a stale anchor may tick past server-now plus the clamp, and
+//     the server's version_future check is the backstop only when the push
+//     precedes real time catching up. An edit pushed later is accepted at its
+//     inflated version and outranks edits other devices made in between. A
+//     tick past the bound is carried two ways: it holds the clock ahead, and
+//     as a base it lifts the next edit on its facet. Until real time overtakes
+//     it or it has been answered, or re-minted after a rebase if unpushed,
+//     and re-minted if REJECTED version_future or dropped, after a rebase if
+//     past the fresh Status sample, for any other code, later ticks may pass
+//     the bound even on a fresh anchor.
+//     The same holds before a session's first Status, when the Hlc runs on
+//     the offset restored from the last one: if the wall clock was corrected
+//     in between, ticks are off by that old offset. A phone on automatic time
+//     keeps its offset near zero and is unaffected by either.
+//
+//     THE FACET FLOOR. Before minting any edit the client hands the facet's
+//     current local version to Hlc.tick(base) (undefined when it holds none),
+//     so the edit lands above it even after rebase() has lowered the clock
+//     below versions the client already holds. After a push is REJECTED
+//     version_future the client takes a fresh Status, calls Hlc.rebase(),
+//     adopts `current` and re-mints with Hlc.tick(base). After any REJECTED
+//     edit, whatever the code, the client takes a fresh Status and, if the
+//     edit's version is past the fresh Status sample (server_now_iso), calls
+//     Hlc.rebase() before it mints again: a dropped edit held the clock ahead
+//     too. After any rebase, re-mint every unpushed edit past the new present,
+//     on its facet's server version with Hlc.tick(base), the first Status's
+//     rebase included, and a later edit on that facet takes the re-minted
+//     version as its base: handed to tick as a base, the old version would
+//     carry the rebased clock past the bound. An edit pushed but not yet
+//     answered is not re-minted in place: its retry carries the same
+//     client_id and the server answers with each event's recorded outcome
+//     (PushRequest.client_id), so it is
+//     re-minted only if that answer is REJECTED. Until it is answered, later
+//     ticks on that facet, and through the clock every later tick, may pass
+//     the bound. The Hlc never clamps a base or an observed token: a clamp
+//     there would mint an edit below its base, and every version the server
+//     emits is bounded (THE CLOCK).
+//
+//     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
+//     buf cannot see a grammar change; this comment and the golden vectors
+//     are the guard. From 0.2.0 on the grammar is frozen: extend it only by a
+//     further fixed-width suffix, never by a separate field.
+//
+//  6. USER-OWNED FACET KEYS. The client may write only these four keys;
+//     every other key is server-owned and a Push of one is REJECTED:
+//
+//         holding/{head_id}/status   {"status": "owned"|"ordered"|"wished", ...}
+//         holding/{head_id}/count    {"count": 1..9999, ...}
+//         uf/{head_id}/score         {"score": 1..10, ...}
+//         uf/{head_id}/note          {"note": "<= 10,000 code points", ...}
+//
+//     head_id is the spine product id as PostgreSQL renders a uuid:
+//     lowercase, dashed. One status register per (user, product) is the
+//     holding grain; moving Owned to Wished rewrites one facet. A holding
+//     exists while its status facet is live; count, score and note are
+//     shown only alongside a live status. Every payload also carries
+//     edited_at (ISO-8601 with the device's local offset) and tz (IANA
+//     name), for display only. JSON Schemas ship in schemas/. The schemas
+//     check writes only: the client before it mints, the server on Push. A
+//     reader never validates an inbound payload against them, so a property
+//     added later cannot break an installed phone.
+//
+//     Keys are written against the head_id at write time and never re-keyed.
+//     Every facet of a holding is keyed by the head_id its status facet was
+//     first written under, never by the ProductCard.head_id on screen. After
+//     an ER merge the card names the survivor, and a score keyed on the
+//     survivor would sit beside no live status and stay hidden. So a write
+//     for a card uses the requested_as ref that holds a live status; only a
+//     card with none uses card.head_id. When two held ids merge into one
+//     card, the status with the higher version is displayed (a tombstone
+//     counts as no status), with the count, score and note keyed beside it,
+//     and new writes go to its head_id. A delete on a merged card tombstones
+//     every live status among requested_as, each minted on its own facet's
+//     version, so one delete clears the card and an older status does not
+//     resurface. A client that hydrates over several GetProducts calls
+//     groups cards by head_id across every call and page and unions their
+//     requested_as; the display, write-target and delete rules apply to that
+//     union. Re-keying or merging holdings is a later change.
+//
+//  7. DEFERRED, DELIBERATELY. There is no Resync or prune signal and no Ack
+//     RPC in 0.2.0: the feed never prunes yet. The recovery for an unreadable
+//     cursor is INVALID_ARGUMENT followed by a replay from an empty cursor.
 // ============================================================================
 
 // @generated by protoc-gen-es v2.15.0 with parameter "target=ts,import_extension=js"
@@ -93,7 +231,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coordinator/v1/sync.proto.
  */
 export const file_coordinator_v1_sync: GenFile = /*@__PURE__*/
-  fileDesc("Chljb29yZGluYXRvci92MS9zeW5jLnByb3RvEg5jb29yZGluYXRvci52MSJkCglTeW5jRXZlbnQSEQoJZmFjZXRfa2V5GAEgASgJEg8KB3ZlcnNpb24YAiABKAkSIgoCb3AYAyABKA4yFi5jb29yZGluYXRvci52MS5TeW5jT3ASDwoHcGF5bG9hZBgEIAEoCSItCgxEZWx0YVJlcXVlc3QSDgoGY3Vyc29yGAEgASgJEg0KBWxpbWl0GAIgASgNImEKDURlbHRhUmVzcG9uc2USKQoGZXZlbnRzGAEgAygLMhkuY29vcmRpbmF0b3IudjEuU3luY0V2ZW50EhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIIksKC1B1c2hSZXF1ZXN0EhEKCWNsaWVudF9pZBgBIAEoCRIpCgZldmVudHMYAiADKAsyGS5jb29yZGluYXRvci52MS5TeW5jRXZlbnQiXgoKUHVzaFJlc3VsdBIRCglmYWNldF9rZXkYASABKAkSLAoHb3V0Y29tZRgCIAEoDjIbLmNvb3JkaW5hdG9yLnYxLlB1c2hPdXRjb21lEg8KB3ZlcnNpb24YAyABKAkiOwoMUHVzaFJlc3BvbnNlEisKB3Jlc3VsdHMYASADKAsyGi5jb29yZGluYXRvci52MS5QdXNoUmVzdWx0Ig8KDVN0YXR1c1JlcXVlc3QiUAoOU3RhdHVzUmVzcG9uc2USDgoGY3Vyc29yGAEgASgJEhYKDnBlbmRpbmdfcmV2aWV3GAIgASgEEhYKDnNlcnZlcl9ub3dfaXNvGAMgASgJKkkKBlN5bmNPcBIXChNTWU5DX09QX1VOU1BFQ0lGSUVEEAASEgoOU1lOQ19PUF9VUFNFUlQQARISCg5TWU5DX09QX0RFTEVURRACKpIBCgtQdXNoT3V0Y29tZRIcChhQVVNIX09VVENPTUVfVU5TUEVDSUZJRUQQABIYChRQVVNIX09VVENPTUVfQVBQTElFRBABEhoKFlBVU0hfT1VUQ09NRV9EVVBMSUNBVEUQAhIWChJQVVNIX09VVENPTUVfU1RBTEUQAxIXChNQVVNIX09VVENPTUVfUkVWSUVXEAQy3wEKC1N5bmNTZXJ2aWNlEkQKBURlbHRhEhwuY29vcmRpbmF0b3IudjEuRGVsdGFSZXF1ZXN0Gh0uY29vcmRpbmF0b3IudjEuRGVsdGFSZXNwb25zZRJBCgRQdXNoEhsuY29vcmRpbmF0b3IudjEuUHVzaFJlcXVlc3QaHC5jb29yZGluYXRvci52MS5QdXNoUmVzcG9uc2USRwoGU3RhdHVzEh0uY29vcmRpbmF0b3IudjEuU3RhdHVzUmVxdWVzdBoeLmNvb3JkaW5hdG9yLnYxLlN0YXR1c1Jlc3BvbnNlYgZwcm90bzM");
+  fileDesc("Chljb29yZGluYXRvci92MS9zeW5jLnByb3RvEg5jb29yZGluYXRvci52MSJkCglTeW5jRXZlbnQSEQoJZmFjZXRfa2V5GAEgASgJEg8KB3ZlcnNpb24YAiABKAkSIgoCb3AYAyABKA4yFi5jb29yZGluYXRvci52MS5TeW5jT3ASDwoHcGF5bG9hZBgEIAEoCSItCgxEZWx0YVJlcXVlc3QSDgoGY3Vyc29yGAEgASgJEg0KBWxpbWl0GAIgASgNImEKDURlbHRhUmVzcG9uc2USKQoGZXZlbnRzGAEgAygLMhkuY29vcmRpbmF0b3IudjEuU3luY0V2ZW50EhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIIksKC1B1c2hSZXF1ZXN0EhEKCWNsaWVudF9pZBgBIAEoCRIpCgZldmVudHMYAiADKAsyGS5jb29yZGluYXRvci52MS5TeW5jRXZlbnQimgEKClB1c2hSZXN1bHQSEQoJZmFjZXRfa2V5GAEgASgJEiwKB291dGNvbWUYAiABKA4yGy5jb29yZGluYXRvci52MS5QdXNoT3V0Y29tZRIPCgd2ZXJzaW9uGAMgASgJEioKB2N1cnJlbnQYBCABKAsyGS5jb29yZGluYXRvci52MS5TeW5jRXZlbnQSDgoGcmVhc29uGAUgASgJIjsKDFB1c2hSZXNwb25zZRIrCgdyZXN1bHRzGAEgAygLMhouY29vcmRpbmF0b3IudjEuUHVzaFJlc3VsdCIPCg1TdGF0dXNSZXF1ZXN0IlAKDlN0YXR1c1Jlc3BvbnNlEg4KBmN1cnNvchgBIAEoCRIWCg5wZW5kaW5nX3JldmlldxgCIAEoBBIWCg5zZXJ2ZXJfbm93X2lzbxgDIAEoCSpJCgZTeW5jT3ASFwoTU1lOQ19PUF9VTlNQRUNJRklFRBAAEhIKDlNZTkNfT1BfVVBTRVJUEAESEgoOU1lOQ19PUF9ERUxFVEUQAiqtAQoLUHVzaE91dGNvbWUSHAoYUFVTSF9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGAoUUFVTSF9PVVRDT01FX0FQUExJRUQQARIaChZQVVNIX09VVENPTUVfRFVQTElDQVRFEAISFgoSUFVTSF9PVVRDT01FX1NUQUxFEAMSFwoTUFVTSF9PVVRDT01FX1JFVklFVxAEEhkKFVBVU0hfT1VUQ09NRV9SRUpFQ1RFRBAFMt8BCgtTeW5jU2VydmljZRJECgVEZWx0YRIcLmNvb3JkaW5hdG9yLnYxLkRlbHRhUmVxdWVzdBodLmNvb3JkaW5hdG9yLnYxLkRlbHRhUmVzcG9uc2USQQoEUHVzaBIbLmNvb3JkaW5hdG9yLnYxLlB1c2hSZXF1ZXN0GhwuY29vcmRpbmF0b3IudjEuUHVzaFJlc3BvbnNlEkcKBlN0YXR1cxIdLmNvb3JkaW5hdG9yLnYxLlN0YXR1c1JlcXVlc3QaHi5jb29yZGluYXRvci52MS5TdGF0dXNSZXNwb25zZWIGcHJvdG8z");
 
 /**
  * ---------------------------------------------------------------------------
@@ -106,18 +244,17 @@ export const file_coordinator_v1_sync: GenFile = /*@__PURE__*/
  */
 export type SyncEvent = Message<"coordinator.v1.SyncEvent"> & {
   /**
-   * Stable identity of the facet being replaced. Opaque to transport; the
-   * client uses it as the key of its local version map. Never reused for a
-   * different facet, because a reused key would make a stale event win.
+   * Stable identity of the facet being replaced; the key of the client's
+   * local version map. Never reused for a different facet, because a reused
+   * key would make a stale event win. User-owned keys follow rule 6.
    *
    * @generated from field: string facet_key = 1;
    */
   facetKey: string;
 
   /**
-   * The facet's `as_of` — the merge token. Canonical form: UTC, trailing `Z`,
-   * exactly six fractional digits (rule 2), compared as an opaque string. The
-   * client applies this event iff version > local[facet_key].
+   * The merge token, in the grammar of rule 5, compared bytewise. The client
+   * applies this event iff version > local[facet_key].
    *
    * @generated from field: string version = 2;
    */
@@ -227,10 +364,17 @@ export const DeltaResponseSchema: GenMessage<DeltaResponse> = /*@__PURE__*/
  */
 export type PushRequest = Message<"coordinator.v1.PushRequest"> & {
   /**
-   * Client-chosen idempotency key, unique per user. A retry of the same
-   * batch MUST carry the same client_id; the server answers the replay from
-   * its record rather than re-applying. This is what makes an unacknowledged
-   * push safe to retry on reconnect.
+   * Client-chosen idempotency key, unique per user: 1 to 128 printable ASCII
+   * characters, no space; anything else is INVALID_ARGUMENT. A retry of the
+   * same batch MUST carry the same client_id and the same events. A replay
+   * (same client_id, same events) returns each event's recorded outcome and
+   * reason, and never re-applies: an event first APPLIED is answered
+   * DUPLICATE, one first REJECTED is REJECTED again with the same reason, one
+   * first STALE is STALE again and one first REVIEW is REVIEW again.
+   * `current` on every replayed user-owned result is the facet as the server
+   * holds it at the replay. The same client_id with different events is
+   * INVALID_ARGUMENT. This is what makes an unacknowledged push safe to retry
+   * on reconnect.
    *
    * @generated from field: string client_id = 1;
    */
@@ -253,6 +397,26 @@ export const PushRequestSchema: GenMessage<PushRequest> = /*@__PURE__*/
   messageDesc(file_coordinator_v1_sync, 3);
 
 /**
+ * ---------------------------------------------------------------------------
+ * PushResult — one per pushed event.
+ *
+ * THE CLIENT RULE: adopt `current` whole — version, op and payload together.
+ * Never pair the server's version with the client's losing payload. (0.1.0
+ * told the client to store `version` alone; a STALE or REVIEW client then held
+ * its losing value under the server's version, and the Delta event at that
+ * version was dropped as not newer. That device never converged.)
+ *
+ *   * local[facet_key] still holds the event this result answers (same
+ *     version): replace it with `current` on every outcome, regardless of
+ *     which of the two versions is higher. REVIEW and REJECTED can hand back an
+ *     OLDER version; the server did not keep the client's write, so the
+ *     local copy must not keep it either. When `current` is unset, drop the
+ *     local value and its version so any later Delta event applies.
+ *   * local has moved past that event since the push (a Delta event or a
+ *     newer local edit): treat `current` as a Delta event and apply it only
+ *     if current.version > local[facet_key].
+ * ---------------------------------------------------------------------------
+ *
  * @generated from message coordinator.v1.PushResult
  */
 export type PushResult = Message<"coordinator.v1.PushResult"> & {
@@ -271,14 +435,34 @@ export type PushResult = Message<"coordinator.v1.PushResult"> & {
   outcome: PushOutcome;
 
   /**
-   * The server's authoritative version for this facet after the push, in the
-   * same canonical form as SyncEvent.version (rule 2). The client stores it
-   * as local[facet_key] whatever the outcome — that is what converges a STALE
-   * or REVIEW result without another pull.
+   * Equals current.version when `current` is set, and is empty when it is
+   * not. Kept for 0.1.0 wire compatibility; do not use it on its own.
    *
    * @generated from field: string version = 3;
    */
   version: string;
+
+  /**
+   * The server's authoritative facet for facet_key after this push. Always
+   * set on APPLIED, DUPLICATE, STALE and REVIEW. On REJECTED it is set only
+   * when the key is user-owned and the server holds a value for it. A replay
+   * (same client_id, same events) returns each event's recorded outcome and
+   * reason: an event first APPLIED is answered DUPLICATE, one first REJECTED
+   * is REJECTED again with the same reason, one first STALE is STALE again
+   * and one first REVIEW is REVIEW again. `current` on every replayed
+   * user-owned result is the facet as the server holds it at the replay.
+   *
+   * @generated from field: coordinator.v1.SyncEvent current = 4;
+   */
+  current?: SyncEvent | undefined;
+
+  /**
+   * Set only on REJECTED: a code from PushOutcome, then optional detail.
+   * Branch on the code (the text before the first ':'), show the rest.
+   *
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
 };
 
 /**
@@ -347,10 +531,10 @@ export type StatusResponse = Message<"coordinator.v1.StatusResponse"> & {
   pendingReview: bigint;
 
   /**
-   * The server's clock in the canonical form of rule 2, sampled when this
-   * response was built. The client measures its offset from this (rule 4) and anchors
-   * its HLC to the measurement, clamping only when the offset is
-   * implausible. Never used to restamp anything the user sees.
+   * The server's clock as a bare canonical instant (rule 2), sampled when
+   * this response was built. The client measures its offset from this at the
+   * midpoint of the round trip and anchors its HLC to it (rule 5). Never used
+   * to restamp anything the user sees.
    *
    * @generated from field: string server_now_iso = 3;
    */
@@ -424,16 +608,20 @@ export enum PushOutcome {
   UNSPECIFIED = 0,
 
   /**
-   * Written. The facet now reads at `version` in PushResult.
+   * Written. `current` is the event as the server stored it.
    *
    * @generated from enum value: PUSH_OUTCOME_APPLIED = 1;
    */
   APPLIED = 1,
 
   /**
-   * Recognised as a replay of an earlier batch with the same client_id.
-   * Nothing was written a second time; PushResult.version is the state the
-   * original push produced.
+   * A replay (same client_id, same events) returns each event's recorded
+   * outcome and reason: an event first APPLIED is answered DUPLICATE, one
+   * first REJECTED is REJECTED again with the same reason, one first STALE is
+   * STALE again and one first REVIEW is REVIEW again. `current` on every
+   * replayed user-owned result is the facet as the server holds it at the
+   * replay. DUPLICATE answers only an event that was written, and nothing is
+   * written a second time.
    *
    * @generated from enum value: PUSH_OUTCOME_DUPLICATE = 2;
    */
@@ -441,8 +629,7 @@ export enum PushOutcome {
 
   /**
    * The server already holds a version >= this event's. Nothing written.
-   * PushResult.version is the server's, so the client can fast-forward
-   * without a Delta round trip.
+   * `current` is the winning facet, so the client converges without a Delta.
    *
    * @generated from enum value: PUSH_OUTCOME_STALE = 3;
    */
@@ -450,12 +637,47 @@ export enum PushOutcome {
 
   /**
    * The field's policy is REVIEW or LOCKED, so the write went to the pending
-   * review queue instead of to the facet. PushResult.version is still the
-   * server's current value: the client must NOT show the edit as landed.
+   * review queue instead of to the facet. `current` is the facet the server
+   * kept: the client must NOT show the edit as landed.
    *
    * @generated from enum value: PUSH_OUTCOME_REVIEW = 4;
    */
   REVIEW = 4,
+
+  /**
+   * The event is unacceptable as sent and nothing was written. `reason`
+   * starts with one of these codes, then optionally ": " and detail:
+   *   version_malformed         not the grammar of rule 5 (a user-owned key
+   *                             needs the full <instant>#<counter>#<device>)
+   *   version_future            instant later than server_now + 5 minutes
+   *   facet_key_not_user_owned  the key is not one of rule 6's four forms
+   *   device_mismatch           the version's device id is not the caller's
+   *                             DPoP-bound device
+   *   payload_invalid           the payload fails its JSON Schema, an UPSERT
+   *                             is empty, a DELETE is not, or op is unknown
+   * The server runs the REJECTED checks in the listed order (version_malformed,
+   * version_future, facet_key_not_user_owned, device_mismatch,
+   * payload_invalid), all before any STALE, REVIEW or APPLIED routing, so an
+   * event past server_now + 5 minutes is REJECTED version_future unless an
+   * earlier-listed check fails, whatever the field's policy and whatever the
+   * stored version: rule 5's bound depends on it.
+   * Retrying the same event cannot succeed: a replay under the same
+   * client_id is REJECTED again with the same reason. For version_future the
+   * client takes a fresh Status, calls Hlc.rebase(), adopts `current` and
+   * re-mints with Hlc.tick(base) (rule 5), then re-mints the same way, on
+   * its facet's server version, every other unpushed edit minted before the
+   * rebase whose version is past the new present; for any other code it
+   * drops the edit and tells the user. After any REJECTED edit, whatever the
+   * code, the client takes a fresh Status and, if the edit's version is past
+   * the fresh Status sample (server_now_iso), calls Hlc.rebase() before it
+   * mints again. Before minting any edit,
+   * not only a re-mint, the client hands Hlc.tick the facet's current local
+   * version: a rebase can lower the clock below versions it holds for other
+   * facets.
+   *
+   * @generated from enum value: PUSH_OUTCOME_REJECTED = 5;
+   */
+  REJECTED = 5,
 }
 
 /**
@@ -471,12 +693,15 @@ export const PushOutcomeSchema: GenEnum<PushOutcome> = /*@__PURE__*/
  * ERROR CONTRACT:
  *   * an unreadable cursor -> INVALID_ARGUMENT. The client's recovery is a
  *     full replay from an empty cursor, which is always safe.
- *   * an empty client_id on Push -> INVALID_ARGUMENT: without it a retry
- *     cannot be recognised, and a silently non-idempotent push is worse than
- *     a rejected one.
+ *   * a client_id that is not 1 to 128 printable ASCII characters, no space
+ *     -> INVALID_ARGUMENT: without one a retry cannot be recognised, and a
+ *     silently non-idempotent push is worse than a rejected one.
+ *   * a client_id already recorded with different events ->
+ *     INVALID_ARGUMENT: a replay must be the same batch, or its recorded
+ *     outcomes would answer events it never carried.
  *   * a rejected individual event is NOT an RPC error. It comes back as a
- *     PushResult with a non-APPLIED outcome, because a batch with one stale
- *     event must not fail the other nineteen.
+ *     PushResult with a non-APPLIED outcome (STALE, REVIEW or REJECTED),
+ *     because a batch with one bad event must not fail the other nineteen.
  * ---------------------------------------------------------------------------
  *
  * @generated from service coordinator.v1.SyncService

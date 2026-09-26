@@ -1,0 +1,252 @@
+// ============================================================================
+// coordinator.v1 — the catalog read path for the client.
+//
+//   fc-mobile ──Connect-Web/TLS──► coordinator.v1.CatalogService
+//                                       │ mints the entitlement assertion
+//                                       │ SERVER-SIDE, per call
+//                                       ▼
+//                                  read.v1.SpineRead  (mesh, gRPC + mTLS)
+//
+// The spine answers with JSON text carrying every winning claim. This service
+// does NOT pass that blob through, unlike CompareService. It maps it onto a
+// small typed ProductCard through an explicit allowlist, because a card is
+// cached on the phone and replayed offline: an unknown key or an image URL
+// that names an original must never reach the device, and bytes already on a
+// phone cannot be revoked.
+//
+// INVENTORY. ProductCard carries no inventory_level, in 0.2.0 or by default
+// later. Inventory magnitude is an entitlement-gated claim (Ross, 2026-09-08:
+// persist, gate delivery) and a card is offline-cached display data. Stock
+// for a product is read through CompareService, which carries it gated and
+// names a withholding in coverage.redacted. The coordinator still mints the
+// assertion on every spine call; entitlement is asserted at that hop, not on
+// the card. A gated field added to the card later must bring a Coverage lift
+// with it in the same change.
+//
+// ER REDIRECTS. A merged product id stays valid forever: the spine resolves
+// it through the redirect chain to the survivor. A ProductCard therefore
+// names the survivor in head_id and echoes, in requested_as, every ref from
+// this request that resolved to it. The client's holding facets stay keyed
+// on the head_id they were written against (never re-keyed, sync.proto rule
+// 6) and are displayed through requested_as. Two held ids in one request
+// that merge into one survivor come back as ONE card naming both; sync.proto
+// rule 6 says which of them a new write uses, which status is shown and what
+// a delete clears. A client that hydrates over several GetProducts calls
+// groups cards by head_id across every call and page and unions their
+// requested_as; the display, write-target and delete rules of sync.proto
+// rule 6 apply to that union.
+// ============================================================================
+
+syntax = "proto3";
+
+package coordinator.v1;
+
+// ---------------------------------------------------------------------------
+// ProductRef — one product, named one of three ways. A ref that matches
+// nothing is not an error; it comes back in GetProductsResponse.unresolved.
+// ---------------------------------------------------------------------------
+message ProductRef {
+  oneof ref {
+    // A spine product id (lowercase dashed uuid), current or merged.
+    string head_id = 1;
+
+    // GS1 identifier (GTIN-14, zero-padded).
+    string gtin14 = 2;
+
+    // A store's own coordinates, e.g. ("mfc", "1144").
+    SourceItem source_item = 3;
+  }
+}
+
+// A store's site key and its native id for a record, verbatim.
+message SourceItem {
+  string site = 1;
+  string native_id = 2;
+}
+
+// ---------------------------------------------------------------------------
+// CardText — one display value and when the spine first observed it.
+//
+// Presence carries meaning: an absent CardText means the spine holds no value
+// for that field, so the client renders "unknown", never an empty string.
+// ---------------------------------------------------------------------------
+message CardText {
+  // The value as the spine holds it, never empty when the message is set.
+  string value = 1;
+
+  // The spine's as_of for the claim that supplied `value`, as a canonical
+  // instant (UTC, six fractional digits). Display only, never a merge token.
+  // Empty when the value came from a materialized column with no claim time.
+  string as_of = 2;
+}
+
+// ---------------------------------------------------------------------------
+// ProductCard — the client-facing display record for one product.
+// ---------------------------------------------------------------------------
+message ProductCard {
+  // The survivor: the cluster head the refs in requested_as resolved to.
+  string head_id = 1;
+
+  // The refs from THIS request that resolved to this card, as sent. Two refs
+  // can name one product; a merged id names its survivor.
+  repeated ProductRef requested_as = 2;
+
+  CardText title = 3;
+  CardText manufacturer = 4;
+
+  // The origin series (the work), e.g. "Character Vocal Series".
+  CardText series = 5;
+  CardText character = 6;
+
+  // As the store states it, e.g. "1/7" or "Non-scale".
+  CardText scale = 7;
+
+  // "YYYY-MM".
+  CardText release_ym = 8;
+
+  // Every GTIN-14 in the cluster, zero-padded. No as_of: identifiers are
+  // facts about the product, not observations of it.
+  repeated string gtin14s = 9;
+
+  // The source's content level: general | intermediate | explicit |
+  // controversial | nsfw | nsfw+ | unknown. Absent means the source has no
+  // level concept. Treat `unknown` as the most restrictive.
+  CardText content_level = 10;
+
+  // Hex SHA-256 content addresses of display DERIVATIVES, primary first.
+  // Never an original, never a URL; fetch refs come from GetProductImages.
+  // Empty until derivatives exist.
+  repeated string derivative_ids = 11;
+}
+
+// ---------------------------------------------------------------------------
+// GetProducts — the cards for a batch of refs, one page at a time.
+//
+// PAGING. The client MUST follow next_page_token until it is empty. The
+// coordinator passes the spine's pages through one to one; the token is
+// opaque and bound to the ref list, so send the same refs with every page.
+// Products come back in the order of their first naming ref, deduplicated.
+// `unresolved` describes the batch and is returned on the first page only: a
+// client that appends pages must not append it again.
+// ---------------------------------------------------------------------------
+message GetProductsRequest {
+  // At most 200 refs. More, or none, is INVALID_ARGUMENT before any spine
+  // call; the batch is never truncated.
+  repeated ProductRef refs = 1;
+
+  // 0 = the server default (currently 50), capped at 200. Both clamp
+  // silently: read the page you were given, never assume its size.
+  uint32 page_size = 2;
+
+  // Empty for the first page, else the previous next_page_token.
+  string page_token = 3;
+}
+
+message GetProductsResponse {
+  repeated ProductCard products = 1;
+
+  // Refs that matched no product, as sent. First page only.
+  repeated ProductRef unresolved = 2;
+
+  // Empty on the last page.
+  string next_page_token = 3;
+}
+
+// ---------------------------------------------------------------------------
+// GetProductImages — derivative refs for a batch of products.
+//
+// Pass head ids as ProductCard.head_id names them. Paging is over IMAGE
+// ROWS, not products, with the same token rules as GetProducts: follow
+// next_page_token until it is empty, and a product's images may span pages.
+// A product with no displayable derivative is simply absent.
+// ---------------------------------------------------------------------------
+message GetProductImagesRequest {
+  // At most 200; more, or none, is INVALID_ARGUMENT.
+  repeated string head_ids = 1;
+
+  // 0 = the server default (currently 50), capped at 200.
+  uint32 page_size = 2;
+
+  string page_token = 3;
+}
+
+message GetProductImagesResponse {
+  repeated ProductImages products = 1;
+
+  // Empty on the last page.
+  string next_page_token = 2;
+}
+
+message ProductImages {
+  string head_id = 1;
+
+  // Render order: the primary first, then the gallery by position.
+  repeated ProductImage images = 2;
+}
+
+// One derivative the client may show. The original's content address, its
+// object key and the capture that observed it are not on this surface.
+message ProductImage {
+  // Hex SHA-256 of the derivative bytes.
+  string derivative_id = 1;
+
+  // The spine's role for the image, e.g. "primary" or "gallery".
+  string role = 2;
+
+  bool primary = 3;
+
+  // e.g. "image/webp". Empty when unknown.
+  string content_type = 4;
+
+  // Pixel dimensions; 0 when unknown.
+  uint32 width = 5;
+  uint32 height = 6;
+
+  // Content-addressed and immutable, so it may be cached forever. Empty when
+  // no public media base is configured; the client shows a placeholder.
+  string url = 7;
+}
+
+// ---------------------------------------------------------------------------
+// SearchProducts — catalog-wide free-text search. Defined in 0.2.0 and
+// answered UNIMPLEMENTED until the spine's search read lands; filters arrive
+// as additive fields then.
+// ---------------------------------------------------------------------------
+message SearchProductsRequest {
+  // Free text, Latin or kana. Empty is INVALID_ARGUMENT.
+  string query = 1;
+
+  // 0 = the server default; capped at 50.
+  uint32 page_size = 2;
+
+  // Empty for the first page, else the previous next_page_token.
+  string page_token = 3;
+}
+
+message SearchProductsResponse {
+  repeated ProductCard products = 1;
+
+  // Empty on the last page.
+  string next_page_token = 2;
+}
+
+// ---------------------------------------------------------------------------
+// CatalogService — READ-ONLY.
+//
+// ERROR CONTRACT:
+//   * an empty or oversized batch, a ref with no case set, or a page_token
+//     not issued for this batch -> INVALID_ARGUMENT, before any spine call.
+//   * missing or invalid OIDC token or DPoP proof -> UNAUTHENTICATED, as
+//     CompareService.
+//   * a ref that matches nothing -> OK, listed in `unresolved`.
+//   * the caller lacks an entitlement -> OK. Nothing on these messages is
+//     gated in 0.2.0.
+//   * spine unreachable -> UNAVAILABLE. Every call is a pure read and may be
+//     retried freely.
+//   * SearchProducts -> UNIMPLEMENTED until served.
+// ---------------------------------------------------------------------------
+service CatalogService {
+  rpc GetProducts(GetProductsRequest) returns (GetProductsResponse);
+  rpc GetProductImages(GetProductImagesRequest) returns (GetProductImagesResponse);
+  rpc SearchProducts(SearchProductsRequest) returns (SearchProductsResponse);
+}
