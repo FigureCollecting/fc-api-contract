@@ -3,9 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   HOLDING_STATUSES,
+  Hlc,
   PUSH_REJECT_REASONS,
+  SyncOp,
   USER_FACET_FIELDS,
   USER_FACET_PAYLOAD_SCHEMAS,
+  compareVersion,
   parseUserFacetKey,
   userFacetKey,
 } from '../src/index.js';
@@ -70,5 +73,43 @@ describe('vocabulary', () => {
     for (const rel of Object.values(USER_FACET_PAYLOAD_SCHEMAS)) {
       expect(existsSync(fileURLToPath(new URL(`../${rel}`, import.meta.url))), rel).toBe(true);
     }
+  });
+});
+
+describe('rule 6: a merged card', () => {
+  const A = '5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b';
+  const B = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+  const DEVICE = '0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e';
+  const OTHER = '9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a';
+  type Held = { version: string; op: SyncOp; status?: string };
+
+  // Rule 6's interim display: the live status with the higher version among requested_as.
+  const shown = (local: Map<string, Held>, requestedAs: string[]) =>
+    requestedAs
+      .map((id) => local.get(userFacetKey(id, 'status')))
+      .filter((h): h is Held => h !== undefined && h.op === SyncOp.UPSERT)
+      .sort((x, y) => compareVersion(y.version, x.version))[0]?.status;
+
+  it('clears with one delete that tombstones every live status among requested_as, each above its own version', () => {
+    const now = Date.parse('2026-09-14T11:30:00.000Z');
+    const hlc = new Hlc({ deviceId: DEVICE, clock: { wallMs: () => now, monoMs: () => 0 } });
+    hlc.measure('2026-09-14T11:30:00.000000Z', 0);
+    const local = new Map<string, Held>([
+      [userFacetKey(A, 'status'), { version: `2026-09-01T00:00:00.000000Z#0000000000#${DEVICE}`, op: SyncOp.UPSERT, status: 'owned' }],
+      // Written by another device whose clock ran 3 minutes ahead.
+      [userFacetKey(B, 'status'), { version: `2026-09-14T11:33:00.000000Z#0000000000#${OTHER}`, op: SyncOp.UPSERT, status: 'wished' }],
+    ]);
+    expect(shown(local, [A, B])).toBe('wished');
+
+    const tombstones = [A, B]
+      .map((id) => userFacetKey(id, 'status'))
+      .filter((key) => local.get(key)?.op === SyncOp.UPSERT)
+      .map((key) => ({ facetKey: key, version: hlc.tick(local.get(key)!.version), op: SyncOp.DELETE }));
+    for (const t of tombstones) {
+      if (compareVersion(local.get(t.facetKey)!.version, t.version) < 0) local.set(t.facetKey, { version: t.version, op: t.op });
+    }
+
+    expect(tombstones.map((t) => t.facetKey)).toEqual([userFacetKey(A, 'status'), userFacetKey(B, 'status')]);
+    expect(shown(local, [A, B])).toBeUndefined();
   });
 });

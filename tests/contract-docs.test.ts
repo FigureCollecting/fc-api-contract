@@ -37,8 +37,26 @@ describe('sync.proto', () => {
     const text = prose(sync);
     expect(text).toMatch(/clamped only when the offset looks suspect/i);
     expect(text).toMatch(/a sleep \(monotonic time stalls\) or a wall-clock jump/i);
-    expect(text).toMatch(/calls Hlc\.rebase\(\), re-observes the facet's base version and re-mints/i);
-    expect(text).toMatch(/never clamps an observed token/i);
+    expect(text).toMatch(/calls Hlc\.rebase\(\), adopts `current` and re-mints with Hlc\.tick\(base\)/i);
+    expect(text).toMatch(/never clamps a base or an observed token/i);
+  });
+
+  it('states the bound the Hlc keeps, and when only the server backs it', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/once anchored and rebased, a tick never passes server-now plus the clamp while the anchor is fresh/i);
+    expect(text).toMatch(/a stale anchor may tick past server-now plus the clamp, and the server's version_future check is the backstop only when the push precedes real time catching up/i);
+    expect(text).not.toMatch(/version_future check catches a jump/i);
+    expect(text).toMatch(/the offset restored from the last one/i);
+    expect(text).toMatch(/a phone on automatic time keeps its offset near zero and is unaffected/i);
+  });
+
+  it('floors every tick at the Status sample and every edit at its facet\'s version', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/never below that Status sample plus the monotonic time elapsed since it/i);
+    expect(text).toMatch(/before minting any edit the client hands the facet's current local version to Hlc\.tick\(base\)/i);
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(/re-mints with Hlc\.tick\(base\)/);
+    expect(rejected).toMatch(/before minting any edit, not only a re-mint, the client hands Hlc\.tick the facet's current local version/i);
   });
 
   it('rests the collation rule on out-of-grammar tokens, which is where collations disagree', () => {
@@ -72,6 +90,7 @@ describe('sync.proto', () => {
     const text = prose(sync);
     expect(text).toMatch(/keyed by the head_id its status facet was first written under, never by the ProductCard\.head_id/i);
     expect(text).toMatch(/the status with the higher version is displayed/i);
+    expect(text).toMatch(/a delete on a merged card tombstones every live status among requested_as/i);
   });
 
   it('says the payload schemas check writes only, so an additive property cannot break an installed phone', () => {
@@ -106,6 +125,7 @@ describe('catalog.proto', () => {
     expect(text).toMatch(/requested_as/);
     expect(text).toMatch(/never re-keyed/i);
     expect(text).toMatch(/which status is shown/i);
+    expect(text).toMatch(/what a delete clears/i);
   });
 
   it('marks SearchProducts UNIMPLEMENTED until served', () => {

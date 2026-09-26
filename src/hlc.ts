@@ -1,9 +1,7 @@
 // A hybrid logical clock that mints SyncEvent.version tokens (sync.proto rule 5).
-// Invariants: every tick is strictly greater than the previous one and than
-// every token observed since the last rebase. Once anchored and rebased, a
-// tick passes true server-now plus the clamp only while the anchor is stale
-// (a sleep or a forward wall jump), or by 1 us when an exhausted counter
-// carries; the server's version_future check plus rebase() recovers either.
+// Invariants: a tick beats its base and, since the last rebase, every earlier tick and observed
+// token. Once anchored it is >= sample + monotonic elapsed; once also rebased, while the anchor is
+// fresh it is <= server-now + clamp (1 us past when an exhausted counter carries).
 import {
   MAX_FUTURE_SKEW_MS,
   MAX_HLC_COUNTER,
@@ -103,8 +101,14 @@ export class Hlc {
     this.anchor = { serverMicros, wallMs: wall, monoMs: this.clock.monoMs() };
   }
 
-  /** Mint the version for a local write. */
-  tick(): string {
+  /**
+   * Mint the version for a local write on a facet whose current local version
+   * is `base` (undefined when the client holds none). Required, because after
+   * rebase() only the base keeps the edit above what the client already holds.
+   */
+  tick(base: string | undefined): string {
+    if (arguments.length === 0) throw new TypeError("tick needs the facet's local version: pass undefined when there is none");
+    if (base !== undefined) this.observe(base);
     const physical = this.physical();
     if (physical > this.micros) {
       this.micros = physical;
@@ -119,9 +123,9 @@ export class Hlc {
   }
 
   /**
-   * Fold in a token seen from elsewhere (a Delta event, a base version) so the
-   * next tick beats it. Never clamped: the server bounds every token on the
-   * feed, and clamping here would mint an edit below its base.
+   * Fold in a token seen from elsewhere (a Delta event) so the next tick
+   * beats it. Never clamped: the server bounds every token on the feed, and
+   * clamping here would mint an edit below its base.
    */
   observe(version: string): void {
     const parsed = parseVersion(version);
@@ -139,8 +143,8 @@ export class Hlc {
   /**
    * Drop whatever the clock holds beyond the anchored present: tokens minted
    * or observed while a clock ran ahead. After a Push is REJECTED
-   * version_future, take a fresh Status (measure), rebase, re-observe each
-   * pending edit's base version, then re-mint it. Returns whether the state moved.
+   * version_future, take a fresh Status (measure), rebase, adopt `current`,
+   * then re-mint with tick(base). Returns whether the state moved.
    */
   rebase(): boolean {
     if (this.anchor === undefined) throw new Error('rebase needs a Status sample: call measure() first');
@@ -156,15 +160,18 @@ export class Hlc {
     return { micros: this.micros, counter: this.counter, offsetMs: this.offset };
   }
 
-  // Wall plus offset, capped at sample + elapsed monotonic time + clamp while
-  // the anchor is fresh. A larger forward gap is a sleep (monotonic time
-  // stalls) or a wall jump; two clocks cannot tell which, so trust the wall.
+  // Wall plus offset, floored at sample + elapsed monotonic time (a lower bound
+  // on server time whatever the wall does) and capped at floor + clamp while the
+  // anchor is fresh. A larger forward gap is a sleep or a wall jump; trust the wall.
   private physical(): bigint {
     const wall = this.clock.wallMs();
     const estimate = toMicros(wall + this.offset);
     const a = this.anchor;
-    if (a === undefined || this.forwardGapMs(a, wall) > this.clampMs) return estimate;
-    const cap = a.serverMicros + toMicros(this.clock.monoMs() - a.monoMs) + this.clampMicros;
+    if (a === undefined) return estimate;
+    const floor = a.serverMicros + toMicros(this.clock.monoMs() - a.monoMs);
+    if (estimate < floor) return floor;
+    if (this.forwardGapMs(a, wall) > this.clampMs) return estimate;
+    const cap = floor + this.clampMicros;
     return estimate > cap ? cap : estimate;
   }
 

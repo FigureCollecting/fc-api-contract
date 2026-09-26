@@ -103,18 +103,37 @@
 //     that rejection with; every implementation tests against it.
 //
 //     THE CLOCK. The client's Hlc ticks on its wall clock plus the offset
-//     measured from the latest Status. While the anchor is fresh (since the
-//     sample, the wall clock has not run ahead of monotonic time by more
-//     than 5 minutes) a tick is capped at the sample plus elapsed monotonic
-//     time plus 5 minutes, which binds only when a long round trip makes the
-//     offset suspect. A larger forward gap is a sleep (monotonic time
-//     stalls) or a wall-clock jump, and two clocks cannot tell them apart, so
-//     the Hlc trusts the wall: an edit made after a sleep still outranks one
-//     made before it. The server's version_future check catches a jump; the
-//     client then takes a fresh Status, calls Hlc.rebase(), re-observes the
-//     facet's base version and re-mints. The Hlc never clamps an observed
-//     token: the server bounds every token on the feed, and a clamp there
-//     would mint an edit below its base.
+//     measured from the latest Status, and never below that Status sample
+//     plus the monotonic time elapsed since it, so a backward wall-clock
+//     correction mid-session cannot mint below the sample. While the anchor
+//     is fresh (since the sample, the wall clock has not run ahead of
+//     monotonic time by more than 5 minutes) a tick is also capped at the
+//     sample plus elapsed monotonic time plus 5 minutes, which binds only
+//     when a long round trip makes the offset suspect. So once anchored and
+//     rebased, a tick never passes server-now plus the clamp while the
+//     anchor is fresh (bar a 1 us carry past a token at the bound whose
+//     counter is exhausted).
+//
+//     A larger forward gap is a sleep (monotonic time stalls) or a
+//     wall-clock jump, and two clocks cannot tell them apart, so the Hlc
+//     trusts the wall: an edit made after a sleep still outranks one made
+//     before it. The trade-off: a stale anchor may tick past server-now plus
+//     the clamp, and the server's version_future check is the backstop only
+//     when the push precedes real time catching up. An edit pushed later is
+//     accepted at its inflated version and outranks edits other devices made
+//     in between. The same holds before a session's first Status, when the
+//     Hlc runs on the offset restored from the last one: if the wall clock
+//     was corrected in between, ticks are off by that old offset. A phone on
+//     automatic time keeps its offset near zero and is unaffected by either.
+//
+//     THE FACET FLOOR. Before minting any edit the client hands the facet's
+//     current local version to Hlc.tick(base) (undefined when it holds
+//     none), so the edit lands above it even after rebase() has lowered the
+//     clock below versions the client already holds. After a push is
+//     REJECTED version_future the client takes a fresh Status, calls
+//     Hlc.rebase(), adopts `current` and re-mints with Hlc.tick(base). The
+//     Hlc never clamps a base or an observed token: the server bounds every
+//     token on the feed, and a clamp there would mint an edit below its base.
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
 //     buf cannot see a grammar change; this comment and the golden vectors
@@ -149,8 +168,10 @@
 //     card with none uses card.head_id. When two held ids merge into one
 //     card, the status with the higher version is displayed (a tombstone
 //     counts as no status), with the count, score and note keyed beside it,
-//     and new writes go to its head_id. Re-keying or merging holdings is a
-//     later change.
+//     and new writes go to its head_id. A delete on a merged card tombstones
+//     every live status among requested_as, each minted on its own facet's
+//     version, so one delete clears the card and an older status does not
+//     resurface. Re-keying or merging holdings is a later change.
 //
 //  7. DEFERRED, DELIBERATELY. There is no Resync or prune signal and no Ack
 //     RPC in 0.2.0: the feed never prunes yet. The recovery for an unreadable
@@ -578,9 +599,11 @@ export enum PushOutcome {
    *   payload_invalid           the payload fails its JSON Schema, an UPSERT
    *                             is empty, a DELETE is not, or op is unknown
    * Retrying the same event cannot succeed. For version_future the client
-   * takes a fresh Status, calls Hlc.rebase(), re-observes the facet's base
-   * version and re-mints (rule 5); for any other code it drops the edit and
-   * tells the user.
+   * takes a fresh Status, calls Hlc.rebase(), adopts `current` and re-mints
+   * with Hlc.tick(base) (rule 5); for any other code it drops the edit and
+   * tells the user. Before minting any edit, not only a re-mint, the client
+   * hands Hlc.tick the facet's current local version: a rebase can lower the
+   * clock below versions it holds for other facets.
    *
    * @generated from enum value: PUSH_OUTCOME_REJECTED = 5;
    */
