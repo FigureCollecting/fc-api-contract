@@ -112,12 +112,13 @@
 //     when a long round trip makes the offset suspect. The client calls
 //     Hlc.rebase() after each session's first Status (a no-op when the clock
 //     is not ahead). So once anchored and rebased, a tick never passes
-//     server-now plus the clamp while the anchor is fresh and every earlier
-//     edit minted past the bound has been answered, or re-minted after a
-//     rebase if unpushed, and re-minted if REJECTED version_future or
-//     dropped after a rebase for any other code (bar a 1 us carry past a
-//     token at the bound whose counter is exhausted). That rests on the
-//     server's check order: the server runs the REJECTED checks in the
+//     server-now plus the clamp (assuming the client's monotonic time keeps
+//     server rate) while the anchor is fresh and every earlier edit minted
+//     past the bound has been answered, or re-minted after a rebase if
+//     unpushed, and re-minted if REJECTED version_future or dropped, after a
+//     rebase if past the fresh Status sample, for any other code (bar a 1 us
+//     carry past a token at the bound whose counter is exhausted). That rests
+//     on the server's check order: the server runs the REJECTED checks in the
 //     listed order (version_malformed, version_future,
 //     facet_key_not_user_owned, device_mismatch, payload_invalid), all
 //     before any STALE, REVIEW or APPLIED routing, so an event past
@@ -128,8 +129,8 @@
 //     one by the check order, the import by min(export_date, server_now),
 //     and every other server write, server-owned facets included, at most
 //     server_now. The Hlc folds tokens unclamped, so the bound depends on
-//     this. server_now is one clock: the one Status samples and the one
-//     version_future checks against.
+//     this. server_now is one clock that never steps back: the one Status
+//     samples and the one version_future checks against.
 //
 //     A larger forward gap is a sleep (monotonic time stalls) or a wall-clock
 //     jump, and two clocks cannot tell them apart, so the Hlc trusts the wall:
@@ -141,8 +142,9 @@
 //     tick past the bound is carried two ways: it holds the clock ahead, and
 //     as a base it lifts the next edit on its facet. Until real time overtakes
 //     it or it has been answered, or re-minted after a rebase if unpushed,
-//     and re-minted if REJECTED version_future or dropped after a rebase for
-//     any other code, later ticks may pass the bound even on a fresh anchor.
+//     and re-minted if REJECTED version_future or dropped, after a rebase if
+//     past the fresh Status sample, for any other code, later ticks may pass
+//     the bound even on a fresh anchor.
 //     The same holds before a session's first Status, when the Hlc runs on
 //     the offset restored from the last one: if the wall clock was corrected
 //     in between, ticks are off by that old offset. A phone on automatic time
@@ -157,14 +159,14 @@
 //     edit, whatever the code, the client takes a fresh Status and, if the
 //     edit's version is past the fresh Status sample (server_now_iso), calls
 //     Hlc.rebase() before it mints again: a dropped edit held the clock ahead
-//     too. Every other pending (unpushed)
-//     edit minted before the rebase whose version is past the new present is
-//     re-minted the same way, on its facet's server version, and a later edit
-//     on that facet takes the re-minted version as its base: handed to tick
-//     as a base, the old version would carry the rebased clock past the
-//     bound. An edit pushed but not yet answered is not re-minted in
-//     place: its retry carries the same client_id and the server answers with
-//     each event's recorded outcome (PushRequest.client_id), so it is
+//     too. After any rebase, re-mint every unpushed edit past the new present,
+//     on its facet's server version with Hlc.tick(base), the first Status's
+//     rebase included, and a later edit on that facet takes the re-minted
+//     version as its base: handed to tick as a base, the old version would
+//     carry the rebased clock past the bound. An edit pushed but not yet
+//     answered is not re-minted in place: its retry carries the same
+//     client_id and the server answers with each event's recorded outcome
+//     (PushRequest.client_id), so it is
 //     re-minted only if that answer is REJECTED. Until it is answered, later
 //     ticks on that facet, and through the clock every later tick, may pass
 //     the bound. The Hlc never clamps a base or an observed token: a clamp
@@ -362,16 +364,17 @@ export const DeltaResponseSchema: GenMessage<DeltaResponse> = /*@__PURE__*/
  */
 export type PushRequest = Message<"coordinator.v1.PushRequest"> & {
   /**
-   * Client-chosen idempotency key, unique per user. A retry of the same
-   * batch MUST carry the same client_id and the same events. A replay (same
-   * client_id, same events) returns each event's recorded outcome and never
-   * re-applies: an event first APPLIED is answered DUPLICATE, with the
-   * `current` it was answered with; an event first REJECTED is REJECTED again
-   * with the same reason; an event first STALE is STALE again with its
-   * recorded `current`; any other outcome is returned as recorded. DUPLICATE
-   * answers only an event that was written. Every replay is byte-identical.
-   * The same client_id with different events is INVALID_ARGUMENT. This is
-   * what makes an unacknowledged push safe to retry on reconnect.
+   * Client-chosen idempotency key, unique per user: 1 to 128 printable ASCII
+   * characters, no space; anything else is INVALID_ARGUMENT. A retry of the
+   * same batch MUST carry the same client_id and the same events. A replay
+   * (same client_id, same events) returns each event's recorded outcome and
+   * reason, and never re-applies: an event first APPLIED is answered
+   * DUPLICATE, one first REJECTED is REJECTED again with the same reason, one
+   * first STALE is STALE again and one first REVIEW is REVIEW again.
+   * `current` on every replayed user-owned result is the facet as the server
+   * holds it at the replay. The same client_id with different events is
+   * INVALID_ARGUMENT. This is what makes an unacknowledged push safe to retry
+   * on reconnect.
    *
    * @generated from field: string client_id = 1;
    */
@@ -442,7 +445,12 @@ export type PushResult = Message<"coordinator.v1.PushResult"> & {
   /**
    * The server's authoritative facet for facet_key after this push. Always
    * set on APPLIED, DUPLICATE, STALE and REVIEW. On REJECTED it is set only
-   * when the key is user-owned and the server holds a value for it.
+   * when the key is user-owned and the server holds a value for it. A replay
+   * (same client_id, same events) returns each event's recorded outcome and
+   * reason: an event first APPLIED is answered DUPLICATE, one first REJECTED
+   * is REJECTED again with the same reason, one first STALE is STALE again
+   * and one first REVIEW is REVIEW again. `current` on every replayed
+   * user-owned result is the facet as the server holds it at the replay.
    *
    * @generated from field: coordinator.v1.SyncEvent current = 4;
    */
@@ -608,12 +616,12 @@ export enum PushOutcome {
 
   /**
    * A replay (same client_id, same events) returns each event's recorded
-   * outcome: an event first APPLIED is answered DUPLICATE, with the `current`
-   * it was answered with; an event first REJECTED is REJECTED again with the
-   * same reason; an event first STALE is STALE again with its recorded
-   * `current`. DUPLICATE answers only an event that was written, and nothing
-   * is written a second time. Every replay is byte-identical, so a later
-   * write reaches the client by Delta, not here.
+   * outcome and reason: an event first APPLIED is answered DUPLICATE, one
+   * first REJECTED is REJECTED again with the same reason, one first STALE is
+   * STALE again and one first REVIEW is REVIEW again. `current` on every
+   * replayed user-owned result is the facet as the server holds it at the
+   * replay. DUPLICATE answers only an event that was written, and nothing is
+   * written a second time.
    *
    * @generated from enum value: PUSH_OUTCOME_DUPLICATE = 2;
    */
@@ -685,9 +693,9 @@ export const PushOutcomeSchema: GenEnum<PushOutcome> = /*@__PURE__*/
  * ERROR CONTRACT:
  *   * an unreadable cursor -> INVALID_ARGUMENT. The client's recovery is a
  *     full replay from an empty cursor, which is always safe.
- *   * an empty client_id on Push -> INVALID_ARGUMENT: without it a retry
- *     cannot be recognised, and a silently non-idempotent push is worse than
- *     a rejected one.
+ *   * a client_id that is not 1 to 128 printable ASCII characters, no space
+ *     -> INVALID_ARGUMENT: without one a retry cannot be recognised, and a
+ *     silently non-idempotent push is worse than a rejected one.
  *   * a client_id already recorded with different events ->
  *     INVALID_ARGUMENT: a replay must be the same batch, or its recorded
  *     outcomes would answer events it never carried.

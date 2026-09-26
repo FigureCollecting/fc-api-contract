@@ -1,10 +1,5 @@
-// Mints SyncEvent.version tokens (sync.proto rule 5). A tick beats its base and every tick and token since
-// the last rebase; once anchored it is >= sample + monotonic elapsed, and <= server-now + clamp (+1 us on a
-// carry) while fresh and every earlier edit minted past the bound has been answered, or re-minted after a
-// rebase if unpushed, and re-minted if REJECTED version_future or dropped after a rebase for any other code.
-// The clamp is the server's version_future skew (MAX_FUTURE_SKEW_MS; any other clamp is refused), and the
-// bound assumes monotonic time keeping server rate and every token folded in, observed or handed to tick,
-// being at most server-now + clamp as the server guarantees.
+// Mints SyncEvent.version tokens: a tick beats its base and every tick and token since the last rebase,
+// and once anchored is >= sample + monotonic elapsed. The bound and its assumptions: sync.proto rule 5.
 import {
   MAX_FUTURE_SKEW_MS,
   MAX_HLC_COUNTER,
@@ -159,17 +154,18 @@ export class Hlc {
    * or observed while a clock ran ahead. Call it after each session's first
    * Status (a no-op when the clock is not ahead). After a Push is REJECTED
    * version_future, take a fresh Status (measure), rebase, adopt `current`,
-   * then re-mint with tick(base). Re-mint every other unpushed edit minted
-   * before the rebase whose version is past the new present (above
-   * snapshot()) the same way, on its facet's server version; a later edit on
-   * that facet takes the re-minted version as its base. An edit pushed but
-   * not yet answered is not re-minted in place: its retry carries the same
-   * client_id, and it is re-minted only if that answer is REJECTED. Until it
+   * then re-mint with tick(base). After any rebase, re-mint every unpushed
+   * edit past the new present (above snapshot()), on its facet's server
+   * version with tick(base); a later edit on that facet takes the re-minted
+   * version as its base. An edit pushed but not yet answered is not
+   * re-minted in place: its retry carries the same client_id, and it is
+   * re-minted only if that answer is REJECTED. Until it
    * is answered, later ticks on that facet, and through the clock every later
    * tick, may pass the bound (server-now + clamp), which holds while fresh and
    * every earlier edit minted past the bound has been answered, or re-minted
    * after a rebase if unpushed, and re-minted if REJECTED version_future or
-   * dropped after a rebase for any other code.
+   * dropped, after a rebase if past the fresh Status sample, for any other
+   * code.
    * Returns whether the state moved.
    */
   rebase(): boolean {

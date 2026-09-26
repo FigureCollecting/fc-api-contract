@@ -453,12 +453,18 @@ describe('Hlc.rebase', () => {
 
   it('rebases on the retry of a push first REJECTED, because a replay returns the recorded outcome and not DUPLICATE', () => {
     const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
-    // The server keeps rule 5's version_future check and answers a replayed client_id from its record.
+    // The fake server keeps rule 5's version_future check, records each outcome by client_id and
+    // re-reads `current` (the facet as it holds it) at every answer, a replay included.
     const record = new Map<string, 'APPLIED' | 'REJECTED'>();
+    let held: string | undefined;
     const push = (clientId: string, version: string) => {
-      const answer = record.get(clientId) ?? (parseVersion(version)!.micros > bound ? 'REJECTED' : 'APPLIED');
-      record.set(clientId, answer);
-      return answer;
+      let outcome = record.get(clientId);
+      if (outcome === undefined) {
+        outcome = parseVersion(version)!.micros > bound ? 'REJECTED' : 'APPLIED';
+        record.set(clientId, outcome);
+        if (outcome === 'APPLIED') held = version;
+      }
+      return { outcome, current: held };
     };
     const play = (followRecord: boolean) => {
       const clock = new FakeClock();
@@ -468,15 +474,20 @@ describe('Hlc.rebase', () => {
       const g = hlc.tick(undefined);
       expect(parseVersion(g)!.micros > bound).toBe(true);
       record.clear();
-      push('batch-g', g); // REJECTED version_future, and the response is lost
+      held = undefined;
+      expect(push('batch-g', g)).toEqual({ outcome: 'REJECTED', current: undefined }); // the response is lost
+      held = `${iso(T0)}#0000000003#${OTHER}`; // another device writes G's facet before the retry
       hlc.measure(iso(T0), 0); // the reconnect Status makes the anchor fresh
-      const retry = followRecord ? push('batch-g', g) : 'DUPLICATE'; // the retry under the same client_id
-      if (retry === 'REJECTED') {
+      const retry = followRecord ? push('batch-g', g) : { outcome: 'DUPLICATE', current: held }; // same client_id
+      if (retry.outcome === 'REJECTED') {
+        expect(retry.current).toBe(held); // re-read at the replay, not the unset `current` first answered
         expect(hlc.rebase()).toBe(true);
-        expect(parseVersion(hlc.tick(undefined))!.micros <= bound).toBe(true); // G re-minted
+        const g2 = hlc.tick(retry.current); // adopt `current` and re-mint G on it
+        expect(compareVersion(retry.current!, g2)).toBe(-1);
+        expect(parseVersion(g2)!.micros <= bound).toBe(true);
       }
       expect(hlc.fresh).toBe(true);
-      return { retry, h: parseVersion(hlc.tick(undefined))!.micros }; // an edit on another facet
+      return { retry: retry.outcome, h: parseVersion(hlc.tick(undefined))!.micros }; // an edit on another facet
     };
 
     const recorded = play(true);
