@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 import {
+  GetProductsResponseSchema,
   HOLDING_STATUSES,
   Hlc,
   PUSH_REJECT_REASONS,
@@ -83,33 +85,79 @@ describe('rule 6: a merged card', () => {
   const OTHER = '9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a';
   type Held = { version: string; op: SyncOp; status?: string };
 
-  // Rule 6's interim display: the live status with the higher version among requested_as.
-  const shown = (local: Map<string, Held>, requestedAs: string[]) =>
-    requestedAs
-      .map((id) => local.get(userFacetKey(id, 'status')))
-      .filter((h): h is Held => h !== undefined && h.op === SyncOp.UPSERT)
-      .sort((x, y) => compareVersion(y.version, x.version))[0]?.status;
-
-  it('clears with one delete that tombstones every live status among requested_as, each above its own version', () => {
+  const statusAt = (id: string, day: string, status: string, device = DEVICE): [string, Held] => [
+    userFacetKey(id, 'status'),
+    { version: `${day}#0000000000#${device}`, op: SyncOp.UPSERT, status },
+  ];
+  const clockAt = () => {
     const now = Date.parse('2026-09-14T11:30:00.000Z');
     const hlc = new Hlc({ deviceId: DEVICE, clock: { wallMs: () => now, monoMs: () => 0 } });
     hlc.measure('2026-09-14T11:30:00.000000Z', 0);
-    const local = new Map<string, Held>([
-      [userFacetKey(A, 'status'), { version: `2026-09-01T00:00:00.000000Z#0000000000#${DEVICE}`, op: SyncOp.UPSERT, status: 'owned' }],
-      // Written by another device whose clock ran 3 minutes ahead.
-      [userFacetKey(B, 'status'), { version: `2026-09-14T11:33:00.000000Z#0000000000#${OTHER}`, op: SyncOp.UPSERT, status: 'wished' }],
-    ]);
-    expect(shown(local, [A, B])).toBe('wished');
+    return hlc;
+  };
 
-    const tombstones = [A, B]
+  // Rule 6's interim display: the live status with the higher version among requested_as. Its
+  // head_id is also where a new write for the card goes.
+  const displayed = (local: Map<string, Held>, requestedAs: string[]) =>
+    requestedAs
+      .map((id) => ({ id, held: local.get(userFacetKey(id, 'status')) }))
+      .filter((h): h is { id: string; held: Held } => h.held !== undefined && h.held.op === SyncOp.UPSERT)
+      .sort((x, y) => compareVersion(y.held.version, x.held.version))[0];
+  const shown = (local: Map<string, Held>, requestedAs: string[]) => displayed(local, requestedAs)?.held.status;
+
+  // A delete on the card: tombstone every live status among requested_as, each above its own version.
+  const deleteCard = (hlc: Hlc, local: Map<string, Held>, requestedAs: string[]) => {
+    const tombstones = requestedAs
       .map((id) => userFacetKey(id, 'status'))
       .filter((key) => local.get(key)?.op === SyncOp.UPSERT)
       .map((key) => ({ facetKey: key, version: hlc.tick(local.get(key)!.version), op: SyncOp.DELETE }));
     for (const t of tombstones) {
       if (compareVersion(local.get(t.facetKey)!.version, t.version) < 0) local.set(t.facetKey, { version: t.version, op: t.op });
     }
+    return tombstones.map((t) => t.facetKey);
+  };
 
-    expect(tombstones.map((t) => t.facetKey)).toEqual([userFacetKey(A, 'status'), userFacetKey(B, 'status')]);
+  it('clears with one delete that tombstones every live status among requested_as, each above its own version', () => {
+    const local = new Map<string, Held>([
+      statusAt(A, '2026-09-01T00:00:00.000000Z', 'owned'),
+      // Written by another device whose clock ran 3 minutes ahead.
+      statusAt(B, '2026-09-14T11:33:00.000000Z', 'wished', OTHER),
+    ]);
+    expect(shown(local, [A, B])).toBe('wished');
+
+    expect(deleteCard(clockAt(), local, [A, B])).toEqual([userFacetKey(A, 'status'), userFacetKey(B, 'status')]);
     expect(shown(local, [A, B])).toBeUndefined();
+  });
+
+  it('groups cards by head_id across GetProducts calls and unions requested_as, so display, write target and delete see both held ids', () => {
+    const SURVIVOR = '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b';
+    const held = () => new Map<string, Held>([
+      statusAt(A, '2026-09-01T00:00:00.000000Z', 'owned'),
+      statusAt(B, '2026-09-10T00:00:00.000000Z', 'wished'),
+    ]);
+    // 1,144 held ids take six calls of at most 200 refs. A and B fell in different calls, so each
+    // call's card names only its own ref.
+    const ref = (id: string) => ({ ref: { case: 'headId' as const, value: id } });
+    const calls = [
+      create(GetProductsResponseSchema, { products: [{ headId: SURVIVOR, requestedAs: [ref(A)] }] }),
+      create(GetProductsResponseSchema, { products: [{ headId: SURVIVOR, requestedAs: [ref(B)] }] }),
+    ];
+    const perCall = held();
+    deleteCard(clockAt(), perCall, [B]);
+    expect(shown(perCall, [A, B])).toBe('owned'); // a delete through one call's card leaves the other live
+
+    const byHead = new Map<string, string[]>();
+    for (const card of calls.flatMap((c) => c.products)) {
+      const ids = card.requestedAs.flatMap((r) => (r.ref.case === 'headId' ? [r.ref.value] : []));
+      byHead.set(card.headId, [...new Set([...(byHead.get(card.headId) ?? []), ...ids])]);
+    }
+    const requestedAs = byHead.get(SURVIVOR)!;
+    const local = held();
+    expect(requestedAs).toEqual([A, B]);
+    expect(shown(local, requestedAs)).toBe('wished');
+    expect(displayed(local, requestedAs)?.id).toBe(B); // the write target
+
+    deleteCard(clockAt(), local, requestedAs);
+    expect(shown(local, requestedAs)).toBeUndefined();
   });
 });

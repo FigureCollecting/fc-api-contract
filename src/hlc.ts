@@ -1,7 +1,6 @@
-// A hybrid logical clock that mints SyncEvent.version tokens (sync.proto rule 5).
-// Invariants: a tick beats its base and, since the last rebase, every earlier tick and observed
-// token. Once anchored it is >= sample + monotonic elapsed; once also rebased, while the anchor is
-// fresh it is <= server-now + clamp (1 us past when an exhausted counter carries).
+// Mints SyncEvent.version tokens (sync.proto rule 5). A tick beats its base and every tick and token
+// since the last rebase; once anchored it is >= sample + monotonic elapsed; once rebased, with unpushed
+// edits past the present re-minted, it is <= server-now + clamp while fresh (+1 us on a counter carry).
 import {
   MAX_FUTURE_SKEW_MS,
   MAX_HLC_COUNTER,
@@ -144,7 +143,11 @@ export class Hlc {
    * Drop whatever the clock holds beyond the anchored present: tokens minted
    * or observed while a clock ran ahead. After a Push is REJECTED
    * version_future, take a fresh Status (measure), rebase, adopt `current`,
-   * then re-mint with tick(base). Returns whether the state moved.
+   * then re-mint with tick(base). Re-mint every other unpushed edit minted
+   * before the rebase whose version is past the new present (above
+   * snapshot()) the same way, on its facet's server version; a later edit on
+   * that facet takes the re-minted version as its base. Returns whether the
+   * state moved.
    */
   rebase(): boolean {
     if (this.anchor === undefined) throw new Error('rebase needs a Status sample: call measure() first');

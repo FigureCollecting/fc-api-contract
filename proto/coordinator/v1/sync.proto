@@ -121,19 +121,27 @@
 //     the clamp, and the server's version_future check is the backstop only
 //     when the push precedes real time catching up. An edit pushed later is
 //     accepted at its inflated version and outranks edits other devices made
-//     in between. The same holds before a session's first Status, when the
-//     Hlc runs on the offset restored from the last one: if the wall clock
-//     was corrected in between, ticks are off by that old offset. A phone on
-//     automatic time keeps its offset near zero and is unaffected by either.
+//     in between. A tick past the bound also holds the clock ahead: until
+//     real time overtakes it or its rejection brings a rebase, later ticks
+//     may pass the bound even on a fresh anchor. The same holds before a
+//     session's first Status, when the Hlc runs on the offset restored from
+//     the last one: if the wall clock was corrected in between, ticks are off
+//     by that old offset. A phone on automatic time keeps its offset near
+//     zero and is unaffected by either.
 //
 //     THE FACET FLOOR. Before minting any edit the client hands the facet's
 //     current local version to Hlc.tick(base) (undefined when it holds
 //     none), so the edit lands above it even after rebase() has lowered the
 //     clock below versions the client already holds. After a push is
 //     REJECTED version_future the client takes a fresh Status, calls
-//     Hlc.rebase(), adopts `current` and re-mints with Hlc.tick(base). The
-//     Hlc never clamps a base or an observed token: the server bounds every
-//     token on the feed, and a clamp there would mint an edit below its base.
+//     Hlc.rebase(), adopts `current` and re-mints with Hlc.tick(base). Every
+//     other pending (unpushed) edit minted before the rebase whose version is
+//     past the new present is re-minted the same way, on its facet's server
+//     version, and a later edit on that facet takes the re-minted version as
+//     its base: handed to tick as a base, the old version would carry the
+//     rebased clock past the bound. The Hlc never clamps a base or an
+//     observed token: the server bounds every token on the feed, and a clamp
+//     there would mint an edit below its base.
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NOTHING CONSUMES 0.1.0 SyncService.
 //     buf cannot see a grammar change; this comment and the golden vectors
@@ -171,7 +179,10 @@
 //     and new writes go to its head_id. A delete on a merged card tombstones
 //     every live status among requested_as, each minted on its own facet's
 //     version, so one delete clears the card and an older status does not
-//     resurface. Re-keying or merging holdings is a later change.
+//     resurface. A client that hydrates over several GetProducts calls
+//     groups cards by head_id across every call and page and unions their
+//     requested_as; the display, write-target and delete rules apply to that
+//     union. Re-keying or merging holdings is a later change.
 //
 //  7. DEFERRED, DELIBERATELY. There is no Resync or prune signal and no Ack
 //     RPC in 0.2.0: the feed never prunes yet. The recovery for an unreadable
@@ -310,10 +321,12 @@ enum PushOutcome {
   //                             is empty, a DELETE is not, or op is unknown
   // Retrying the same event cannot succeed. For version_future the client
   // takes a fresh Status, calls Hlc.rebase(), adopts `current` and re-mints
-  // with Hlc.tick(base) (rule 5); for any other code it drops the edit and
-  // tells the user. Before minting any edit, not only a re-mint, the client
-  // hands Hlc.tick the facet's current local version: a rebase can lower the
-  // clock below versions it holds for other facets.
+  // with Hlc.tick(base) (rule 5), then re-mints the same way, on its facet's
+  // server version, every other unpushed edit minted before the rebase whose
+  // version is past the new present; for any other code it drops the edit
+  // and tells the user. Before minting any edit, not only a re-mint, the
+  // client hands Hlc.tick the facet's current local version: a rebase can
+  // lower the clock below versions it holds for other facets.
   PUSH_OUTCOME_REJECTED = 5;
 }
 

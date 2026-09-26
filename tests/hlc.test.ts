@@ -363,6 +363,44 @@ describe('Hlc.rebase', () => {
     expect(compareVersion(g, f1)).toBe(-1); // the rebase put the clock below F
     expect(compareVersion(f1, f2)).toBe(-1);
   });
+
+  it('re-mints every unpushed edit past the new present, so a later edit on that facet stays inside the bound', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    const clock = new FakeClock();
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
+    hlc.measure(iso(T0), 0);
+    clock.wall += 6 * 60_000; // the anchor goes stale
+    expect(parseVersion(hlc.tick(undefined))!.micros > bound).toBe(true); // F: REJECTED version_future
+    const g = hlc.tick(undefined); // G, made while F's push is in flight: unpushed
+
+    hlc.measure(iso(T0), 0);
+    expect(hlc.rebase()).toBe(true);
+    const present = hlc.snapshot();
+    const f2 = hlc.tick(undefined); // F held nothing on the server
+    expect(parseVersion(g)!.micros > present.micros).toBe(true); // G is past the new present
+    const g2 = hlc.tick(undefined); // so it is re-minted on its server version (none)
+    const g3 = hlc.tick(g2); // and the user's next edit on G takes the re-minted version as its base
+
+    for (const v of [f2, g2, g3]) expect(parseVersion(v)!.micros <= bound).toBe(true);
+    expect(parseVersion(hlc.tick(g))!.micros > bound).toBe(true); // the stale G as a base would carry the clock past it
+  });
+
+  it('lets a tick on a stale anchor hold the clock ahead until its rejection brings a rebase', () => {
+    const bound = BigInt(T0 + MAX_FUTURE_SKEW_MS) * 1000n;
+    const clock = new FakeClock();
+    const hlc = new Hlc({ deviceId: DEVICE, clock });
+    hlc.measure(iso(T0), 0);
+    clock.wall += 6 * 60_000; // offline, and the wall jumps: the anchor goes stale
+    hlc.tick(undefined); // F waits in the outbox
+
+    hlc.measure(iso(T0), 0); // back online, a Status makes the anchor fresh before the outbox flushes
+    expect(hlc.fresh).toBe(true);
+    expect(parseVersion(hlc.tick(undefined))!.micros > bound).toBe(true); // G passes the bound on a fresh anchor
+
+    hlc.measure(iso(T0), 0); // F is REJECTED: rebase, then re-mint F and G, both past the new present
+    expect(hlc.rebase()).toBe(true);
+    for (const v of [hlc.tick(undefined), hlc.tick(undefined)]) expect(parseVersion(v)!.micros <= bound).toBe(true);
+  });
 });
 
 describe('Hlc construction and state', () => {
@@ -418,7 +456,8 @@ type Action =
   | { kind: 'sleep'; ms: number }
   | { kind: 'measure'; up: number; down: number }
   | { kind: 'observe'; facet: number; ahead: number; counter: number; fold: boolean }
-  | { kind: 'rebase' };
+  | { kind: 'rebase' }
+  | { kind: 'flush' };
 
 const FACETS = 3;
 const facetA = fc.integer({ min: 0, max: FACETS - 1 });
@@ -443,6 +482,8 @@ const sleepNearA = fc.record({ kind: fc.constant('sleep' as const), ms: fc.oneof
 const measureA = fc.record({ kind: fc.constant('measure' as const), up: leg, down: downLeg });
 const measureL = fc.record({ kind: fc.constant('measure' as const), up: longLeg, down: longDownLeg });
 const rebaseA = fc.constant({ kind: 'rebase' } as const);
+/** The outbox pushes its oldest unpushed edit. */
+const flushA = fc.constant({ kind: 'flush' } as const);
 const counterA = fc.integer({ min: 0, max: MAX_HLC_COUNTER });
 /** Another device's write as the server accepted it (never past server_now + 5 min); the client may or may not fold it into its clock. */
 const feedObserveA = fc.record({
@@ -478,6 +519,7 @@ const heldA = fc.array(
 
 const clampMicros = BigInt(MAX_FUTURE_SKEW_MS) * 1000n;
 const CAP_DECIDED_MIN = 100;
+const REMINTED_EDITED_MIN = 100;
 const token = (ms: number, counter: number, device = OTHER) => `${iso(ms)}#${String(counter).padStart(10, '0')}#${device}`;
 const micros = (v: string) => parseVersion(v)!.micros;
 
@@ -536,6 +578,18 @@ class World {
 
 const above = (floor: string | undefined, v: string) => floor === undefined || compareVersion(floor, v) === -1;
 const max = (a: string | undefined, b: string) => (above(a, b) ? b : a);
+/** Whether a version is past a clock state: a later instant, or the same instant and a higher counter. */
+const past = (v: string, s: HlcState) => {
+  const p = parseVersion(v)!;
+  return p.micros > s.micros || (p.micros === s.micros && (p.counter ?? 0) > s.counter);
+};
+/** The state a tick carries from: the clock's, with the base folded in first as tick() does. */
+const carriesFrom = (hlc: Hlc, base: string | undefined): HlcState => {
+  const s = hlc.snapshot();
+  if (base === undefined || !past(base, s)) return s;
+  const p = parseVersion(base)!;
+  return { micros: p.micros, counter: p.counter ?? 0 };
+};
 
 describe('Hlc properties', () => {
   it('orders every tick above its base and, since the last rebase, above every earlier tick and observed token, from any restored state', () => {
@@ -574,6 +628,7 @@ describe('Hlc properties', () => {
 
   it('once anchored and rebased: a fresh tick is never rejected, one rebase recovers any rejection, and an edit on any facet lands above that facet\'s version', () => {
     let capDecided = 0;
+    let remintedEdited = 0;
     fc.assert(
       fc.property(
         restoredState,
@@ -583,13 +638,16 @@ describe('Hlc properties', () => {
         fc.array(fc.oneof(tickL, advanceA, jumpNearA, sleepNearA), { maxLength: 10, size: 'max' }),
         longLeg,
         longDownLeg,
-        fc.array(fc.oneof(tickL, tickL, advanceA, jumpNearA, sleepNearA, measureL, feedObserveA), { minLength: 1, maxLength: 60, size: 'max' }),
+        fc.array(fc.oneof(tickL, tickL, advanceA, jumpNearA, sleepNearA, measureL, feedObserveA, flushA), { minLength: 1, maxLength: 60, size: 'max' }),
         (state, offsetMs, d, held, offline, up0, down0, online) => {
           const w = new World(d, state, offsetMs);
-          // Each facet's version on the server, and on the client (they differ only by an unpushed offline edit).
+          // Each facet's version on the server, and on the client (they differ only by an unpushed edit).
           const server = held.map((h) => (h === undefined ? undefined : token(T0 + h.ahead, h.counter)));
           const local = [...server];
+          // The outbox: facets holding an unpushed edit, oldest first, with the legs of the Status a rejection takes.
           const pending = new Map<number, { up: number; down: number }>();
+          // Unpushed edits a rebase re-minted for a facet other than the rejected one, until they are pushed.
+          const reminted = new Set<number>();
           // The highest instant minted or restored before the first Status: only it can
           // push a fresh tick past the bound, and only while it is itself past it.
           let poison = state?.micros;
@@ -606,58 +664,88 @@ describe('Hlc properties', () => {
             }
           }
 
-          w.measure(up0, down0); // sign-in always passes a Status probe first
+          w.measure(up0, down0); // sign-in always passes a Status probe first; the outbox has not flushed
           const accepted = (v: string) => micros(v) <= w.bound();
           // An exhausted counter carries 1 us past a token at the bound; nothing else lands there.
-          const carried = (v: string) => micros(v) === w.bound() + 1n && parseVersion(v)!.counter === 0;
-          // REJECTED version_future: fresh Status, rebase, adopt `current`, re-mint on it.
+          const carried = (v: string, from: HlcState) => micros(v) === w.bound() + 1n && from.counter === MAX_HLC_COUNTER;
+          // REJECTED version_future: fresh Status, rebase, adopt `current` and re-mint on it. Every other
+          // unpushed edit past the new present is re-minted on its facet's server version too.
           const recover = (f: number, up: number, down: number) => {
             w.measure(up, down);
             w.hlc.rebase();
+            const present = w.hlc.snapshot();
             poison = undefined;
-            local[f] = server[f];
-            const v = w.hlc.tick(local[f]);
-            if (!accepted(v) || !above(server[f], v)) return false;
-            server[f] = local[f] = v;
+            for (const g of [f, ...pending.keys()]) {
+              if (g !== f && !past(local[g]!, present)) continue;
+              const v = w.hlc.tick(server[g]);
+              if (!accepted(v) || !above(server[g], v)) return false;
+              local[g] = v;
+              if (g !== f) reminted.add(g);
+            }
+            server[f] = local[f];
             return true;
           };
-
-          for (const [f, legs] of pending) {
-            if (accepted(local[f]!)) server[f] = local[f];
-            else if (!recover(f, legs.up, legs.down)) return false;
-          }
+          const flush = (f: number) => {
+            const legs = pending.get(f)!;
+            pending.delete(f);
+            reminted.delete(f);
+            if (accepted(local[f]!)) {
+              server[f] = local[f];
+              return true;
+            }
+            return recover(f, legs.up, legs.down);
+          };
 
           for (const a of online) {
             if (a.kind === 'tick') {
               const fresh = w.fresh();
               const poisoned = poison !== undefined && poison > w.bound();
               if (fresh && !poisoned && w.estimate() > w.bound()) capDecided++;
+              if (reminted.has(a.facet)) remintedEdited++;
+              const from = carriesFrom(w.hlc, local[a.facet]);
               const v = w.hlc.tick(local[a.facet]);
               if (!above(local[a.facet], v)) return false; // STALE: the edit lost to its own base
-              if (accepted(v)) {
-                server[a.facet] = local[a.facet] = v;
-              } else {
-                if (fresh && !poisoned && !carried(v)) return false;
-                if (!recover(a.facet, a.up, a.down)) return false;
-              }
+              if (fresh && !poisoned && !accepted(v) && !carried(v, from)) return false;
+              // Pushed at once, carrying any unpushed edit on the facet with it.
+              local[a.facet] = v;
+              pending.set(a.facet, a);
+              if (!flush(a.facet)) return false;
             } else if (a.kind === 'observe') {
-              // Another device's write: the server keeps it only above its own version.
+              // Another device's write: the server keeps it only above its own version, the client only above its local one.
               const t = w.remote(a.ahead, a.counter);
               if (above(server[a.facet], t)) {
-                server[a.facet] = local[a.facet] = t;
+                server[a.facet] = t;
+                if (above(local[a.facet], t)) {
+                  local[a.facet] = t; // it supersedes an unpushed edit
+                  pending.delete(a.facet);
+                  reminted.delete(a.facet);
+                }
                 if (a.fold) w.hlc.observe(t);
               }
+            } else if (a.kind === 'flush') {
+              const [f] = pending.keys();
+              if (f !== undefined && !flush(f)) return false;
             } else {
               w.move(a);
             }
           }
+          for (const [f] of pending) if (!flush(f)) return false;
           return true;
         },
       ),
-      { numRuns: 10_000 },
+      {
+        numRuns: 10_000,
+        // A real carry, pinned: a feed token at the bound with an exhausted counter, not folded, then an edit on it.
+        examples: [[undefined, undefined, 0, [undefined, undefined, undefined], [], 1, 0, [
+          { kind: 'observe', facet: 0, ahead: MAX_FUTURE_SKEW_MS, counter: MAX_HLC_COUNTER, fold: false },
+          { kind: 'tick', facet: 0, up: 1, down: 0 },
+        ]]],
+      },
     );
-    // Not vacuous: in some ticks only the cap kept a fresh anchor's tick inside the bound.
+    // Not vacuous: in some ticks only the cap kept a fresh anchor's tick inside the bound, and some
+    // edits landed on a facet whose unpushed edit a rebase for another facet had re-minted.
     expect(capDecided).toBeGreaterThan(CAP_DECIDED_MIN);
+    expect(remintedEdited).toBeGreaterThan(REMINTED_EDITED_MIN);
   });
 
   it('once anchored, never mints below the Status sample plus the monotonic time since it, whatever the wall clock does', () => {

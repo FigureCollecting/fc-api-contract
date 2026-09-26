@@ -7,6 +7,7 @@ const sync = read('proto/coordinator/v1/sync.proto');
 const catalog = read('proto/coordinator/v1/catalog.proto');
 const importProto = read('proto/coordinator/v1/import.proto');
 const readme = read('README.md');
+const hlcSource = read('src/hlc.ts');
 const pkg = JSON.parse(read('package.json')) as {
   version: string;
   files: string[];
@@ -15,7 +16,7 @@ const pkg = JSON.parse(read('package.json')) as {
 };
 
 // Collapse comment markers and whitespace so a rule reflowed across lines still matches.
-const prose = (proto: string) => proto.replace(/^\s*\/\/ ?/gm, '').replace(/\s+/g, ' ');
+const prose = (proto: string) => proto.replace(/^\s*(\/\/|\*) ?/gm, '').replace(/\s+/g, ' ');
 
 describe('sync.proto', () => {
   it('no longer tells a client to keep its losing payload under the server version', () => {
@@ -59,6 +60,21 @@ describe('sync.proto', () => {
     expect(rejected).toMatch(/before minting any edit, not only a re-mint, the client hands Hlc\.tick the facet's current local version/i);
   });
 
+  it('re-mints every unpushed edit past the new present after a rebase, not only the rejected one', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/every other pending \(unpushed\) edit minted before the rebase whose version is past the new present is re-minted the same way, on its facet's server version/i);
+    expect(text).toMatch(/a later edit on that facet takes the re-minted version as its base/i);
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(/re-mints the same way, on its facet's server version, every other unpushed edit minted before the rebase whose version is past the new present/i);
+    const rebaseDoc = prose(hlcSource.slice(hlcSource.indexOf('Drop whatever the clock holds'), hlcSource.indexOf('rebase(): boolean')));
+    expect(rebaseDoc).toMatch(/re-mint every other unpushed edit minted before the rebase whose version is past the new present \(above snapshot\(\)\) the same way, on its facet's server version/i);
+    expect(rebaseDoc).toMatch(/a later edit on that facet takes the re-minted version as its base/i);
+  });
+
+  it('says a stale tick holds the clock ahead until real time overtakes it or a rebase', () => {
+    expect(prose(sync)).toMatch(/holds the clock ahead: until real time overtakes it or its rejection brings a rebase, later ticks may pass the bound even on a fresh anchor/i);
+  });
+
   it('rests the collation rule on out-of-grammar tokens, which is where collations disagree', () => {
     const text = prose(sync);
     expect(text).not.toMatch(/ignores '#' at the first level/);
@@ -91,6 +107,10 @@ describe('sync.proto', () => {
     expect(text).toMatch(/keyed by the head_id its status facet was first written under, never by the ProductCard\.head_id/i);
     expect(text).toMatch(/the status with the higher version is displayed/i);
     expect(text).toMatch(/a delete on a merged card tombstones every live status among requested_as/i);
+  });
+
+  it('applies the merged-card rules to requested_as unioned across every GetProducts call', () => {
+    expect(prose(sync)).toMatch(/groups cards by head_id across every call and page and unions their requested_as; the display, write-target and delete rules apply to that union/i);
   });
 
   it('says the payload schemas check writes only, so an additive property cannot break an installed phone', () => {
@@ -126,6 +146,7 @@ describe('catalog.proto', () => {
     expect(text).toMatch(/never re-keyed/i);
     expect(text).toMatch(/which status is shown/i);
     expect(text).toMatch(/what a delete clears/i);
+    expect(text).toMatch(/groups cards by head_id across every call and page and unions their requested_as; the display, write-target and delete rules of sync\.proto rule 6 apply to that union/i);
   });
 
   it('marks SearchProducts UNIMPLEMENTED until served', () => {
