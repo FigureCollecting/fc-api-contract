@@ -113,11 +113,11 @@ describe('sync.proto', () => {
     expect(errors).toMatch(/a client_id already recorded with different events -> INVALID_ARGUMENT/i);
   });
 
-  it('states the client_id grammar and that anything else is INVALID_ARGUMENT', () => {
+  it('states the client_id grammar, that anything else is INVALID_ARGUMENT, and that it is checked before the transaction', () => {
     const clientId = prose(sync.slice(sync.indexOf('message PushRequest {'), sync.indexOf('string client_id = 1;')));
-    expect(clientId).toMatch(/1 to 128 printable ASCII characters, no space; anything else is INVALID_ARGUMENT/i);
+    expect(clientId).toMatch(/1 to 128 characters, each printable ASCII 0x21-0x7E \(no space, control or non-ASCII character\); anything else is INVALID_ARGUMENT, checked before the transaction opens/i);
     const errors = prose(sync.slice(sync.indexOf('ERROR CONTRACT:'), sync.indexOf('service SyncService {')));
-    expect(errors).toMatch(/a client_id that is not 1 to 128 printable ASCII characters, no space -> INVALID_ARGUMENT/i);
+    expect(errors).toMatch(/a client_id that is not 1 to 128 characters, each printable ASCII 0x21-0x7E, -> INVALID_ARGUMENT, checked before the transaction opens/i);
   });
 
   it('rebases after any REJECTED edit past the fresh Status sample, not only version_future', () => {
@@ -195,6 +195,27 @@ describe('sync.proto', () => {
     const text = prose(sync);
     expect(text).toMatch(/The schemas check writes only/);
     expect(text).toMatch(/10,000 code points/);
+  });
+
+  it('caps a pushed payload at MAX_PAYLOAD_BYTES of UTF-8 and names the reject', () => {
+    const text = prose(sync);
+    expect(text).toMatch(/a pushed payload over 65,536 bytes \(MAX_PAYLOAD_BYTES, counted as UTF-8\) is REJECTED payload_invalid: payload over 65536 bytes/i);
+    expect(text).toMatch(/a schema-valid payload as JSON\.stringify writes it is at most 60,133 bytes/i);
+    const payloadDoc = prose(sync.slice(sync.indexOf('message SyncEvent'), sync.indexOf('string payload = 4;')));
+    expect(payloadDoc).toMatch(/at most MAX_PAYLOAD_BYTES \(65,536\) UTF-8 bytes on Push/i);
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(/payload_invalid .*is over MAX_PAYLOAD_BYTES/i);
+  });
+
+  it('answers an oversized request or a full queue RESOURCE_EXHAUSTED and a lock timeout UNAVAILABLE', () => {
+    const contract = prose(sync.slice(sync.indexOf('ERROR CONTRACT:'), sync.indexOf('service SyncService')));
+    expect(contract).toMatch(/a request body over 16 MiB \(16,777,216 bytes\) -> RESOURCE_EXHAUSTED/i);
+    expect(contract).toMatch(/the client splits the batch/i);
+    expect(contract).toMatch(/the user's push queue is full -> RESOURCE_EXHAUSTED/i);
+    expect(contract).toMatch(/retries later with the same client_id and the same events/i);
+    expect(contract).toMatch(/a lock timeout -> UNAVAILABLE/i);
+    expect(contract).toMatch(/UNAVAILABLE\. The transaction rolled back, .*the client retries with the same client_id and the same events/i);
+    expect(contract).toMatch(/nothing is written and nothing is recorded under the client_id/i);
   });
 
   it('keeps the deferred Resync and Ack out of the wire and says so', () => {
@@ -282,8 +303,8 @@ describe('README', () => {
 });
 
 describe('package', () => {
-  it('is 0.2.0', () => {
-    expect(pkg.version).toBe('0.2.0');
+  it('is 0.2.1', () => {
+    expect(pkg.version).toBe('0.2.1');
   });
 
   it('ships and exports the new protos, the golden vectors and the payload schemas', () => {

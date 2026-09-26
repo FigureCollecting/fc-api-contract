@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/holding-status.schema.json",
   "title": "holding/{head_id}/status payload",
-  "description": "UPSERT payload of holding/{head_id}/status. Removing the holding is a DELETE with an empty payload.",
+  "description": "UPSERT payload of holding/{head_id}/status. Removing the holding is a DELETE with an empty payload. Serialized, at most 142 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [

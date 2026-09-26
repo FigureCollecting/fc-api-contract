@@ -110,6 +110,7 @@ export type { HlcClock, HlcOptions, HlcState } from './hlc.js';
 
 export {
   HOLDING_STATUSES,
+  MAX_PAYLOAD_BYTES,
   PUSH_REJECT_REASONS,
   USER_FACET_FIELDS,
   USER_FACET_PAYLOAD_SCHEMAS,

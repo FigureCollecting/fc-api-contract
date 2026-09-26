@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/uf-note.schema.json",
   "title": "uf/{head_id}/note payload",
-  "description": "UPSERT payload of uf/{head_id}/note.",
+  "description": "UPSERT payload of uf/{head_id}/note. Serialized, at most 60,133 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [

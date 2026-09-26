@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/holding-count.schema.json",
   "title": "holding/{head_id}/count payload",
-  "description": "UPSERT payload of holding/{head_id}/count. Shown only while the status facet is live.",
+  "description": "UPSERT payload of holding/{head_id}/count. Shown only while the status facet is live. Serialized, at most 136 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [
