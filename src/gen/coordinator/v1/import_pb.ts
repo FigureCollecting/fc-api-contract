@@ -14,8 +14,10 @@
 // server_now) and the reserved server device is the all-zero id (sync.proto
 // rule 5). The per-user import counter increases with every import. Which
 // side's change stands is no longer decided by version: THE THREE-WAY RULE
-// below decides, and a phone catches an import write that crosses an edit it
-// has not pushed or seen come back (sync.proto rule 6, IMPORT CROSSINGS). A
+// below decides over the edits the server holds, the client calling
+// ImportMfcExport pushes its outbox first, and a phone catches an import
+// write or conflict that crosses an edit it has not pushed or seen come back,
+// on the facet or on the copy's row (sync.proto rule 6, IMPORT CROSSINGS). A
 // facet whose stored version is not below the import's (a device edit minted
 // within the clock skew of the import) is left, base included, for the next
 // import. The import stamps edited_at as midnight UTC of export_date
@@ -28,8 +30,10 @@
 // "invalid_id" (no canonical id: "0", a sign, a space, a non-ASCII digit),
 // "duplicate_id" (an earlier row has the same canonical id; the first row
 // stands), "invalid_count" (Count is neither blank nor ASCII digits),
-// "count_over_99", "no_product". An unresolved row writes nothing, and the
-// import leaves its id's earlier copies and their figure values alone. Count
+// "count_over_99", "no_product". An unresolved row writes nothing. One
+// unresolved for invalid_count, count_over_99 or no_product also leaves its
+// id's earlier copies and their figure values alone; a duplicate_id row
+// leaves its id to the first row, and an invalid_id row names no id. Count
 // blank means 1; Count 0 states no copies, and the row still states its
 // figure values. Owned, Ordered and Wished map to the kinds owned, ordered
 // and wished. A row's figure values are uf/{head_id}/score ("N/10"), note
@@ -72,16 +76,21 @@
 // ER MERGES. Heads are compared through the spine's redirect chain: two
 // heads are equal when they resolve to one survivor, so a spine merge alone
 // changes no M, B or A, writes nothing and re-keys nothing. A row's figure is
-// the survivor its id resolves to. Rows resolving to one survivor each add
-// their copies, and its figure values come from the numerically lowest MFC
-// id among them; a survivor no row resolves to states no score, note or
-// wishability. For a figure field, B is the base with the higher version
+// the survivor its id resolves to, and rows resolving to one survivor each
+// add their copies. For a figure field, B is the base with the higher version
 // among the heads resolving to the survivor, A is the value rule 6 displays,
 // and K is rule 6's write target among those heads (the head of the live
 // facet with the higher version, else the survivor): the head its base was
-// written under unless the app deleted the field since. The import writes K,
-// its base and its conflict there, and tombstones a field, as a device delete
-// does, on every one of those heads holding it live.
+// written under unless the app deleted the field since. Between equal
+// versions, which one import's writes under heads merged later can have, the
+// lower head_id wins (bytewise, as rule 6 displays). M is B when any row
+// resolving to the survivor states B's value, else the value of the
+// numerically lowest MFC id among them; a survivor no row resolves to states
+// no score, note or wishability. So MFC changes a merged figure only when
+// none of its rows still states the base, and an unchanged export writes
+// nothing whatever versions the merged heads' bases carry. The import writes
+// K, its base and its conflict there, and tombstones a field, as a device
+// delete does, on every one of those heads holding it live.
 //
 // A ROW'S COPIES. The row's copies are the occurrences whose origin names its
 // canonical id. A copy is UNCHANGED when its status and head, as the server
@@ -106,8 +115,9 @@
 //     unchanged copies of its figure that have no live status, lowest occ id
 //     first; then adopts the live copies of the row's figure and kind that
 //     carry no origin (added in the app), lowest occ id first, writing only
-//     their origin; then creates copies (origin, head and status) at the
-//     lowest unused ordinals. To remove, it tombstones the status of the
+//     their origin, each at the lowest unused ordinal; then creates copies at
+//     the lowest unused ordinals, writing each one's origin, head and status
+//     in that order. To remove, it tombstones the status of the
 //     row's unchanged live copies of its figure and kind, highest occ id
 //     first; any it still lacks it raises for removal, as below.
 //   * Otherwise the count is a CONFLICT, held per copy so that each is
@@ -141,10 +151,17 @@
 // CONFLICTS. A conflict is PENDING while its facet is live and K's version is
 // still `against`; `against` is absent when K had no version, and the
 // conflict is then pending while K has none. The user resolves it with an
-// ordinary write to K through Push: keep the app's value (write it again) or
-// take MFC's (the base's value, or a tombstone when the base is one). Any
-// write to K after the conflict was raised resolves it, so a client shows a
-// pending conflict wherever K is edited. Before its three-way, each import
+// ordinary write to K through Push, minted with Hlc.tick(base) on the higher
+// of K's local version and the conflict facet's: keep the app's value (write
+// it again) or take MFC's (the base's value, or a tombstone when the base is
+// one). Only a write to K above the conflict facet's own version resolves it.
+// A write to K at or below that version that lands (an edit minted before
+// the conflict reached the server, pushed after it) has not seen the
+// conflict: in the same transaction the server re-upserts the conflict facet,
+// above its current version, with `against` moved to that write's version,
+// and the conflict stays pending. A client shows a pending conflict wherever
+// K is edited, and one raised on K crosses the client's open edits to K
+// (sync.proto rule 6, IMPORT CROSSINGS). Before its three-way, each import
 // tombstones every conflict facet that is no longer pending; the base already
 // holds the value the user decided against or took. A pending conflict is
 // re-upserted, with the same `against`, only when M changed again, and

@@ -210,7 +210,9 @@ export function reimport(c: ReimportCase): ReimportResult {
     }
   }
 
-  // Figure values: per survivor, K is rule 6's write target, B the latest base, A the displayed value.
+  // Figure values: per survivor, K is rule 6's write target, B the latest base, A the displayed value, equal
+  // versions ordering by head_id (the lower first); M is B when a row of the survivor states it, else the
+  // numerically lowest id's value.
   const leftAlone = new Set(
     c.copies.filter((x) => x.origin !== undefined && skipped.has(x.origin.id)).flatMap((x) => [x.head, x.base?.head ?? x.head].map(survivor)),
   );
@@ -221,14 +223,15 @@ export function reimport(c: ReimportCase): ReimportResult {
   ]);
   for (const s of inPlay) {
     if (leftAlone.has(s)) continue;
-    const source = stated.find(([, r]) => r.figure === s)?.[1].row;
+    const sources = stated.filter(([, r]) => r.figure === s).map(([, r]) => r.row);
     for (const f of FIELDS) {
       const heads = Object.keys(figures).filter((h) => survivor(h) === s && figures[h]![f] !== undefined);
-      const live = heads.filter((h) => figures[h]![f]!.value !== null).sort((a, b) => figures[b]![f]!.v! - figures[a]![f]!.v!);
-      const bases = heads.filter((h) => figures[h]![f]!.baseV !== undefined).sort((a, b) => figures[b]![f]!.baseV! - figures[a]![f]!.baseV!);
+      const newest = (rank: (h: string) => number) => (a: string, b: string) => rank(b) - rank(a) || (a < b ? -1 : 1);
+      const live = heads.filter((h) => figures[h]![f]!.value !== null).sort(newest((h) => figures[h]![f]!.v!));
+      const bases = heads.filter((h) => figures[h]![f]!.baseV !== undefined).sort(newest((h) => figures[h]![f]!.baseV!));
       const K = live[0] ?? s;
-      const m = source?.[f] ?? null;
       const b = bases[0] === undefined ? null : (figures[bases[0]]![f]!.base ?? null);
+      const m = sources.some((r) => same(r[f], b)) ? b : (sources[0]?.[f] ?? null);
       const a = live[0] === undefined ? null : figures[live[0]]![f]!.value;
       if (same(m, b)) continue;
       const cell = ((figures[K] ??= {})[f] ??= { value: null });

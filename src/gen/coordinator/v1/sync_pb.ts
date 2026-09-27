@@ -287,38 +287,68 @@
 //     re-keyed, and occurrence, collection and tag ids are never reused. A
 //     card groups occurrences whose head is any of its requested_as, and
 //     their counts sum; there is no status tiebreak. For each uf field the
-//     live facet with the higher version among requested_as is displayed, and
-//     new writes go to its head_id (a card with none uses card.head_id); a
-//     delete tombstones that field on every requested_as head holding it
-//     live, each minted on its own facet's version. Tag sets union across
-//     requested_as, and an untag tombstones the membership on every head that
-//     holds it. A client that hydrates over several GetProducts calls groups
-//     cards by head_id across every call and page and unions their
-//     requested_as; the display, write-target and delete rules apply to that
-//     union.
+//     live facet with the higher version among requested_as is displayed,
+//     the lower head_id (bytewise) between equal versions (one import's
+//     writes under heads merged later), and new writes go to its head_id (a
+//     card with none uses card.head_id); a delete tombstones that field on
+//     every requested_as head holding it live, each minted on its own facet's
+//     version. Tag sets union across requested_as, and an untag tombstones
+//     the membership on every head that holds it. A client that hydrates over
+//     several GetProducts calls groups cards by head_id across every call and
+//     page and unions their requested_as; the display, write-target and
+//     delete rules apply to that union.
 //
 //     IMPORT CROSSINGS. An import write is an event whose version carries the
 //     reserved all-zero device (rule 5). The import's three-way rule
 //     (import.proto) sees only edits the server holds, so a client catches
 //     the rest. An edit of its own to K is OPEN from when the client mints it
-//     until its Delta delivers K at or above the edit's version. An import
-//     write to K CROSSES the open edits to K when it arrives, in Delta or as
-//     `current` on a STALE result, with a version above every version the
-//     client had taken from the server for K before the oldest of them was
-//     minted, and with a value different from the latest one's (K's own
-//     fields, never edited_at or tz; a tombstone is no value). The client
-//     then neither applies nor drops it: it keeps showing its own value, keeps
-//     its unpushed edits to K unpushed, holds the import write as MFC's side
-//     and shows a pending import conflict on K, stored with the outbox so a
-//     reload keeps it. A later import write to K only replaces MFC's side; a
-//     write to K by any other device ends the conflict and follows the
-//     ordinary rules, and so do the held edits. The user resolves it with an
-//     ordinary write to K, minted with Hlc.tick(base) on the higher of the
-//     local and the import write's version, that replaces the unpushed edits:
-//     keep the app's value (write it again) or take MFC's (its value, or a
-//     tombstone). An edit already pushed cannot be recalled; if it lands the
-//     conflict stays until the user resolves it. golden/import-vectors.json
-//     has the cases.
+//     until its Delta delivers K at or above the edit's version, and a key's
+//     open edits CHANGE it unless the latest restates the value the client
+//     showed for the key before the oldest was minted. An arriving event is
+//     NEW to an open edit when the client had not taken that version of the
+//     event's key, or a higher one, before the edit was minted. An import
+//     write to K, or a conflict raised on K (a write to imp/mfc/conflict/{K},
+//     MFC's side being imp/mfc/base/{K}), arriving in Delta or as `current`
+//     on a STALE result, is checked against the open edits it is new to. Of
+//     those, the ones to K are dropped when none of them has been pushed and
+//     together they do not change K. Then, when MFC's side differs from the
+//     value the client shows for K (K's own fields, never edited_at or tz; a
+//     tombstone is no value), it CROSSES:
+//
+//       * the open edits to K;
+//       * ROW GRAIN, when it writes occ/{x}/status and removes a copy the
+//         client shows live or adds one the client shows with none: the open
+//         edits that change the status of another copy of x's row (a copy
+//         whose origin names x's MFC id), and, for an addition, those that
+//         set a copy with no origin, of x's figure, to the kind it adds. The
+//         import writes a copy's origin and head before its status, so the
+//         client knows both when the status arrives.
+//
+//     An event that crosses no edit follows the ordinary rules. One that
+//     crosses is neither applied nor dropped: the client keeps showing its
+//     own value, holds the event as MFC's side of a pending import conflict
+//     on K, stored with the outbox so a reload keeps it, and pushes no edit to
+//     K, or to the key of an edit it crossed, until the conflict ends. A later
+//     import write to K, or conflict on K, only replaces MFC's side; a write
+//     to K by any other device ends the conflict and follows the ordinary
+//     rules, and so do the held edits. The user resolves it with an ordinary
+//     write to K, minted with Hlc.tick(base) on the higher of the local and
+//     MFC's side's version, that replaces the unpushed edits to K: keep the
+//     app's value (write it again) or take MFC's (its value, or a tombstone).
+//     The client then pushes the held edits to other keys, unless another
+//     pending conflict holds them. An edit already pushed cannot be recalled;
+//     if it lands the conflict stays until the user resolves it. A client
+//     that calls ImportMfcExport first pushes its outbox, held edits aside,
+//     and has every push answered, so the import's three-way sees its own
+//     edits. golden/import-vectors.json has the cases.
+//
+//     IMPORT CONFLICTS. A pending imp/{site}/conflict/{key} is resolved only
+//     by a write to {key} above the conflict facet's own version. A write to
+//     {key} at or below that version that lands (an edit minted before the
+//     conflict reached the server, pushed after it) has not seen the
+//     conflict: in the same transaction the server re-upserts the conflict
+//     facet, above its current version, with `against` moved to that write's
+//     version, and the conflict stays pending (import.proto CONFLICTS).
 //
 //     PRIVACY. Every user-owned facet is private to its user. Neither the
 //     coordinator nor a client logs a payload or a name facet. An import
@@ -334,6 +364,10 @@
 //  7. DEFERRED, DELIBERATELY. There is no Resync or prune signal and no Ack
 //     RPC in 0.2.0: the feed never prunes yet. The recovery for an unreadable
 //     cursor is INVALID_ARGUMENT followed by a replay from an empty cursor.
+//     A prune, when one comes, keeps every import write and every
+//     imp/{site}/conflict write, even one a later write to its key
+//     superseded: a client catches an import write or conflict that crossed
+//     an edit of its own only by seeing it (rule 6, IMPORT CROSSINGS).
 // ============================================================================
 
 // @generated by protoc-gen-es v2.15.0 with parameter "target=ts,import_extension=js"

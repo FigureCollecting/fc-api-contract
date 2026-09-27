@@ -81,9 +81,22 @@ describe('schemaGrowthViolations: a published payload schema never gains a prope
     expect(schemaGrowthViolations('d.json', DISPOSAL, either)).toEqual(['d.json: /anyOf/0 is new', 'd.json: /anyOf/1 is new']);
   });
 
-  it('flags a boolean subschema that changed', () => {
+  it('flags a boolean subschema that changed, and passes one that did not', () => {
     const before = { type: 'array', items: false };
     expect(schemaGrowthViolations('a.json', before, { type: 'array', items: true })).toEqual(['a.json: /items changed from false to true']);
+    expect(schemaGrowthViolations('a.json', before, structuredClone(before))).toEqual([]);
+  });
+
+  it('compares an additionalProperties schema at its own path', () => {
+    const before = { type: 'object', additionalProperties: { type: 'string' } };
+    expect(schemaGrowthViolations('m.json', before, structuredClone(before))).toEqual([]);
+    expect(schemaGrowthViolations('m.json', before, { type: 'object', additionalProperties: { type: 'integer' } })).toEqual([
+      'm.json: /additionalProperties changed type from "string" to "integer"',
+    ]);
+    expect(schemaGrowthViolations('m.json', before, { type: 'object', additionalProperties: true })).toEqual([
+      'm.json: / changed additionalProperties from {"type":"string"} to true',
+      'm.json: /additionalProperties is gone',
+    ]);
   });
 
   it('flags a property added at the top level', () => {
@@ -250,7 +263,7 @@ describe('main', () => {
     commit('one');
     git(repo, 'tag', 'v0.1.0');
     commit('two');
-    expect(run(repo)).toEqual({ code: 0, out: 'Schema growth against v0.1.0: every published schema kept its properties (1 checked).' });
+    expect(run(repo)).toEqual({ code: 0, out: 'Schema growth against v0.1.0: every published schema is unchanged but for annotations and enum growth (1 checked).' });
   });
 
   it('exits 0 with a skip note when there is no earlier tag', () => {
@@ -267,7 +280,7 @@ describe('main', () => {
     const { code, out } = run(repo);
     expect(code).toBe(1);
     expect(out).toContain('occ-disposal.schema.json: / gained properties fx');
-    expect(out).toMatch(/a new attribute is a new facet key/);
+    expect(out).toMatch(/A published payload schema never gains a property or changes what it accepts; a new attribute is a new facet key/);
   });
 
   it('exits 1 with the reason when the baseline cannot be found', () => {

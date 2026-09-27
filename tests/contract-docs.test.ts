@@ -510,6 +510,9 @@ describe('import.proto', () => {
     expect(text).toMatch(/Only a write to K above the conflict facet's own version resolves it\. A write to K at or below that version that lands \(an edit minted before the conflict reached the server, pushed after it\) has not seen the conflict: in the same transaction the server re-upserts the conflict facet, above its current version, with `against` moved to that write's version, and the conflict stays pending\./);
     expect(text).toMatch(/A client shows a pending conflict wherever K is edited, and one raised on K crosses the client's open edits to K \(sync\.proto rule 6, IMPORT CROSSINGS\)\./);
     expect(text).not.toMatch(/Any write to K after the conflict was raised resolves it/);
+    const schema = JSON.parse(read('schemas/imp-conflict.schema.json')) as { description: string; properties: { against: { description: string } } };
+    expect(schema.description).toMatch(/Only a write to \{key\} above this facet's own version resolves it; an older one that lands moves `against` to its version \(import\.proto CONFLICTS\)\./);
+    expect(schema.properties.against.description).toMatch(/^\{key\}'s version when the conflict was raised, or the version of a later write to \{key\} at or below this facet's own version that landed/);
     expect(text).toMatch(/`against` is absent when K had no version, and the conflict is then pending while K has none/);
     expect(text).toMatch(/A conflict is PENDING while its facet is live and K's version is still `against`/);
     expect(text).toMatch(/The user resolves it with an ordinary write to K through Push/);

@@ -1,7 +1,9 @@
-// A published payload schema never gains a property (sync.proto rule 6). For every schema the previous
-// v* tag published, the recursive properties and required sets must be unchanged and a closed object must
-// stay closed; an enum may only grow. buf breaking guards the protos; this guards schemas/ the same way,
-// against the same baseline (scripts/buf-breaking.sh --print-baseline). Run: node scripts/schema-growth.ts
+// A published payload schema never gains a property (sync.proto rule 6), and never changes what it accepts. For
+// every schema the previous v* tag published, every keyword must be unchanged at every depth except the
+// ANNOTATIONS, which no validator reads, and an enum, which may only grow: no property, pattern property or
+// subschema is added or removed, a closed object stays closed, and no type, bound, pattern or format changes.
+// buf breaking guards the protos; this guards schemas/ the same way, against the same baseline
+// (scripts/buf-breaking.sh --print-baseline). Run: node scripts/schema-growth.ts
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -19,19 +21,29 @@ const names = (v: unknown): string[] => (isObject(v) ? Object.keys(v) : []);
 const items = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const missing = <T>(from: T[], within: T[]) => from.filter((x) => !within.some((y) => JSON.stringify(y) === JSON.stringify(x)));
 
-// Every subschema, keyed by its path: properties and the other name maps, the single-schema keywords
-// and the schema lists.
-function walk(schema: unknown, path: string, out: Map<string, Json>): Map<string, Json> {
-  if (!isObject(schema)) return out;
+/** The only keywords a published schema may change: annotations, which no validator reads. An enum may also grow. */
+export const ANNOTATIONS: readonly string[] = ['title', 'description', '$comment', 'examples'];
+// The keywords that hold subschemas, by name, one or a list. A subschema is compared at its own path.
+const NAME_MAPS = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'];
+const SINGLE = ['items', 'additionalItems', 'contains', 'not', 'if', 'then', 'else', 'propertyNames', 'unevaluatedItems', 'unevaluatedProperties'];
+const LISTS = ['prefixItems', 'allOf', 'anyOf', 'oneOf'];
+
+// Every subschema, boolean ones included, keyed by its path. A boolean additionalProperties is compared at its
+// parent, where false means closed.
+function walk(schema: unknown, path: string, out: Map<string, unknown>): Map<string, unknown> {
   out.set(path, schema);
+  if (!isObject(schema)) return out;
   const at = (step: string) => `${path === '/' ? '' : path}/${step}`;
-  for (const key of ['properties', 'patternProperties', '$defs', 'definitions']) {
+  for (const key of NAME_MAPS) {
     for (const name of names(schema[key])) walk((schema[key] as Json)[name], at(`${key}/${name}`), out);
   }
-  for (const key of ['items', 'additionalProperties', 'contains', 'not', 'if', 'then', 'else']) walk(schema[key], at(key), out);
-  for (const key of ['prefixItems', 'allOf', 'anyOf', 'oneOf']) items(schema[key]).forEach((sub, i) => walk(sub, at(`${key}/${i}`), out));
+  if (isObject(schema.additionalProperties)) walk(schema.additionalProperties, at('additionalProperties'), out);
+  for (const key of SINGLE) if (schema[key] !== undefined) walk(schema[key], at(key), out);
+  for (const key of LISTS) items(schema[key]).forEach((sub, i) => walk(sub, at(`${key}/${i}`), out));
   return out;
 }
+
+const shown = (v: unknown) => (v === undefined ? 'absent' : JSON.stringify(v));
 
 /** What `after` changed about `before` that a published schema may not change, one line each. */
 export function schemaGrowthViolations(file: string, before: unknown, after: unknown): string[] {
@@ -40,27 +52,42 @@ export function schemaGrowthViolations(file: string, before: unknown, after: unk
   const out: string[] = [];
   const reported: string[] = [];
   for (const path of [...new Set([...old.keys(), ...now.keys()])].sort()) {
-    if (reported.some((p) => path.startsWith(`${p}/`))) continue; // said once, at the top of the subtree
+    if (reported.some((p) => path === p || path.startsWith(`${p}/`))) continue; // said once, at the top of the subtree
     const say = (what: string) => out.push(`${file}: ${path} ${what}`);
     const a = old.get(path);
     const b = now.get(path);
-    if (a === undefined || b === undefined) {
-      if (b === undefined) say('is gone');
-      else if (b.properties !== undefined || b.required !== undefined) say('is new and declares properties or required');
+    if (!old.has(path) || !now.has(path)) {
+      if (!now.has(path)) say('is gone');
+      else say(isObject(b) && (b.properties !== undefined || b.required !== undefined) ? 'is new and declares properties or required' : 'is new');
       reported.push(path);
       continue;
     }
-    const gained = missing(names(b.properties), names(a.properties));
-    const lost = missing(names(a.properties), names(b.properties));
-    if (gained.length > 0) say(`gained properties ${gained.join(', ')}`);
-    if (lost.length > 0) say(`lost properties ${lost.join(', ')}`);
-    const required = missing(items(b.required), items(a.required));
-    const unrequired = missing(items(a.required), items(b.required));
-    if (required.length > 0) say(`required gained ${required.join(', ')}`);
-    if (unrequired.length > 0) say(`required lost ${unrequired.join(', ')}`);
-    const enumLost = missing(items(a.enum), items(b.enum));
-    if (enumLost.length > 0) say(`enum lost ${enumLost.map((x) => JSON.stringify(x)).join(', ')}`);
-    if (a.additionalProperties === false && b.additionalProperties !== false) say('is no longer closed (additionalProperties false)');
+    if (!isObject(a) || !isObject(b)) {
+      if (shown(a) !== shown(b)) say(`changed from ${shown(a)} to ${shown(b)}`);
+      continue;
+    }
+    for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+      if (ANNOTATIONS.includes(key) || SINGLE.includes(key) || LISTS.includes(key)) continue;
+      if (NAME_MAPS.includes(key)) {
+        const gained = missing(names(b[key]), names(a[key]));
+        const lost = missing(names(a[key]), names(b[key]));
+        if (gained.length > 0) say(`gained ${key} ${gained.join(', ')}`);
+        if (lost.length > 0) say(`lost ${key} ${lost.join(', ')}`);
+        for (const name of gained) reported.push(`${path === '/' ? '' : path}/${key}/${name}`);
+      } else if (key === 'required') {
+        const required = missing(items(b.required), items(a.required));
+        const unrequired = missing(items(a.required), items(b.required));
+        if (required.length > 0) say(`required gained ${required.join(', ')}`);
+        if (unrequired.length > 0) say(`required lost ${unrequired.join(', ')}`);
+      } else if (key === 'enum') {
+        const enumLost = missing(items(a.enum), items(b.enum));
+        if (enumLost.length > 0) say(`enum lost ${enumLost.map((x) => JSON.stringify(x)).join(', ')}`);
+      } else if (key === 'additionalProperties' && a[key] === false && b[key] !== false) {
+        say('is no longer closed (additionalProperties false)');
+      } else if (!(key === 'additionalProperties' && isObject(a[key]) && isObject(b[key])) && shown(a[key]) !== shown(b[key])) {
+        say(`changed ${key} from ${shown(a[key])} to ${shown(b[key])}`);
+      }
+    }
   }
   return out;
 }
@@ -106,7 +133,7 @@ export function checkSchemaGrowth(cwd: string): SchemaGrowth {
   return { baseline, checked, violations };
 }
 
-/** The CLI: 0 when every published schema kept its properties (or there is no baseline), 1 otherwise. */
+/** The CLI: 0 when every published schema is unchanged but for annotations and enum growth (or there is no baseline), 1 otherwise. */
 export function main(cwd: string = process.cwd(), log: (line: string) => void = console.log): number {
   let result: SchemaGrowth;
   try {
@@ -120,11 +147,11 @@ export function main(cwd: string = process.cwd(), log: (line: string) => void = 
     return 0;
   }
   if (result.violations.length === 0) {
-    log(`Schema growth against ${result.baseline}: every published schema kept its properties (${result.checked.length} checked).`);
+    log(`Schema growth against ${result.baseline}: every published schema is unchanged but for annotations and enum growth (${result.checked.length} checked).`);
     return 0;
   }
   for (const line of result.violations) log(line);
-  log(`A published payload schema never gains a property; a new attribute is a new facet key (sync.proto rule 6). Baseline: ${result.baseline}.`);
+  log(`A published payload schema never gains a property or changes what it accepts; a new attribute is a new facet key (sync.proto rule 6). Baseline: ${result.baseline}.`);
   return 1;
 }
 

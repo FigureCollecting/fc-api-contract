@@ -224,7 +224,12 @@ message ProductImage {
   ImageMask mask = 8;
 
   // GROUNDING, measured on the mask's alpha, or on the derivative's own
-  // alpha when it has one, where opaque means alpha above 10 of 255.
+  // alpha when it has one, where opaque means alpha above 10 of 255. The
+  // grounding fields, thumbhash and dominant_color describe the image as
+  // THIS caller is shown it: when a display restriction withholds the mask
+  // from the caller they are computed without it (the grounding fields on
+  // the derivative's own alpha, else unset), so a withheld mask never
+  // reaches the caller through a field derived from it.
   //
   // The fraction of the image's height that is transparent below its lowest
   // opaque row, 0 to 1: how far to lower the image so the figure stands on
@@ -236,12 +241,13 @@ message ProductImage {
   // no opaque row was found.
   ContactBand contact_band = 10;
 
-  // A ThumbHash (github.com/evanw/thumbhash) of the image as displayed, the
-  // mask applied when there is one: the placeholder while it loads. Empty
-  // when unknown.
+  // A ThumbHash (github.com/evanw/thumbhash) of the image as this caller is
+  // shown it, the mask applied only when the caller is sent one: the
+  // placeholder while it loads. Empty when unknown.
   bytes thumbhash = 11;
 
-  // The image's dominant color as "#rrggbb", lowercase. Empty when unknown.
+  // The dominant color of the image as this caller is shown it, as
+  // "#rrggbb", lowercase. Empty when unknown.
   string dominant_color = 12;
 }
 

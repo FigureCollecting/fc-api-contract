@@ -43,9 +43,11 @@ to remember; CI enforces it.
 The payload JSON Schemas get the same treatment, because `buf` cannot see them: a published schema
 never gains a property (a new attribute is a new facet key, since every write replaces the whole
 payload). `scripts/schema-growth.ts` (`npm run schema-growth`, in the contract job and before every
-publish) compares each schema the previous `v*` tag published with the working tree: the properties
-and `required` sets must be unchanged at every depth, a closed object must stay closed, and an enum
-may only grow. A schema is removed only by retiring it by name in the script's `RETIRED_SCHEMAS`.
+publish) compares each schema the previous `v*` tag published with the working tree: every keyword
+must be unchanged at every depth except the annotations (`title`, `description`, `$comment`,
+`examples`), which no validator reads, and `enum`, which may only grow. So no property, pattern
+property or subschema is added or removed, a closed object stays closed, and no type, bound, pattern
+or format changes. A schema is removed only by retiring it by name in the script's `RETIRED_SCHEMAS`.
 
 **The gate of record is the contract job on the PR**, where a break is cheap to fix. The publish
 workflow re-runs the same check as belt and braces, because a tag can be cut from any commit and
@@ -143,8 +145,9 @@ collections and tags have name facets (`coll/{kind}/{cid|default}/name`, `tag/{t
 server owns `occ/{occ}/origin` and the import's `imp/{site}/base|conflict/{key}` facets
 (`import.proto` has the three-way re-import rule, run per field and on each row's Count, with heads
 compared through the spine's redirect chain; its copies get occ ids keyed by a secret only the
-coordinator holds). An import write that crosses an edit still on a phone is presented to the user
-there, never silently adopted (rule 6, IMPORT CROSSINGS). Every payload schema is closed and stays closed:
+coordinator holds). An import write or conflict that crosses an edit still on a phone, on the facet
+or on the copy's row, is presented to the user there, never silently adopted (rule 6, IMPORT
+CROSSINGS). Every payload schema is closed and stays closed:
 a new attribute is a new facet key, never a new property, because every write replaces the whole
 payload and an older writer would drop a property it does not know.
 
@@ -176,7 +179,7 @@ only signal a client gets that the spine changed how a verdict is derived.
 npm ci
 npm run lint        # buf lint (STANDARD, no exceptions)
 npm run breaking    # buf breaking vs the PREVIOUS v* tag; skips cleanly when there is none
-npm run schema-growth  # no payload schema that tag published gained a property
+npm run schema-growth  # no payload schema that tag published changed beyond annotations and enum growth
 npm run generate    # regenerate src/gen from proto/ — commit the result
 npm run typecheck
 npm run build       # tsc -> dist/
