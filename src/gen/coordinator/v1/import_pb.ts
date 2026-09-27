@@ -101,15 +101,15 @@
 //   * M_count == B_count: nothing more.
 //   * A_count == M_count: only bases move.
 //   * A_count == B_count: only MFC changed the count, and the import adds or
-//     removes the difference by rule 6's PICKS, never picking a copy the app
-//     changed. To add, it upserts the status of the row's unchanged copies of
-//     its figure that have no live status, lowest occ id first; then adopts
-//     the live copies of the row's figure and kind that carry no origin
-//     (added in the app), lowest occ id first, writing only their origin;
-//     then creates copies (origin, head and status) at the lowest unused
-//     ordinals. To remove, it tombstones the status of the row's unchanged
-//     live copies of its figure and kind, highest occ id first; any it still
-//     lacks it raises for removal, as below.
+//     removes the difference by rule 6's PICKS, never writing the status of a
+//     copy the app changed. To add, it upserts the status of the row's
+//     unchanged copies of its figure that have no live status, lowest occ id
+//     first; then adopts the live copies of the row's figure and kind that
+//     carry no origin (added in the app), lowest occ id first, writing only
+//     their origin; then creates copies (origin, head and status) at the
+//     lowest unused ordinals. To remove, it tombstones the status of the
+//     row's unchanged live copies of its figure and kind, highest occ id
+//     first; any it still lacks it raises for removal, as below.
 //   * Otherwise the count is a CONFLICT, held per copy so that each is
 //     resolved by an ordinary write to that copy's status. For each copy MFC
 //     has and the app lacks, the import raises for addition the row's copies
@@ -117,7 +117,8 @@
 //     (origin and head written, status not); for each copy the app has and
 //     MFC lacks, it raises for removal the row's live copies of its figure and
 //     kind, unchanged ones first, highest occ id first. A raised copy's status
-//     is not written, and imp/mfc/conflict/occ/{occ}/status is upserted.
+//     is not written, and imp/mfc/conflict/occ/{occ}/status is upserted; under
+//     CONFLICTS below, a copy's M is the base status the row's bases give it.
 //   Whenever M_count != B_count, the row's bases then describe MFC: a copy
 //   raised for addition, or left live with the row's kind, its head resolving
 //   to the row's figure and not raised for removal, gets the row's kind as

@@ -444,17 +444,19 @@ describe('import.proto', () => {
     expect(text).not.toMatch(/the uf values come from the lowest MFC id among them/);
   });
 
-  it('runs the three-way on a row\'s Count, never picking a copy the app changed', () => {
+  it('runs the three-way on a row\'s Count, never writing the status of a copy the app changed', () => {
     const text = header();
     expect(text).toMatch(/A copy is UNCHANGED when its status and head, as the server holds them when the import starts, equal their bases then \(absent equals absent\)\./);
     expect(text).toMatch(/A row absent from this export, or with Count 0, has M_count 0 and B_kind as its kind; otherwise M_count is its Count\./);
     expect(text).toMatch(/HEAD\. For a row in this export, each of its copies with a base head runs the three-way on its head, M being the row's figure\./);
     expect(text).toMatch(/KIND\. When M_count > 0 and the row's kind differs from B_kind, each copy with a live base status runs the three-way on its status, M being the row's kind\./);
     expect(text).toMatch(/\* M_count == B_count: nothing more\. \* A_count == M_count: only bases move\./);
-    expect(text).toMatch(/\* A_count == B_count: only MFC changed the count, and the import adds or removes the difference by rule 6's PICKS, never picking a copy the app changed\./);
+    expect(text).toMatch(/\* A_count == B_count: only MFC changed the count, and the import adds or removes the difference by rule 6's PICKS, never writing the status of a copy the app changed\./);
+    expect(text).not.toMatch(/never picking a copy the app changed/);
     expect(text).toMatch(/then adopts the live copies of the row's figure and kind that carry no origin \(added in the app\), lowest occ id first, writing only their origin/);
     expect(text).toMatch(/\* Otherwise the count is a CONFLICT, held per copy so that each is resolved by an ordinary write to that copy's status\./);
     expect(text).toMatch(/Whenever M_count != B_count, the row's bases then describe MFC/);
+    expect(text).toMatch(/A raised copy's status is not written, and imp\/mfc\/conflict\/occ\/\{occ\}\/status is upserted; under CONFLICTS below, a copy's M is the base status the row's bases give it\./);
     expect(text).not.toMatch(/An ordinal absent from this export/);
   });
 
