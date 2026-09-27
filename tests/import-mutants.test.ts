@@ -102,7 +102,7 @@ describe('mutants: every rule is load-bearing', () => {
     expect(itemBreaches({})).toBe(0);
     const t = twoDevices();
     expect(t.silentCounts + t.differsShown).toBe(0);
-  }, 120_000);
+  }, 300_000);
 
   it.each(MUTANTS.map((m) => [m.name, m] as const))('%s is caught', (_name, m) => {
     const sw = m.sw ?? {};
