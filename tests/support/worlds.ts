@@ -328,3 +328,151 @@ export function reactionWorld(opts: { sw?: Switches } = {}): ReactionTally {
   return t;
 }
 
+
+// ------------------------------------------------------------------ world 5: reactions to an item (HELD (i) and (ii))
+// The tablet reacts only when the import showed it something for the figure (a figure item or a change entry), by hand
+// or by an answer, and the phone's late unit arrives after the tablet's reaction (OFF-T) or before it (OFF-P). A path
+// where the tablet did not react is compared with pushed-first and no reaction; one where it reacted, with pushed-first
+// and the same conditional reaction. A STALE answer is shown: the client shows the item as it now is.
+type ItemUnit = ['sell' | 'sell+disposal' | 'cancel' | 'tag', string] | ['add', ''];
+type ItemReaction = 'none' | 'readd' | 'tag-o1' | 'sell-o1' | 'sell-o2' | 'sell-high' | 'reown' | 'take' | 'keep' | 'undo' | 'dismiss';
+type ItemPath = 'REF' | 'OFF-T' | 'OFF-P';
+
+const liveOn = (d: Device) =>
+  [...d.replica.keys()]
+    .filter((k) => k.startsWith('occ/') && k.endsWith('/status'))
+    .map((k) => k.split('/')[1]!)
+    .filter((c) => ['owned', 'ordered', 'wished'].includes(d.show(`occ/${c}/status`) as string) && d.show(`occ/${c}/head`) === 'H1')
+    .sort();
+const removedOn = (d: Device) =>
+  [...d.replica.keys()]
+    .filter((k) => k.startsWith('occ/') && k.endsWith('/head') && d.show(k) === 'H1')
+    .map((k) => k.split('/')[1]!)
+    .filter((c) => d.show(`occ/${c}/status`) === null && d.show(`occ/${c}/origin`) !== null)
+    .sort();
+
+/** The tablet's reaction, if the import showed it something: whether it reacted, and the copy a by-hand sale wrote. */
+function reactToItem(Tb: Device, r: ItemReaction, t: number): { reacted: boolean; sold: string | null } {
+  const no = { reacted: false, sold: null };
+  const fig = Tb.show('imp/mfc/figure/H1');
+  const ch = Tb.show('imp/mfc/change/H1');
+  if ((fig === null && ch === null) || r === 'none') return no;
+  if (r === 'readd') {
+    Tb.edit('occ/a3/head', 'H1', t);
+    Tb.edit('occ/a3/status', 'owned', t);
+  } else if (r === 'tag-o1') Tb.edit('occ/o1/tag/t9', {}, t);
+  else if (r === 'sell-o1' || r === 'sell-o2' || r === 'sell-high') {
+    // by name, or by PICKS: the highest-id live copy the tablet shows
+    const c = r === 'sell-high' ? liveOn(Tb).at(-1) : liveOn(Tb).includes(r.slice(5)) ? r.slice(5) : undefined;
+    if (c === undefined) return no;
+    Tb.edit(`occ/${c}/status`, 'former', t);
+    return { reacted: true, sold: c };
+  } else if (r === 'reown') {
+    const c = removedOn(Tb).at(-1);
+    if (c === undefined) return no;
+    Tb.edit(`occ/${c}/status`, 'owned', t);
+  } else if (r === 'take' || r === 'keep') {
+    if (fig === null) return no;
+    Tb.answer('H1', r, t);
+  } else {
+    if (ch === null) return no;
+    Tb.answer('H1', r, t, {}, {}, 'change');
+  }
+  return { reacted: true, sold: null };
+}
+
+function runItemReaction(policy: string, pre: string, n: number, u: ItemUnit, d: number, r: ItemReaction, path: ItemPath, sw: Switches) {
+  const s = new Server({ namer: namer2, switches: sw });
+  const P = new Device(s, 'P');
+  const Tb = new Device(s, 'T');
+  Tb.edit('pref/mfc/import', { import_policy: policy }, T('08:00'));
+  Tb.push(T('08:01'));
+  s.runImport([row('1144', 'H1', 'owned', n)], T('09:00'));
+  P.pull();
+  Tb.pull();
+  if (pre === 'appadd') {
+    Tb.edit('occ/b1/head', 'H1', T('09:30'));
+    Tb.edit('occ/b1/status', 'owned', T('09:30'));
+  } else if (pre === 'appsell') Tb.edit(`occ/o${n}/status`, 'former', T('09:30'));
+  Tb.push(T('09:31'));
+  const [op, x] = u;
+  if (op === 'sell' || op === 'sell+disposal') P.edit(`occ/${x}/status`, 'former', T('10:00'));
+  if (op === 'sell+disposal') P.edit(`occ/${x}/disposal`, { reason: 'sold' }, T('10:00'));
+  if (op === 'cancel') P.edit(`occ/${x}/status`, null, T('10:00'));
+  if (op === 'tag') P.edit(`occ/${x}/tag/t1`, {}, T('10:00'));
+  if (op === 'add') {
+    P.edit('occ/a1/head', 'H1', T('10:00'));
+    P.edit('occ/a1/status', 'owned', T('10:00'));
+  }
+  if (path === 'REF') P.push(T('10:30'));
+  s.runImport([row('1144', 'H1', 'owned', n + d)], T('11:00'));
+  Tb.pull();
+  const { reacted, sold } = reactToItem(Tb, r, T('11:10'));
+  if (path === 'OFF-P') P.push(T('11:20'));
+  const stale = Tb.push(T('11:30')).some((x) => x.outcome === 'STALE') && ['take', 'keep', 'undo', 'dismiss'].includes(r);
+  if (path === 'OFF-T') P.push(T('12:00'));
+  for (let i = 0; i < 2; i++) {
+    P.pull();
+    Tb.pull();
+  }
+  const [counts, items] = JSON.parse(outcome(s)) as [unknown, unknown];
+  // both devices took the same copy out, offline: plain concurrency on one copy, which no import decided
+  const collision = sold !== null && sold === x && op !== 'tag';
+  return { counts: JSON.stringify(counts), items: JSON.stringify(items), held: Object.values(s.heldCards()).flat().sort(), reacted, stale, collision };
+}
+
+export interface ItemReactionTally {
+  runs: number;
+  same: number;
+  shown: number;
+  silent: number;
+  /** Counts equal, pushed-first has an item and this path shows nothing. */
+  silentItem: number;
+  /** The tablet's by-hand sale took the very copy the phone sold offline: counted apart, never silent. */
+  collisions: number;
+  reacted: number;
+  first: string[];
+}
+
+/**
+ * One late unit on the phone (a sale, a sale with its disposal, a cancel, a tag, an added copy), MFC changes the Count,
+ * and the tablet, having pulled the import, reacts to the figure item or change entry it shows (ASK, FAVOR_APP and
+ * FAVOR_MFC; the app unchanged, a copy added, or a copy sold before the import). No path may differ from its
+ * pushed-first reference silently.
+ */
+export function itemReactionWorld(opts: { sw?: Switches } = {}): ItemReactionTally {
+  const sw = opts.sw ?? {};
+  const t: ItemReactionTally = { runs: 0, same: 0, shown: 0, silent: 0, silentItem: 0, collisions: 0, reacted: 0, first: [] };
+  for (const policy of ['ASK', 'FAVOR_APP', 'FAVOR_MFC'])
+    for (const pre of ['none', 'appadd', 'appsell'])
+      for (const n of [1, 2, 3]) {
+        const copies = Array.from({ length: n }, (_, i) => `o${i + 1}`).filter((c) => !(pre === 'appsell' && c === `o${n}`));
+        const units: ItemUnit[] = [...copies.flatMap((x) => (['sell', 'sell+disposal', 'cancel', 'tag'] as const).map((op): ItemUnit => [op, x])), ['add', '']];
+        for (const u of units)
+          for (const d of [-2, -1, 1]) {
+            if (n + d < 0) continue;
+            for (const r of ['none', 'readd', 'tag-o1', 'sell-o1', 'sell-o2', 'sell-high', 'reown', 'take', 'keep', 'undo', 'dismiss'] as ItemReaction[]) {
+              const refR = runItemReaction(policy, pre, n, u, d, r, 'REF', sw);
+              const refNone = runItemReaction(policy, pre, n, u, d, 'none', 'REF', sw);
+              for (const path of ['OFF-T', 'OFF-P'] as ItemPath[]) {
+                const got = runItemReaction(policy, pre, n, u, d, r, path, sw);
+                const ref = got.reacted ? refR : refNone;
+                t.runs++;
+                if (got.reacted) t.reacted++;
+                const shown = got.held.length > 0 || got.items !== '{}' || got.stale;
+                if (got.counts === ref.counts && got.items === ref.items && got.held.length === 0) t.same++;
+                else if (shown) t.shown++;
+                else if (got.counts === ref.counts) {
+                  t.silentItem++;
+                  if (t.first.length < 5) t.first.push(`item: ${policy} ${pre} ${path} n=${n} ${JSON.stringify(u)} d=${d} T:${r} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`);
+                } else if (got.collision) t.collisions++;
+                else {
+                  t.silent++;
+                  if (t.first.length < 5) t.first.push(`${policy} ${pre} ${path} n=${n} ${JSON.stringify(u)} d=${d} T:${r} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`);
+                }
+              }
+            }
+          }
+      }
+  return t;
+}

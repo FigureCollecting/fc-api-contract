@@ -65,7 +65,7 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
     fields: { score: 'app', note: 'mfc', wishability: 'app' },
     ...WIDEST,
   },
-  'pref/import': { import_policy: 'FAVOR_APP', mfc_only: 'APPLY_AND_LIST', disposition_list: '9'.repeat(20), ...WIDEST },
+  'pref/import': { import_policy: 'FAVOR_APP', disposition_list: '9'.repeat(20), ...WIDEST },
   'occ/origin': ORIGIN,
   'imp/figure': {
     rev: 'A'.repeat(128),

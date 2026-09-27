@@ -4,7 +4,7 @@
 // two-import world in full (554,286 path runs); CI runs every 16th case of it.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
+import { itemReactionWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
 
 // The tallies go to the console, and to the file FC_PROPERTY_REPORT names when it is set.
 const report = (name: string, t: Tally) => {
@@ -40,6 +40,19 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
     expect(t.runs).toBe(4_700);
     expect({ silent: t.silent, noReactionDiffers: t.noReactionDiffers }, t.first.join('\n')).toEqual({ silent: 0, noReactionDiffers: 0 });
+  }, 600_000);
+
+  it('a reaction to an item: the tablet answers, or acts by hand on, the conflict or change entry it was shown, before or after the late unit arrives (HELD (i), (ii))', () => {
+    const t = itemReactionWorld();
+    const line =
+      `a reaction to an item: ${t.runs} path runs (${t.reacted} reacted); same as pushed-first ${t.same}; differs but shown ${t.shown}; ` +
+      `silent ${t.silent}; silent, pushed-first has an item ${t.silentItem}; one copy taken out on both devices ${t.collisions}`;
+    console.log(line);
+    if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+    expect(t.runs).toBe(12_936);
+    expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
+    // plain concurrency on one copy (the tablet's by-hand sale took the copy the phone sold offline), which no import decided
+    expect(t.collisions).toBe(9);
   }, 600_000);
 
   it('two devices, one edit each, both pull the import first (fuzz2_a.py)', () => {

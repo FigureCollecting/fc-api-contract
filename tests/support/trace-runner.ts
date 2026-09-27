@@ -33,9 +33,23 @@ export interface ScenarioEnd {
 export interface ReviewEnd {
   facets: Record<string, Json>;
   figure: Record<string, string>;
-  held: Record<string, string[]>;
+  held: Record<string, HeldCardView>;
   changes: Record<string, string>;
   align: Record<string, AlignAction[]>;
+}
+/** A held-edit card as the goldens pin it, read from its payload on the feed: each listed edit's key, value and reason, and `more` (the rev is opaque). */
+export interface HeldCardView {
+  held: { key: string; value: Json; reason: string }[];
+  more?: number;
+}
+export function heldCardViews(s: Server): Record<string, HeldCardView> {
+  const out: Record<string, HeldCardView> = {};
+  for (const [k, [v]] of [...s.emitted].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (!k.startsWith('imp/mfc/held/') || v === null) continue;
+    const card = v as unknown as HeldCardView;
+    out[k.slice('imp/mfc/held/'.length)] = { held: card.held.map((h) => ({ key: h.key, value: h.value, reason: h.reason })), ...(card.more === undefined ? {} : { more: card.more }) };
+  }
+  return out;
 }
 export interface Scenario {
   id?: string;
@@ -108,6 +122,6 @@ export function runScenario(c: Scenario, switches: Switches = {}, client: { stag
     }),
   );
   const end: ScenarioEnd = { facets, cards: s.pending(), held: s.heldEdits(), devices };
-  const review: ReviewEnd = { facets, figure: s.figureItems(), held: s.heldCards(), changes: s.changeEntries(), align: s.alignEntries() };
+  const review: ReviewEnd = { facets, figure: s.figureItems(), held: heldCardViews(s), changes: s.changeEntries(), align: s.alignEntries() };
   return { server: s, devices: devs, actual, wanted, end, review };
 }

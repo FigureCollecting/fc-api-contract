@@ -117,15 +117,24 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
     expect(names.join('\n')).toMatch(/only where the MFC id is known/);
     expect(names.join('\n')).toMatch(/clears itself when MFC catches up/);
     for (const topic of [/reacts right after its import/, /A spine merge ends the items of both heads/, /counts every answer on the figure/, /An answer names its item/,
-      /at most 16 edits/, /mfc_change item shows the app's score beside MFC's; take/, /follows the app's current side/, /add_to_list only for a row the entry lowers/,
+      /at most 16 edits/, /follows the app's current side/, /add_to_list only for a row the entry lowers/,
       /kept per part/, /Richness on a merged figure/, /MFC takes the app's score/, /MFC back at the base/, /undo restores a write only while/, /can be dismissed/,
-      /A row gone from the export/, /take on an mfc_change after the app changed/, /per_copy with a field side/, /a kind no row holds/, /Merged rows that change a field/])
+      /A row gone from the export/, /per_copy with a field side/, /a kind no row holds/, /Merged rows that change a field/,
+      // round 7
+      /An answer is no revision/, /makes a conflict's sides agree ends it and writes nothing/, /leaves the conflict standing and writes nothing/,
+      /the phone drops the copy it added/, /only when the edit was made before its commit/, /keep writes the held edit as the answer's write/,
+      /compares live copies/, /A by-hand reaction to a listed change: /, /A by-hand reaction to a listed change, the late sale first/,
+      /A by-hand reaction to a conflict: /, /A by-hand reaction to a conflict, the late sale first/, /holds only a reaction to the revision/,
+      /A conflict raised again after it ended has a new rev/, /A divergence raised again after a conflict replaced it has a new rev/,
+      /keeps its rev, whatever the app did meanwhile/, /counts what it does not list/, /An MFC-only change over a figure the app is ahead on/,
+      /counts the unit's own copy/, /only re-shows the app's side in an item is no revision/])
       expect(names.join('\n')).toMatch(topic);
+    expect(names.join('\n')).not.toMatch(/mfc_only|mfc_change|HOLD/);
   });
 
-  it('pin ImportMfcExportResponse\'s counters (fields 3 to 17) on every import of the review cases', () => {
+  it('pin ImportMfcExportResponse\'s counters (fields 3 to 17, 15 reserved) on every import of the review cases', () => {
     const KEYS = ['added', 'moved', 'unchanged', 'removed', 'facets_written', 'kept_newer', 'occurrences_added', 'occurrences_status_changed', 'occurrences_removed',
-      'conflicts_raised', 'conflicts_pending', 'divergences_pending', 'changes_held', 'align_pending', 'import_number'];
+      'conflicts_raised', 'conflicts_pending', 'divergences_pending', 'align_pending', 'import_number'];
     const imports = vectors.review.flatMap((c) => c.steps.filter((s): s is Extract<Step, { op: 'import' }> => s.op === 'import'));
     for (const s of imports) expect(Object.keys(s.expect?.counters ?? {}).sort()).toEqual([...KEYS].sort());
     // every counter is non-zero somewhere, so none is pinned only at 0
@@ -134,13 +143,35 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
 
   it('pin the review set\'s order and every item kind with the answers it allows', () => {
     const groups = vectors.review.flatMap((c) => c.steps.flatMap((s) => (s.op === 'import' ? (s.expect?.review ?? []) : []))) as { kind: string }[];
-    expect(new Set(groups.map((g) => g.kind))).toEqual(new Set(['conflict', 'mfc_change', 'divergence', 'held_edits', 'align_mfc']));
-    const order = ['conflict', 'mfc_change', 'divergence', 'held_edits', 'align_mfc'];
+    expect(new Set(groups.map((g) => g.kind))).toEqual(new Set(['conflict', 'divergence', 'held_edits', 'align_mfc']));
+    const order = ['conflict', 'divergence', 'held_edits', 'align_mfc'];
     for (const c of vectors.review)
       for (const s of c.steps) if (s.op === 'import') {
         const kinds = (s.expect?.review as { kind: string }[]).map((g) => order.indexOf(g.kind));
         expect(kinds, c.name).toEqual([...kinds].sort((a, b) => a - b));
       }
+  });
+
+  it('pin each held-edit card by its payload: every listed edit\'s key, value and reason, and `more`', () => {
+    const cards = vectors.review.flatMap((c) => Object.values(c.expect.held));
+    expect(cards.some((c) => (c.more ?? 0) > 0)).toBe(true);
+    const reasons = new Set(cards.flatMap((c) => c.held.map((h) => h.reason)));
+    expect(reasons).toEqual(new Set(['late_after_knowing', 'made_on_revised_result', 'after_answer']));
+    for (const c of cards) for (const h of c.held) expect(Object.keys(h).sort()).toEqual(['key', 'reason', 'value']);
+  });
+
+  it('pin HELD on a by-hand reaction to an item, in both arrival orders, and (ii) for reactions only (round 7)', () => {
+    const push = (prefix: string, k: number) =>
+      vectors.review.find((c) => c.name.startsWith(prefix))!.steps.filter((s) => s.op === 'push')[k]!.expect!.map((x) => x.outcome);
+    // a listed change: the late sale is held when the re-own came first, the re-own is held when the late sale came first
+    expect(push('A by-hand reaction to a listed change: ', 1)).toEqual(['HELD']);
+    expect(push('A by-hand reaction to a listed change, the late sale first', 1)).toEqual(['HELD']);
+    // a conflict settled by hand with another copy
+    expect(push('A by-hand reaction to a conflict: ', 2)).toEqual(['HELD']);
+    expect(push('A by-hand reaction to a conflict, the late sale first', 2)).toEqual(['HELD']);
+    // (ii) holds only a reaction: a tag on a copy the revision left alone is applied, a new copy held; an answer is no revision
+    expect(push('HELD (ii) holds only a reaction to the revision', 1)).toEqual(['APPLIED', 'HELD', 'HELD']);
+    expect(push('An answer is no revision', 1)).toEqual(['APPLIED', 'APPLIED', 'APPLIED']);
   });
 
   it.each(vectors.review.map((c) => [c.name, c] as const))('%s', (_name, c) => {
