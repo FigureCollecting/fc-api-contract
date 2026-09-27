@@ -38,21 +38,21 @@ describe('ImportService', () => {
       added: 1090,
       moved: 4,
       unchanged: 3,
-      held: 3,
+      keptNewer: 3,
       removed: 2,
       facetsWritten: 1310,
     });
     const decoded = fromJson(ImportMfcExportResponseSchema, toJson(ImportMfcExportResponseSchema, msg));
 
     expect(equals(ImportMfcExportResponseSchema, msg, decoded)).toBe(true);
-    expect(decoded.held).toBe(3);
+    expect(decoded.keptNewer).toBe(3);
     expect(decoded.unresolved[0]).toMatchObject({ mfcId: '3743689', status: 'Wished', line: 812, reason: 'no_product' });
     expect(decoded.unresolved[1]?.reason).toBe('count_over_99');
   });
 
   it('round-trips the 0.3.0 per-occurrence, review and align counters on their additive field numbers', () => {
     const counters = {
-      held: 4,
+      keptNewer: 4,
       occurrencesAdded: 1148,
       occurrencesStatusChanged: 3,
       occurrencesRemoved: 1,
@@ -75,7 +75,7 @@ describe('ImportService', () => {
       unchanged: 5,
       removed: 6,
       facets_written: 7,
-      held: 8,
+      kept_newer: 8,
       occurrences_added: 9,
       occurrences_status_changed: 10,
       occurrences_removed: 11,

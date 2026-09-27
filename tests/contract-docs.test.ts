@@ -468,7 +468,7 @@ describe('import.proto', () => {
     expect(text).toMatch(/FRAME \(F1\): every import writes one marker event last, imp\/\{site\}\/import\. For every figure the import decides, whether it writes to it or only moves its bases, last_seq\(I, S\) is the marker's position\./);
     expect(text).toMatch(/LATE EDIT: a pushed edit to a copy or field of S whose basis is before last_seq\(I, S\) for an import I that arrived before it: the device made it without having seen what I decided for S\. Any other edit is KNOWING\./);
     expect(text).toMatch(/ROW BASE \(server-internal, per MFC id\)/);
-    for (const removed of [/THE THREE-WAY RULE/, /ADOPTION IN PLACE/, /`against`/, /kept_newer/, /COUNT other-row/, /raises the whole difference for removal/]) expect(importProto).not.toMatch(removed);
+    for (const removed of [/THE THREE-WAY RULE/, /ADOPTION IN PLACE/, /`against`/, /COUNT other-row/, /raises the whole difference for removal/]) expect(importProto).not.toMatch(removed);
   });
 
   it('decides each figure once: counts by transitions and matching, fields per row, and one decision for the whole figure', () => {
@@ -508,12 +508,12 @@ describe('import.proto', () => {
     expect(text).toMatch(/The PushResult \(sync\.proto\) of such an edit is APPLIED when its value stands after the replay and STALE, with `current`, when the replay leaves another value \(an import placed after it changed the facet, or another device's edit won\)\./);
   });
 
-  it('holds a late edit on reaction, on a revised result, after an answer and past retention, and only a late edit (F3, 5.4)', () => {
+  it('holds a late edit on reaction or after an answer, an edit made on a revised result, and one past retention (F3, 5.4)', () => {
     const text = header();
-    expect(text).toMatch(/\(i\) placing it before the import would change that import's result on S \(the server replays both placements and compares S's copies and items\), and some device made a knowing edit to a copy of S after the import, without having seen the late edit's replay, that arrived before it or in the same push: HOLD ON REACTION, another device acted on the result the late edit would withdraw;/);
+    expect(text).toMatch(/\(i\) it is late, placing it before the import would change that import's result on S \(the server replays both placements and compares S's copies and items\), and some device made a knowing edit to a copy of S after the import, without having seen the late edit's replay, that arrived before it or in the same push: HOLD ON REACTION, another device acted on the result the late edit would withdraw;/);
     expect(text).toMatch(/\(ii\) its basis is before a replay's revision of S \(a withdrawal the device had not seen\): it was made on a result that has since changed;/);
-    expect(text).toMatch(/\(iii\) its basis is before an answer on S: the user decided without it; or \(iv\) its basis is before a frame the server no longer keeps\. Frames are kept at least 180 days and while any enrolled device's cursor is before them\./);
-    expect(text).toMatch(/Only a late edit is held\. The card's keep applies the held edits now, as knowing edits; its take drops them\./);
+    expect(text).toMatch(/\(iii\) it is late and its basis is before an answer on S: the user decided without it; or \(iv\) it is late for a frame the server no longer keeps\. Frames are kept at least 180 days and while any enrolled device's cursor is before them\./);
+    expect(text).toMatch(/A knowing edit made before an answer reached its device is applied, never held\. The card's keep applies the held edits now, as knowing edits; its take drops them\./);
   });
 
   it('answers items by rev: keep, take, per_copy, undo and dismiss, then realigns the bases', () => {
@@ -551,7 +551,7 @@ describe('import.proto', () => {
   });
 
   it('keeps the row counters partitioning resolved rows', () => {
-    expect(prose(importProto)).toMatch(/added \+ moved \+ unchanged \+ held == resolved/);
+    expect(prose(importProto)).toMatch(/added \+ moved \+ unchanged \+ kept_newer == resolved/);
   });
 
   it('names the reason a row is unresolved', () => {

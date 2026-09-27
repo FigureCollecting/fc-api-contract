@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/pref-import.schema.json",
+  "title": "pref/{site}/import payload",
+  "description": "UPSERT payload of pref/{site}/import: the user's import preferences (import.proto WHAT AN IMPORT DOES WITH A DECISION), read when an import starts. Serialized, at most 221 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "import_policy",
+    "mfc_only",
+    "edited_at",
+    "tz"
+  ],
+  "properties": {
+    "import_policy": {
+      "description": "A conflict: ASK (a figure item, the default), FAVOR_APP (settled as keep) or FAVOR_MFC (settled as take), each recorded with an undo.",
+      "enum": [
+        "ASK",
+        "FAVOR_APP",
+        "FAVOR_MFC"
+      ]
+    },
+    "mfc_only": {
+      "description": "A change only MFC made to a figure the import knew: APPLY_AND_LIST (written, and listed with an undo; the default) or HOLD (a figure item until confirmed).",
+      "enum": [
+        "APPLY_AND_LIST",
+        "HOLD"
+      ]
+    },
+    "disposition_list": {
+      "description": "The MFC list the user keeps sold and traded items in (e.g. 206369), for the align-MFC entries. A 0.3.0 import writes no disposal from it.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "edited_at": {
+      "description": "When the user made the edit, in the device's local time with its offset (at most ±18:00). Display only; never compared, never restamped.",
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,9})?(Z|[+-]((0\\d|1[0-7]):[0-5]\\d|18:00))$"
+    },
+    "tz": {
+      "description": "The device's IANA time zone at edit time, e.g. America/Chicago. Display only.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$"
+    }
+  }
+}

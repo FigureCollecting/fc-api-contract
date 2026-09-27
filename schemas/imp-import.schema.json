@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-import.schema.json",
+  "title": "imp/{site}/import payload",
+  "description": "UPSERT payload of imp/{site}/import: the marker every import writes last (import.proto FRAME). Serialized, at most 48 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "import",
+    "export_date"
+  ],
+  "properties": {
+    "import": {
+      "description": "The per-user counter of the import.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "export_date": {
+      "description": "The export_date of the import, \"YYYY-MM-DD\".",
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$"
+    }
+  }
+}

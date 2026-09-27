@@ -34,21 +34,21 @@ export const USER_FACET_FAMILIES = [
   'uf/ktag',
   'coll/name',
   'tag/name',
+  'res/answer',
+  'pref/import',
 ] as const;
 export type UserFacetFamily = (typeof USER_FACET_FAMILIES)[number];
 
-export const SERVER_FACET_FAMILIES = ['occ/origin', 'imp/base', 'imp/conflict'] as const;
+export const SERVER_FACET_FAMILIES = ['occ/origin', 'imp/figure', 'imp/held', 'imp/change', 'imp/align', 'imp/import'] as const;
 export type ServerFacetFamily = (typeof SERVER_FACET_FAMILIES)[number];
 export type FacetFamily = UserFacetFamily | ServerFacetFamily;
 
 /**
- * The user-owned families THE THREE-WAY RULE compares (import.proto), each with an imp/{site}/base and
- * conflict key: a copy's head and status, a disposal (only status former plus a disposal, for rows of the
- * user's configured disposition list (import.proto DISPOSITIONS)) and the three figure fields. Besides these
- * the import writes a filing only as {status}/default beside a status of another kind, never compared.
+ * The per-figure items the import keeps on the feed (import.proto THE SERVER DECIDES), keyed
+ * imp/{site}/{item}/{head_id}: a figure item, held edits, a change entry and an align-MFC entry.
  */
-export const IMPORT_WRITTEN_FAMILIES = ['occ/head', 'occ/status', 'occ/disposal', 'uf/score', 'uf/note', 'uf/wishability'] as const;
-export type ImportWrittenFamily = (typeof IMPORT_WRITTEN_FAMILIES)[number];
+export const IMPORT_ITEMS = ['figure', 'held', 'change', 'align'] as const;
+export type ImportItem = (typeof IMPORT_ITEMS)[number];
 
 export const PUSH_REJECT_REASONS = [
   'version_malformed',
@@ -56,6 +56,7 @@ export const PUSH_REJECT_REASONS = [
   'facet_key_not_user_owned',
   'device_mismatch',
   'payload_invalid',
+  'basis_missing',
 ] as const;
 export type PushRejectReason = (typeof PUSH_REJECT_REASONS)[number];
 
@@ -70,16 +71,14 @@ export type UserFacetKey =
   | { family: 'uf/tag'; headId: string; tagId: string }
   | { family: 'uf/ktag'; headId: string; collKind: CollectionKind; tagId: string }
   | { family: 'coll/name'; collKind: CollectionKind; collId: string }
-  | { family: 'tag/name'; tagId: string };
-
-/** A user-owned key the import writes: the target of an imp/{site}/base|conflict key. */
-export type ImportTargetKey =
-  | { family: 'occ/head' | 'occ/status' | 'occ/disposal'; occId: string }
-  | { family: 'uf/score' | 'uf/note' | 'uf/wishability'; headId: string };
+  | { family: 'tag/name'; tagId: string }
+  | { family: 'res/answer'; site: string; headId: string }
+  | { family: 'pref/import'; site: string };
 
 export type ServerFacetKey =
   | { family: 'occ/origin'; occId: string }
-  | { family: 'imp/base' | 'imp/conflict'; site: string; target: ImportTargetKey };
+  | { family: `imp/${ImportItem}`; site: string; headId: string }
+  | { family: 'imp/import'; site: string };
 
 export type FacetKey = UserFacetKey | ServerFacetKey;
 
@@ -102,19 +101,23 @@ export const USER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<UserFacetFamily, string
   'uf/ktag': 'schemas/uf-ktag.schema.json',
   'coll/name': 'schemas/coll-name.schema.json',
   'tag/name': 'schemas/tag-name.schema.json',
+  'res/answer': 'schemas/res-answer.schema.json',
+  'pref/import': 'schemas/pref-import.schema.json',
 };
 
-/** The server-owned families with a schema of their own; an imp/base payload uses its target's. */
-export const SERVER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<'occ/origin' | 'imp/conflict', string>> = {
+/** Package-relative path of each server-owned family's payload JSON Schema. */
+export const SERVER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<ServerFacetFamily, string>> = {
   'occ/origin': 'schemas/occ-origin.schema.json',
-  'imp/conflict': 'schemas/imp-conflict.schema.json',
+  'imp/figure': 'schemas/imp-figure.schema.json',
+  'imp/held': 'schemas/imp-held.schema.json',
+  'imp/change': 'schemas/imp-change.schema.json',
+  'imp/align': 'schemas/imp-align.schema.json',
+  'imp/import': 'schemas/imp-import.schema.json',
 };
 
 /** The payload schema a facet's UPSERT must satisfy. */
 export function payloadSchemaPath(key: FacetKey): string {
-  if (key.family === 'imp/base') return USER_FACET_PAYLOAD_SCHEMAS[key.target.family];
-  if (key.family === 'occ/origin' || key.family === 'imp/conflict') return SERVER_FACET_PAYLOAD_SCHEMAS[key.family];
-  return USER_FACET_PAYLOAD_SCHEMAS[key.family];
+  return (SERVER_FACET_PAYLOAD_SCHEMAS as Readonly<Record<string, string>>)[key.family] ?? USER_FACET_PAYLOAD_SCHEMAS[key.family as UserFacetFamily];
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +126,6 @@ export function payloadSchemaPath(key: FacetKey): string {
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const KIND = `(?:${OCCURRENCE_STATUSES.join('|')})`;
 const SITE = '[a-z][a-z0-9-]{0,31}';
-const importFields = (prefix: 'occ' | 'uf') =>
-  IMPORT_WRITTEN_FAMILIES.filter((f) => f.startsWith(`${prefix}/`)).map((f) => f.slice(prefix.length + 1)).join('|');
-const IMPORT_TARGET = `occ/${UUID}/(?:${importFields('occ')})|uf/${UUID}/(?:${importFields('uf')})`;
 const UUID_RE = new RegExp(`^${UUID}$`);
 const SITE_RE = new RegExp(`^${SITE}$`);
 
@@ -152,11 +152,11 @@ const uf = (field: UfField): Rule => ({
   pattern: new RegExp(`^uf/(?<head>${UUID})/${field}$`),
   from: (g) => ({ family: `uf/${field}`, headId: g.head! }),
 });
-const imp = (family: 'imp/base' | 'imp/conflict'): Rule => ({
-  family,
+const imp = (item: ImportItem): Rule => ({
+  family: `imp/${item}`,
   owner: 'server',
-  pattern: new RegExp(`^imp/(?<site>${SITE})/${family.slice(4)}/(?<target>${IMPORT_TARGET})$`),
-  from: (g) => ({ family, site: g.site!, target: parseUserFacetKey(g.target!) as ImportTargetKey }),
+  pattern: new RegExp(`^imp/(?<site>${SITE})/${item}/(?<head>${UUID})$`),
+  from: (g) => ({ family: `imp/${item}`, site: g.site!, headId: g.head! }),
 });
 
 const RULES: readonly Rule[] = [
@@ -193,13 +193,30 @@ const RULES: readonly Rule[] = [
     from: (g) => ({ family: 'tag/name', tagId: g.tag! }),
   },
   {
+    family: 'res/answer',
+    owner: 'user',
+    pattern: new RegExp(`^res/(?<site>${SITE})/(?<head>${UUID})$`),
+    from: (g) => ({ family: 'res/answer', site: g.site!, headId: g.head! }),
+  },
+  {
+    family: 'pref/import',
+    owner: 'user',
+    pattern: new RegExp(`^pref/(?<site>${SITE})/import$`),
+    from: (g) => ({ family: 'pref/import', site: g.site! }),
+  },
+  {
     family: 'occ/origin',
     owner: 'server',
     pattern: new RegExp(`^occ/(?<occ>${UUID})/origin$`),
     from: (g) => ({ family: 'occ/origin', occId: g.occ! }),
   },
-  imp('imp/base'),
-  imp('imp/conflict'),
+  ...IMPORT_ITEMS.map(imp),
+  {
+    family: 'imp/import',
+    owner: 'server',
+    pattern: new RegExp(`^imp/(?<site>${SITE})/import$`),
+    from: (g) => ({ family: 'imp/import', site: g.site! }),
+  },
 ];
 
 /** Every family's grammar, user-owned first. Exposed so consumers can test the same no-overlap property. */
@@ -269,19 +286,22 @@ export function occOriginKey(occId: string): string {
   return `occ/${uuid(occId, 'an occurrence id')}/origin`;
 }
 
-const importKey = (kind: 'base' | 'conflict', site: string, target: string): string => {
-  if (typeof site !== 'string' || !SITE_RE.test(site)) fail('an import site', site);
-  const parsed = parseUserFacetKey(typeof target === 'string' ? target.toLowerCase() : '');
-  if (parsed === undefined || !(IMPORT_WRITTEN_FAMILIES as readonly string[]).includes(parsed.family)) {
-    fail('a key the import writes', target);
-  }
-  return `imp/${site}/${kind}/${buildFacetKey(parsed!)}`;
-};
-export function importBaseKey(site: string, target: string): string {
-  return importKey('base', site, target);
+const siteOf = (value: unknown): string => (typeof value === 'string' && SITE_RE.test(value) ? value : fail('an import site', value));
+/** One of the import's per-figure items: imp/{site}/{item}/{head_id} (import.proto THE SERVER DECIDES). */
+export function importItemKey(site: string, item: ImportItem, headId: string): string {
+  return `imp/${siteOf(site)}/${oneOf(IMPORT_ITEMS, item, 'an import item')}/${uuid(headId, 'a head id')}`;
 }
-export function importConflictKey(site: string, target: string): string {
-  return importKey('conflict', site, target);
+/** The marker every import writes last: imp/{site}/import. */
+export function importMarkerKey(site: string): string {
+  return `imp/${siteOf(site)}/import`;
+}
+/** The user's answer to one of the figure's import items: res/{site}/{head_id}. */
+export function answerKey(site: string, headId: string): string {
+  return `res/${siteOf(site)}/${uuid(headId, 'a head id')}`;
+}
+/** The import's preferences: pref/{site}/import. */
+export function importPrefKey(site: string): string {
+  return `pref/${siteOf(site)}/import`;
 }
 
 /** Build the canonical key of any family. parse(buildFacetKey(x)) deep-equals x with its ids lowercased. */
@@ -307,9 +327,17 @@ export function buildFacetKey(key: FacetKey): string {
       return tagNameKey(k.tagId as string);
     case 'occ/origin':
       return occOriginKey(k.occId as string);
-    case 'imp/base':
-    case 'imp/conflict':
-      return importKey(family === 'imp/base' ? 'base' : 'conflict', k.site as string, buildFacetKey(k.target as FacetKey));
+    case 'res/answer':
+      return answerKey(k.site as string, k.headId as string);
+    case 'pref/import':
+      return importPrefKey(k.site as string);
+    case 'imp/import':
+      return importMarkerKey(k.site as string);
+    case 'imp/figure':
+    case 'imp/held':
+    case 'imp/change':
+    case 'imp/align':
+      return importItemKey(k.site as string, family.slice(4) as ImportItem, k.headId as string);
     default:
       return fail('a facet family', family);
   }

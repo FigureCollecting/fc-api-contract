@@ -143,12 +143,13 @@ fixed-width suffix, never by a separate field.
 occurrence (`occ/{occ}/head`, `/status`, `/collection`, `/disposal`, `/tag/{tag}`), a quantity is
 the count of live copies, figure-level fields and tags live under `uf/{head_id}/…`, and
 collections and tags have name facets (`coll/{kind}/{cid|default}/name`, `tag/{tag}/name`). The
-server owns `occ/{occ}/origin` and the import's `imp/{site}/base|conflict/{key}` facets
-(`import.proto` has the three-way re-import rule, run per field and on each row's Count, with heads
-compared through the spine's redirect chain; its copies get occ ids keyed by a secret only the
-coordinator holds). An import write or conflict that crosses an edit still on a phone, on the facet
-or on the copy's row, is presented to the user there, never silently adopted (rule 6, IMPORT
-CROSSINGS). Every payload schema is closed and stays closed:
+server owns `occ/{occ}/origin` and the import's items (`imp/{site}/figure|held|change|align/{head_id}`
+and the marker `imp/{site}/import`); a user answers an item with `res/{site}/{head_id}` and keeps the
+import's preferences in `pref/{site}/import`. **The server decides** (`import.proto` THE SERVER
+DECIDES): every pushed event carries the basis it was made on, a late edit is replayed where it
+belongs, and conflicts, changes held for confirmation, divergences, held edits and what to change on
+MFC by hand come back as items the client shows right after the import. Copies the import creates
+get occ ids keyed by a secret only the coordinator holds. Every payload schema is closed and stays closed:
 a new attribute is a new facet key, never a new property, because every write replaces the whole
 payload and an older writer would drop a property it does not know.
 

@@ -158,7 +158,11 @@ export function reimport(c: ReimportCase): ReimportResult {
     copies,
     figures,
     writes: events.map((e) => e.key).filter((k) => k.startsWith('occ/') || k.startsWith('uf/')).sort(),
-    conflicts: events.filter((e) => e.key.startsWith('imp/mfc/figure/') && e.value !== null).map((e) => e.key.slice('imp/mfc/figure/'.length)).sort(),
+    // the figures this import carded as a conflict (a divergence, R4, is not a conflict)
+    conflicts: events
+      .filter((e) => e.key.startsWith('imp/mfc/figure/') && (e.value as { kind?: string } | null)?.kind === 'conflict')
+      .map((e) => e.key.slice('imp/mfc/figure/'.length))
+      .sort(),
     unresolved,
   };
 }

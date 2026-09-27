@@ -1,10 +1,17 @@
 // ============================================================================
 // coordinator.v1 — importing a user's MyFigureCollection export.
 //
-// ONLINE ONLY. The phone uploads the CSV text; the coordinator resolves each
-// MFC id to a spine product and writes the user's facets (sync.proto rule 6)
-// through the same apply path as SyncService.Push, under the per-user lock,
-// so the import reaches every device as ordinary Delta events.
+// ONLINE ONLY (R1; Ross, 2026-09-27). A client calls ImportMfcExport only while
+// online, after it has pushed its whole outbox and has every push answered, so
+// the import sees every edit of the device that asks for it. The coordinator
+// resolves each MFC id to a spine product, decides what the export means for
+// each figure (THE SERVER DECIDES below) under the per-user lock and as one
+// server transaction (sync.proto rule 7), and writes the user's facets through
+// the same apply path as SyncService.Push, so the result reaches every device
+// as ordinary Delta events. The response carries the review set (R7) for the
+// client to present at once. Other devices may still be offline with edits the
+// import has not seen; LATE EDITS AND REPLAY below gives them the result they
+// would have had by pushing first.
 //
 // VERSIONING (0.3.0). Every write of one import is versioned
 //
@@ -13,15 +20,10 @@
 // where <instant> is the server's clock when the import starts (at most
 // server_now) and the reserved server device is the all-zero id (sync.proto
 // rule 5). The per-user import counter increases with every import. Which
-// side's change stands is no longer decided by version: THE THREE-WAY RULE
-// below decides over the edits the server holds, the client calling
-// ImportMfcExport pushes its outbox first, and a phone catches an import
-// write or conflict that crosses an edit it has not pushed or seen come back,
-// on the facet or on the copy's row (sync.proto rule 6, IMPORT CROSSINGS). A
-// facet whose stored version is not below the import's (a device edit minted
-// within the clock skew of the import) is left, base included, for the next
-// import. The import stamps edited_at as midnight UTC of export_date
-// ("YYYY-MM-DDT00:00:00Z") and tz as "UTC".
+// side's change stands is not decided by version: THE SERVER DECIDES below
+// decides, and each write of a decision or an answer is minted above the
+// facet's current version. The import stamps edited_at as midnight UTC of
+// export_date ("YYYY-MM-DDT00:00:00Z") and tz as "UTC".
 //
 // ROWS. An ID is made canonical first (canonicalMfcId): leading zeros are
 // stripped, and what remains must be 1 to 64 ASCII digits. Every later step,
@@ -56,104 +58,242 @@
 // created afterwards, and duplicates or re-keys nothing. The key never
 // changes during an import.
 //
-// THE THREE-WAY RULE (Ross, 2026-09-27: a field changed both in the app and
-// on MFC is presented to the user and not written until resolved). For each
-// facet K the import compares (IMPORT_WRITTEN_FAMILIES: a copy's head and
-// status, a disposal, a figure's score, note and wishability), the server
-// keeps K's BASE, the value the last import took from MFC, in
-// imp/mfc/base/{K} (K's own payload schema; a tombstone means MFC had no
-// value). An import compares, over K's own fields and never edited_at or tz:
-// M, what this export states; B, the base; and A, K as the server holds it
-// (a tombstone or no facet is no value).
+// THE SERVER DECIDES (Ross, 2026-09-27: design A, with the review's fixes F1
+// to F3). A client never compares anything with MFC: it sends every edit with
+// the basis it was made on, shows the server's state, and shows and answers
+// the items the server raises (sync.proto rule 6, THE IMPORT, ON A CLIENT).
+// The server compares at the grain MFC is kept at, one figure, and derives its
+// state by replaying its inputs in a canonical order, so an edit that reaches
+// it late ends where it would have ended had it been pushed first.
 //
-//   * M == B: MFC did not change it. Nothing is written.
-//   * M != B and A == B: only MFC changed it. K and the base are set to M.
-//   * M != B and A == M: both changed it alike. Only the base moves to M.
-//   * M != B, A != B and A != M: both changed it differently, a CONFLICT.
-//     K is not written. The base moves to M, so it holds MFC's side, and
-//     imp/mfc/conflict/{K} is upserted {against: K's version, export_date}.
+//   FIGURE. A spine survivor S. Every MFC row whose id resolves to a head whose
+//   survivor is S belongs to S, and every copy whose head resolves to S is a
+//   copy of S. A KIND is owned, ordered or wished; a copy that is former,
+//   removed (status tombstone) or re-pointed to another figure is OUT of S.
+//   ROW BASE (server-internal, per MFC id): what the last import that settled
+//   the row took from MFC, its head, kind, Count, score, note and wishability.
+//   COPY BASE (server-internal, per copy): the kind (or OUT) and head the last
+//   settlement gave the copy on MFC's behalf. MFC's Counts beyond the copies
+//   with a base of that kind are PLACEHOLDERS: copies MFC counts and the app
+//   does not have.
+//   FIELD BASE (server-internal, per head and field): the value MFC last
+//   stated, as settled.
+//   BASIS: on every pushed event, the commit cursor of the last transaction
+//   the device had applied when it made the edit (sync.proto SyncEvent.basis).
+//   FRAME (F1): every import writes one marker event last, imp/{site}/import.
+//   For every figure the import decides, whether it writes to it or only moves
+//   its bases, last_seq(I, S) is the marker's position. The server keeps, per
+//   import and decided figure, last_seq(I, S) and S as it stood just before I.
+//   LATE EDIT: a pushed edit to a copy or field of S whose basis is before
+//   last_seq(I, S) for an import I that arrived before it: the device made it
+//   without having seen what I decided for S. Any other edit is KNOWING.
 //
-// ER MERGES. Heads are compared through the spine's redirect chain: two
-// heads are equal when they resolve to one survivor, so a spine merge alone
-// changes no M, B or A, writes nothing and re-keys nothing. A row's figure is
-// the survivor its id resolves to, and rows resolving to one survivor each
-// add their copies. For a figure field, B is the base with the higher version
-// among the heads resolving to the survivor, A is the value rule 6 displays,
-// and K is rule 6's write target among those heads (the head of the live
-// facet with the higher version, else the survivor): the head its base was
-// written under unless the app deleted the field since. Between equal
-// versions, which one import's writes under heads merged later can have, the
-// lower head_id wins (bytewise, as rule 6 displays). M is B when any row
-// resolving to the survivor states B's value, else the value of the
-// numerically lowest MFC id among them; a survivor no row resolves to states
-// no score, note or wishability. So MFC changes a merged figure only when
-// none of its rows still states the base, and an unchanged export writes
-// nothing whatever versions the merged heads' bases carry; a change MFC makes
-// to one of those rows while another still states B is not seen (an accepted
-// cost: bases are per head, not per row). When those rows state different
-// values and none states B, which row MFC changed is unknown, so the case
-// where only MFC changed it is a CONFLICT instead (GR-Q1): K is not written
-// and the base moves to M. The import writes K, its base and its conflict
-// there, and tombstones a field, as a device delete does, on every one of
-// those heads holding it live.
+// THE FIGURE DECISION. For each figure S that an export row or a row base
+// belongs to, M_k is the sum of the export's Counts of kind k over the rows of
+// S, B_k the sum of their row-base Counts and A_k the live copies of S of kind
+// k.
 //
-// A ROW'S COPIES. The row's copies are the occurrences whose origin names its
-// canonical id. B_kind is the kind of the row's copies with a live base
-// status, and B_count their number. A row absent from this export, or with
-// Count 0, has M_count 0 and B_kind as its kind; otherwise M_count is its
-// Count. A copy is UNCHANGED when its status and head, as the server holds
-// them when the import starts (after ADOPTION IN PLACE), equal their bases
-// then (absent equals absent).
+//   * M == B for every kind: MFC changed no count. Nothing is written and no
+//     base moves, so an app change stays an app change.
+//   * A == M for every kind: both sides reached the same counts. Nothing is
+//     written, and every copy of S takes its current state as its base.
+//   * Otherwise MFC's change is split into TRANSITIONS: d_k = M_k - B_k gives,
+//     in this order, ordered->owned (arrivals), wished->ordered and
+//     wished->owned, as many as both sides allow, then k->OUT for each
+//     remaining negative d_k and OUT->k for each remaining positive d_k. The
+//     app's transitions are one per copy whose base differs from its current
+//     state (a copy with no base has base OUT). MATCHING pairs each MFC
+//     transition with an app transition of the same (from, to), the app's
+//     copies taken in occ-id order: a pair is the same change on both sides.
+//     - No MFC transition is left: MFC's changes are all in the app already.
+//       Nothing is written; the paired copies take their current state as
+//       base, and the app's unpaired changes keep theirs.
+//     - No app transition is left, or none shares a kind with an MFC one left:
+//       only MFC made the rest, and the import MATERIALIZES it.
+//     - Otherwise the counts are a CONFLICT.
 //
-//   ADOPTION IN PLACE. When this export changes the row (its figure, kind or
-//   Count differs from what the row's bases state), each copy of the row
-//   whose status is a tombstone while its base status is live (a device
-//   removed it, as keeping the app's side of an addition crossing does,
-//   sync.proto rule 6) first gives way to a live copy with no origin whose
-//   head resolves to its base head's figure and whose status is its base
-//   status, lowest occ id first on both sides. The import writes that copy's
-//   origin at the lowest unused ordinal and gives it the removed copy's base
-//   head and status, and the removed copy gets a tombstone base status, so
-//   MFC's later changes to the Count reach the app's copy.
-//   HEAD. For a row in this export, each of its copies with a base head runs
-//   the three-way on its head, M being the row's figure.
-//   KIND. When M_count > 0 and the row's kind differs from B_kind, each copy
-//   with a live base status runs the three-way on its status, M being the
-//   row's kind.
-//   COUNT. Then A_count is the number of the row's copies that are live with
-//   the row's kind and whose head resolves to the row's figure (for an absent
-//   row, the survivor of its base heads).
-//   * M_count == B_count: nothing more.
-//   * A_count == M_count: only bases move.
-//   * A_count == B_count: only MFC changed the count, and the import adds or
-//     removes the difference by rule 6's PICKS, never writing the status of a
-//     copy the app changed. To add, it upserts the status of the row's
-//     unchanged copies of its figure that have no live status, lowest occ id
-//     first; then adopts the live copies of the row's figure and kind that
-//     carry no origin (added in the app), lowest occ id first, writing only
-//     their origin, each at the lowest unused ordinal; then creates copies at
-//     the lowest unused ordinals, writing each one's origin, head and status
-//     in that order. To remove, it tombstones the status of the
-//     row's unchanged live copies of its figure and kind, highest occ id
-//     first; any it still lacks it raises for removal, as below. While the
-//     app changed a copy of another row resolving to the row's figure, one
-//     whose status or base status is the row's kind, it removes none and
-//     raises the whole difference for removal instead: one figure's MFC rows
-//     are fungible, and that change may be the one MFC's Count records.
-//   * Otherwise the count is a CONFLICT, held per copy so that each is
-//     resolved by an ordinary write to that copy's status. For each copy MFC
-//     has and the app lacks, the import raises for addition the row's copies
-//     of its figure with no live status, lowest occ id first, then new copies
-//     (origin and head written, status not); for each copy the app has and
-//     MFC lacks, it raises for removal the row's live copies of its figure and
-//     kind, unchanged ones first, highest occ id first. A raised copy's status
-//     is not written, and imp/mfc/conflict/occ/{occ}/status is upserted; under
-//     CONFLICTS below, a copy's M is the base status the row's bases give it.
-//   Whenever M_count != B_count, the row's bases then describe MFC: a copy
-//   raised for addition, or left live with the row's kind, its head resolving
-//   to the row's figure and not raised for removal, gets the row's kind as
-//   its base status and the row's figure as its base head; every other copy
-//   of the row gets a tombstone base status.
+//   The fields (score, note, wishability), each on its own: the rows of S whose
+//   export value differs from their own row base are the CHANGED rows (an
+//   absent row states no value). No changed row: nothing. Changed rows stating
+//   different values: a CONFLICT. Otherwise, with v the new value, A the value
+//   rule 6 displays for S and B the field base of the head displayed (else of
+//   any head of S): when A == v only the base moves; when A == B only MFC
+//   changed it, and v is written to rule 6's write target (a tombstone on every
+//   head of S holding it when v is no value) and the base moves; otherwise it
+//   is a CONFLICT. So MFC's change to one of several merged rows is found
+//   against that row's own base, never mistaken for another row's value.
+//
+//   ONE DECISION PER FIGURE. If any part is a CONFLICT, nothing of S is written
+//   and none of its bases move. Otherwise every part's writes go out together,
+//   and the row bases of S become the export's rows (a row of S absent from
+//   the export loses its row base).
+//
+// MATERIALIZE runs on the copies the app left unchanged (base equal to current
+// state), for each MFC transition left:
+//   * x->y: a placeholder of x becomes one of y and nothing is written; else
+//     the unchanged copy of kind x with the lowest occ id gets status y.
+//   * x->OUT: a placeholder of x is consumed; else an unchanged live copy of
+//     kind x is removed (status tombstone), one with an origin before one
+//     without, then the highest occ id.
+//   * OUT->y: the lowest-id copy of S an import removed that is still unchanged
+//     is restored (status y, filing kept); else a copy is created for the
+//     lowest-numbered row of S whose Count exceeds its live copies of kind y,
+//     counting the copies created in this decision, at that row's lowest unused
+//     ordinal: its origin, head and status, in that order.
+// The import never restores a former copy, never writes former or a disposal,
+// and never touches a copy with no base unless the decision counted or paired
+// it.
+//
+// ROW MOVED. A row whose base head and new head resolve to different
+// survivors, with no merge between them, was moved by the spine: MFC did not
+// change it. When every copy with the row's origin and base on the old figure
+// is unchanged, the import re-points each live one to the new head and moves
+// its base, and each figure value the row alone stated, unchanged in the app,
+// moves with it (a tombstone on the old figure, the value under the new head).
+// If the app changed any of them nothing moves, and each figure's decision
+// shows the difference. A row unresolved for invalid_count, count_over_99 or
+// no_product states nothing new: its row base stands as its statement.
+//
+// THE MFC PROJECTION (R2). MFC keeps one entry per item id: one status (Owned,
+// Ordered or Wished), a Count, and the score, note and wishability. MFC's side
+// of a figure S is its rows' Counts per kind and the field values the decision
+// settled. The app's side, as MFC could state it, is the number of live copies
+// per kind, but only for as many kinds as S has MFC ids known to the import
+// (its export rows and row bases), the highest first in the order owned,
+// ordered, wished; and the displayed score, note and wishability. What that
+// leaves out is APP-ONLY RICHNESS MFC cannot express: a wished or ordered copy
+// beside owned ones of a one-row figure, former copies and their
+// dispositions, filings and tags. Richness never raises an item or an
+// align-MFC entry by itself.
+//
+// WHAT AN IMPORT DOES WITH A DECISION. The user's preferences pref/{site}/import
+// (sync.proto rule 6) are read when the import starts.
+//   * A CONFLICT is a figure item imp/{site}/figure/{S} of kind "conflict"
+//     when import_policy is ASK, the default. With FAVOR_APP or FAVOR_MFC the
+//     import answers it keep or take itself (ITEMS AND ANSWERS), writes a change
+//     entry imp/{site}/change/{S} of kind "favor_app" or "favor_mfc", and the
+//     user can undo it like an answer (R5). A preference applies to conflicts
+//     only, never to a change only one side made.
+//   * A decision that writes, because only MFC changed, on a figure the import
+//     had a row base for is written, and listed with its undo as a change entry
+//     of kind "applied", when mfc_only is APPLY_AND_LIST, the default. With HOLD
+//     nothing is written, no base moves, and it is a figure item of kind
+//     "mfc_change" (R3). A figure new to the import (no row base) is always
+//     added, counted in `added` and never listed.
+//   * Every other decision settles. Then, when the two sides of the projection
+//     differ, the difference is the app's: MFC has not caught up with it. It
+//     writes nothing and is one figure item of kind "divergence" (R4), which an
+//     import of the same export neither raises again nor duplicates.
+// The items are server-owned facets keyed by the survivor's head_id: a figure
+// item, a held-edit card imp/{site}/held/{S}, a change entry and an align-MFC
+// entry imp/{site}/align/{S}. Their payload schemas are closed
+// (schemas/imp-*.schema.json).
+//
+// LATE EDITS AND REPLAY. An edit that meets no frame is applied by LWW, as
+// ever. Otherwise the server's state of S is the REPLAY of its inputs in the
+// CANONICAL ORDER: imports, answers and spine redirects in arrival order; each
+// late edit just before the earliest import it is late for; every other edit at
+// its arrival. Device edits merge by LWW among themselves; an import's
+// decision and an answer's writes replace facet values whatever their
+// versions. When a late edit arrives the server replays S from the oldest
+// affected frame, compares the result with what it has emitted for S, and
+// emits each difference as a new event, in one transaction. An import's result
+// for S is PROVISIONAL until every edit late for it has arrived, and one a late
+// edit shows wrong is withdrawn by ordinary later events. The PushResult
+// (sync.proto) of such an edit is APPLIED when its value stands after the
+// replay and STALE, with `current`, when the replay leaves another value (an
+// import placed after it changed the facet, or another device's edit won).
+//
+// HELD. An edit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown in
+// its figure's held-edit card, when
+//   (i)   it is late, placing it before the import would change that import's
+//         result on S (the server replays both placements and compares S's
+//         copies and items), and some device made a knowing edit to a copy of S
+//         after the import, without having seen the late edit's replay, that
+//         arrived before it or in the same push: HOLD ON REACTION, another
+//         device acted on the result the late edit would withdraw;
+//   (ii)  its basis is before a replay's revision of S (a withdrawal the device
+//         had not seen): it was made on a result that has since changed;
+//   (iii) it is late and its basis is before an answer on S: the user decided
+//         without it; or
+//   (iv)  it is late for a frame the server no longer keeps. Frames are kept at
+//         least 180 days and while any enrolled device's cursor is before them.
+// A knowing edit made before an answer reached its device is applied, never
+// held. The card's keep applies the held edits now, as knowing edits; its take
+// drops them.
+//
+// ITEMS AND ANSWERS. The user answers an item by writing res/{site}/{S}
+// through Push, naming the item's rev and a choice. An answer is accepted only
+// while a pending item of S carries that rev; otherwise it is STALE, with
+// `current` (the item changed, or another device answered first, and the
+// client shows what is there now). The first accepted answer wins.
+//   * A conflict. keep: the app's side of every disputed part stands, and what
+//     only MFC changed is still applied. take: MFC's side is made true on the
+//     copies MFC tracks (copies with a live base, and placeholders):
+//     conversions first, arrivals first, lowest occ id; then removals, highest
+//     occ id; then restoring a tracked copy that is out, one whose base is the
+//     kind first, which can bring back a copy the app sold; then new copies. A
+//     copy with no base is never changed, and a disputed field takes MFC's
+//     value. per_copy: the final statuses listed and "app" or "mfc" per
+//     disputed field, exactly. After any answer the bases REALIGN to MFC's
+//     side: the row bases become the export's rows, the field bases MFC's
+//     values, and per kind the live copies with the lowest occ ids, up to MFC's
+//     Count, get that base; other copies get base OUT, and MFC's Counts beyond
+//     the app's copies become placeholders.
+//   * An mfc_change. take: the change is applied now, as the import would have
+//     applied it (if the app has changed S since, the item becomes a conflict
+//     and the answer is STALE). keep: the bases realign and the app's side
+//     stays.
+//   * A divergence. keep ("MFC is behind") acknowledges it; take makes MFC's
+//     side true as for a conflict.
+//   * A held-edit card: keep or take, as HELD says.
+//   * A change entry. undo: an applied or favor_mfc change is reverted, each
+//     write restored while it still holds the value the import wrote (else
+//     STALE), and a favor_app settlement is taken now. dismiss: it goes.
+//   * An align-MFC entry: dismiss.
+// A figure item's rev changes when either side of it changes or a late edit
+// joins it, never for a knowing edit. An item ends only by an answer naming its
+// rev, when a later import finds MFC back at the base or the two sides
+// agreeing, or when a knowing edit makes the sides of a conflict agree; never
+// by a replay, another device's write or an older edit.
+//
+// ACKNOWLEDGED (R4, R7). A keep on a conflict, an mfc_change or a divergence,
+// a per_copy answer, an undo that restores the app's side, and a FAVOR_APP
+// settlement ACKNOWLEDGE the figure: the server records MFC's side of the
+// projection (its rows' kinds and Counts and its field values) and the app's,
+// as they stand. A take on a conflict or a divergence and a FAVOR_MFC
+// settlement record the two sides too, with no align-MFC entry, since the
+// user took MFC's side. An import that finds both unchanged raises nothing for
+// the figure. A new MFC change to its rows, or a new app change, re-opens it (a
+// new item, with a new rev); an import that finds the two sides equal ends it.
+//
+// ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
+// truth"). For an acknowledged figure whose two sides differ and that has an
+// MFC id, the server keeps an align-MFC entry imp/{site}/align/{S}: what to
+// change on MFC, by hand, so that MFC holds the app's side. Each action names
+// an MFC item id and gives MFC's current value and the value it should hold:
+// its status, its Count, its score, note or wishability, and add_to_list when
+// the user has configured a disposition list (disposition_list, e.g. 206369)
+// and the figure has a former copy disposed of as sold or traded. The rows are
+// taken in ascending id: per kind, the rows of that kind keep their Counts
+// while the sum allows and the highest-numbered give up the excess first (a row
+// left with none leaves the collection); a kind the app has more of grows its
+// lowest-numbered row, or, when no row has that kind, takes the lowest-numbered
+// row whose kind the projection does not keep. The server never writes to MFC;
+// a client links each action to the item's page on MFC. An entry clears itself
+// when an import finds MFC matching, and a dismissed entry is not shown again
+// until the difference changes.
+//
+// THE REVIEW SET (R7). The response carries, in this order, the pending figure
+// items of kind conflict, then mfc_change, then divergence, then the held-edit
+// cards, then the align-MFC entries as a separate, dismissable group; each
+// group in head_id order, each item with the answers it allows, and a bulk
+// answer per group (conflict: keep or take; mfc_change: take or keep;
+// divergence: keep or take; held edits: keep or take; align-MFC: dismiss).
+// Then the change entries this import made, each with undo. The client presents
+// them at once. What the user skips stays pending on every device and is
+// badged, and an answered or acknowledged item never recurs on an import of an
+// unchanged row.
 //
 // FILING. Whenever the import upserts a copy's status to a kind its filing is
 // not of, it writes occ/{occ}/collection {"collection": "{status}/default"}
@@ -162,31 +302,12 @@
 //
 // DISPOSITIONS. Ross tracks dispositions on MFC as a list plus a note in a
 // user field (GR-Q3). The import MAY write status former and
-// occ/{occ}/disposal for rows of the user's configured disposition list; its
-// list and field names are desk item DL, and no request field carries them
-// yet, so a 0.3.0 import writes neither. No other row, and nothing else on
-// the server, writes a former status or a disposal. The import never writes
-// a tag, a collection name or a tag name.
-//
-// CONFLICTS. A conflict is PENDING while its facet is live and K's version is
-// still `against`; `against` is absent when K had no version, and the
-// conflict is then pending while K has none. The user resolves it with an
-// ordinary write to K through Push, minted with Hlc.tick(base) on the higher
-// of K's local version and the conflict facet's: keep the app's value (write
-// it again) or take MFC's (the base's value, or a tombstone when the base is
-// one). Only a write to K above the conflict facet's own version resolves it.
-// A write to K at or below that version that lands (an edit minted before
-// the conflict reached the server, pushed after it) has not seen the
-// conflict: in the same transaction the server re-upserts the conflict facet,
-// above its current version, with `against` moved to that write's version,
-// and the conflict stays pending. A client shows a pending conflict wherever
-// K is edited, and one raised on K crosses the client's open edits to K
-// (sync.proto rule 6, IMPORT CROSSINGS). Before its three-way, each import
-// tombstones every conflict facet that is no longer pending; the base already
-// holds the value the user decided against or took. A pending conflict is
-// re-upserted, with the same `against`, only when M changed again, and
-// tombstoned when M now equals A. A re-import of the same export writes
-// nothing beyond those tombstones. golden/import-vectors.json has the cases.
+// occ/{occ}/disposal for rows of the user's configured disposition list; how
+// that list and its note map to a disposal is desk item DL, so a 0.3.0 import
+// writes neither, whatever pref disposition_list says. No other row, and
+// nothing else on the server, writes a former status or a disposal. The import
+// never writes a tag, a collection name or a tag name. In 0.3.0 only the
+// align-MFC entries read the configured disposition list.
 //
 // SEMANTIC CHANGE (0.3.0), SAFE ONLY BECAUSE NO IMPORT HAS RUN. 0.2.x wrote
 // per-figure holding facets versioned at the export date, and any later
@@ -220,12 +341,12 @@ message ImportMfcExportResponse {
   // written for them.
   repeated UnresolvedMfcRow unresolved = 2;
 
-  // Resolved rows with no occurrence from an earlier import.
+  // Resolved rows of a figure new to the import (it had no row base).
   uint32 added = 3;
 
-  // Resolved rows, not added, where this import wrote at least one
-  // occurrence status: a kind change, e.g. Ordered to Owned, or a Count
-  // change that added or removed copies.
+  // Resolved rows, not added or kept_newer, of a figure whose decision wrote at
+  // least one occurrence status: a kind change, e.g. Ordered to Owned, or a
+  // Count change that added or removed copies.
   uint32 moved = 4;
 
   // Resolved rows neither added, moved nor kept_newer.
@@ -235,19 +356,18 @@ message ImportMfcExportResponse {
   // tombstoned at least one occurrence status.
   uint32 removed = 6;
 
-  // Feed events this import produced, server-owned facets included. A
-  // re-import of the same export produces none beyond the tombstones of
-  // conflicts resolved since.
+  // Feed events this import produced, its marker and the server-owned items
+  // included. A re-import of the same export produces the marker and nothing
+  // else, bar the items it clears.
   uint32 facets_written = 7;
 
-  // Resolved rows, not added or moved, where at least one occurrence status
-  // is held as a pending conflict: the app changed it too (0.3.0; see
-  // conflicts_pending).
+  // Resolved rows, not added, of a figure this import held for the user, the
+  // app's side kept meanwhile: a conflict, or a change held for confirmation
+  // (mfc_only HOLD). The 0.2.x name, a 0.3.0 meaning.
   uint32 kept_newer = 8;
 
   // Copies this import made live: created, or restored after an earlier
-  // import removed them. An adopted app copy was live already and is not
-  // counted.
+  // import removed them.
   uint32 occurrences_added = 9;
 
   // Existing occurrences whose status this import changed to another kind.
@@ -256,15 +376,107 @@ message ImportMfcExportResponse {
   // Occurrences whose status this import tombstoned.
   uint32 occurrences_removed = 11;
 
-  // Facets this import held as a new conflict.
+  // Figure items of kind conflict this import raised, or changed (a new rev).
   uint32 conflicts_raised = 12;
 
-  // Conflicts pending after this import, earlier ones included.
+  // Figure items of kind conflict pending after this import, earlier ones
+  // included.
   uint32 conflicts_pending = 13;
 
-  // Facets the app changed and this export did not, kept as the app has
-  // them.
-  uint32 kept_app = 14;
+  // Figure items of kind divergence pending after this import.
+  uint32 divergences_pending = 14;
+
+  // Figure items of kind mfc_change pending after this import.
+  uint32 changes_held = 15;
+
+  // Align-MFC entries pending after this import; a dismissed one is not.
+  uint32 align_pending = 16;
+
+  // This import's per-user counter: the middle segment of its version and the
+  // `import` of its marker imp/{site}/import.
+  uint32 import_number = 17;
+
+  // THE REVIEW SET (R7), in order: conflict, mfc_change, divergence and held
+  // edits, then the align-MFC group. A group with no item is left out.
+  repeated ImportReviewGroup review = 18;
+
+  // The change entries this import made (kind applied, favor_app or
+  // favor_mfc), each answerable with undo or dismiss.
+  repeated ImportReviewItem applied = 19;
+}
+
+// What an item of the review set is (THE REVIEW SET above).
+enum ImportReviewKind {
+  IMPORT_REVIEW_KIND_UNSPECIFIED = 0;
+
+  // A figure item of kind "conflict": both sides changed, differently.
+  IMPORT_REVIEW_KIND_CONFLICT = 1;
+
+  // A figure item of kind "mfc_change": only MFC changed, held for
+  // confirmation (mfc_only HOLD).
+  IMPORT_REVIEW_KIND_MFC_CHANGE = 2;
+
+  // A figure item of kind "divergence": only the app changed; MFC is behind.
+  IMPORT_REVIEW_KIND_DIVERGENCE = 3;
+
+  // A held-edit card imp/{site}/held/{head_id} (HELD above).
+  IMPORT_REVIEW_KIND_HELD_EDITS = 4;
+
+  // An align-MFC entry imp/{site}/align/{head_id} (ALIGN-MFC above).
+  IMPORT_REVIEW_KIND_ALIGN_MFC = 5;
+}
+
+// An answer, as res/{site}/{head_id} writes it in `choice` (ITEMS AND ANSWERS).
+enum ImportAnswer {
+  IMPORT_ANSWER_UNSPECIFIED = 0;
+
+  // "keep": the app's side stands ("MFC is behind" on a divergence).
+  IMPORT_ANSWER_KEEP = 1;
+
+  // "take": MFC's side is made true.
+  IMPORT_ANSWER_TAKE = 2;
+
+  // "per_copy": final statuses per copy, and a side per disputed field.
+  IMPORT_ANSWER_PER_COPY = 3;
+
+  // "undo": revert a change entry.
+  IMPORT_ANSWER_UNDO = 4;
+
+  // "dismiss": drop a change or align-MFC entry from view.
+  IMPORT_ANSWER_DISMISS = 5;
+}
+
+// One group of the review set: every item of one kind, and the answers that
+// may be given to all of them at once.
+message ImportReviewGroup {
+  ImportReviewKind kind = 1;
+
+  // In head_id order.
+  repeated ImportReviewItem items = 2;
+
+  // The answers a client may give every item of the group at once, by writing
+  // one res/{site}/{head_id} per item.
+  repeated ImportAnswer bulk = 3;
+}
+
+// One item: a server-owned facet the user may answer.
+message ImportReviewItem {
+  // The item's facet key, imp/{site}/figure|held|change|align/{head_id}.
+  string facet_key = 1;
+
+  // The figure: the survivor's head_id.
+  string head_id = 2;
+
+  // The rev an answer names (res/{site}/{head_id} `rev`).
+  string rev = 3;
+
+  // The answers this item allows.
+  repeated ImportAnswer answers = 4;
+
+  // The facet's payload as JSON text (sync.proto rule 3), under its closed
+  // schema (schemas/imp-figure|held|change|align.schema.json), the same the
+  // client gets from Delta.
+  string payload = 5;
 }
 
 message UnresolvedMfcRow {

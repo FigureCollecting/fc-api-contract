@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-align.schema.json",
+  "title": "imp/{site}/align/{head_id} payload",
+  "description": "UPSERT payload of imp/{site}/align/{head_id}: what to change on MFC, by hand, for MFC to hold the app's side of the figure (import.proto ALIGN-MFC). The server never writes to MFC; a client links each action to the item's page on MFC. Answered with dismiss; a tombstone means none. Serialized, at most 7,698,582 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rev",
+    "actions"
+  ],
+  "properties": {
+    "rev": {
+      "description": "Opaque; changes when the difference changes. dismiss names it.",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
+    },
+    "actions": {
+      "description": "One action per MFC item to change, in ascending id. At most 64.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "description": "What to change on one MFC item; only what differs is present.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mfc_id"
+        ],
+        "properties": {
+          "mfc_id": {
+            "description": "The canonical MFC item id.",
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,63}$"
+          },
+          "status": {
+            "description": "The item's status on MFC; an absent side is not in the collection.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "now": {
+                "description": "Now.",
+                "enum": [
+                  "owned",
+                  "ordered",
+                  "wished"
+                ]
+              },
+              "should": {
+                "description": "What it should be.",
+                "enum": [
+                  "owned",
+                  "ordered",
+                  "wished"
+                ]
+              }
+            }
+          },
+          "count": {
+            "description": "Its Count, while it is in the collection.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "should"
+            ],
+            "properties": {
+              "now": {
+                "description": "Now.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "should": {
+                "description": "What it should be.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              }
+            }
+          },
+          "score": {
+            "description": "Its score; an absent side has none.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "now": {
+                "description": "Now.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "should": {
+                "description": "What it should be.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              }
+            }
+          },
+          "note": {
+            "description": "Its note; an absent side has none.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "now": {
+                "description": "Now.",
+                "type": "string",
+                "maxLength": 10000
+              },
+              "should": {
+                "description": "What it should be.",
+                "type": "string",
+                "maxLength": 10000
+              }
+            }
+          },
+          "wishability": {
+            "description": "Its wishability; an absent side has none.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "now": {
+                "description": "Now.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "should": {
+                "description": "What it should be.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              }
+            }
+          },
+          "add_to_list": {
+            "description": "The configured disposition list (pref disposition_list) to add the item to, when a copy of the figure was sold or traded.",
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$"
+          }
+        }
+      }
+    }
+  }
+}

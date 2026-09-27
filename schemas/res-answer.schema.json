@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/res-answer.schema.json",
+  "title": "res/{site}/{head_id} payload",
+  "description": "UPSERT payload of res/{site}/{head_id}: the user's answer to one of the figure's import items (import.proto ITEMS AND ANSWERS), naming its rev. Accepted only while an item of the figure carries that rev; otherwise answered STALE. Serialized, at most 33,349 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rev",
+    "choice",
+    "edited_at",
+    "tz"
+  ],
+  "properties": {
+    "rev": {
+      "description": "The rev of the item answered, as the item states it.",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
+    },
+    "choice": {
+      "description": "keep, take or per_copy for a figure item (keep is \"MFC is behind\" on a divergence), keep or take for held edits, undo or dismiss for a change entry, dismiss for an align-MFC entry.",
+      "enum": [
+        "keep",
+        "take",
+        "per_copy",
+        "undo",
+        "dismiss"
+      ]
+    },
+    "copies": {
+      "description": "With per_copy only: the final status of each listed copy. At most 500.",
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "description": "One copy.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occ",
+          "status"
+        ],
+        "properties": {
+          "occ": {
+            "description": "The copy.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "status": {
+            "description": "Its final status; removed is a tombstone.",
+            "enum": [
+              "owned",
+              "ordered",
+              "wished",
+              "former",
+              "removed"
+            ]
+          }
+        }
+      }
+    },
+    "fields": {
+      "description": "With per_copy only: which side each disputed figure value takes.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "description": "The score.",
+          "enum": [
+            "app",
+            "mfc"
+          ]
+        },
+        "note": {
+          "description": "The note.",
+          "enum": [
+            "app",
+            "mfc"
+          ]
+        },
+        "wishability": {
+          "description": "The wishability.",
+          "enum": [
+            "app",
+            "mfc"
+          ]
+        }
+      }
+    },
+    "edited_at": {
+      "description": "When the user made the edit, in the device's local time with its offset (at most ±18:00). Display only; never compared, never restamped.",
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,9})?(Z|[+-]((0\\d|1[0-7]):[0-5]\\d|18:00))$"
+    },
+    "tz": {
+      "description": "The device's IANA time zone at edit time, e.g. America/Chicago. Display only.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$"
+    }
+  },
+  "if": {
+    "properties": {
+      "choice": {
+        "const": "per_copy"
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "copies": true
+    },
+    "required": [
+      "copies"
+    ]
+  },
+  "else": {
+    "properties": {
+      "copies": false,
+      "fields": false
+    }
+  }
+}

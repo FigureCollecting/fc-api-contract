@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-change.schema.json",
+  "title": "imp/{site}/change/{head_id} payload",
+  "description": "UPSERT payload of imp/{site}/change/{head_id}: a change an import made on the figure, with its undo (import.proto WHAT AN IMPORT DOES WITH A DECISION): applied (only MFC changed it), favor_app or favor_mfc (a conflict the user's preference settled). Answered with undo or dismiss; a tombstone means none. Serialized, at most 3,205,521 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rev",
+    "kind",
+    "import",
+    "writes",
+    "undo"
+  ],
+  "properties": {
+    "rev": {
+      "description": "Opaque. An answer names it.",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
+    },
+    "kind": {
+      "description": "What made the change.",
+      "enum": [
+        "applied",
+        "favor_app",
+        "favor_mfc"
+      ]
+    },
+    "import": {
+      "description": "The per-user counter of the import that made it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "writes": {
+      "description": "What the import wrote.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "copies",
+        "fields"
+      ],
+      "properties": {
+        "copies": {
+          "description": "The copies' writes, in occ-id order. At most 500 per figure.",
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "description": "One copy's writes: each property present is written to occ/{occ}/{property}; a status of \"removed\" is a tombstone.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "occ"
+            ],
+            "properties": {
+              "occ": {
+                "description": "The copy.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "status": {
+                "description": "Its status, or \"removed\" for a tombstone.",
+                "enum": [
+                  "owned",
+                  "ordered",
+                  "wished",
+                  "former",
+                  "removed"
+                ]
+              },
+              "head_id": {
+                "description": "Its figure, written with the first status of a copy the import creates, or on ROW MOVED.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "collection": {
+                "description": "Its filing, as FILING resets it to {status}/default.",
+                "type": "string",
+                "pattern": "^(owned|ordered|wished|former)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|default)$"
+              },
+              "origin": {
+                "description": "The origin the write gives a copy the import creates (occ-origin.schema.json).",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "site",
+                  "native_id",
+                  "ordinal"
+                ],
+                "properties": {
+                  "site": {
+                    "description": "The source's site key, e.g. mfc.",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                  },
+                  "native_id": {
+                    "description": "The source's id for the row's item, canonical (for mfc, canonicalMfcId: no leading zeros).",
+                    "type": "string",
+                    "pattern": "^[0-9A-Za-z._~:-]{1,64}$"
+                  },
+                  "ordinal": {
+                    "description": "Which of the row's Count copies, 1 to 99.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 99
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fields": {
+          "description": "The figure values' writes. At most 24 per figure.",
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "description": "One figure value written under one head: the value is the property the `field` names; none is a tombstone.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "head_id",
+              "field"
+            ],
+            "properties": {
+              "head_id": {
+                "description": "The head written under (rule 6's write target, or every head holding it for a tombstone).",
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "field": {
+                "description": "The figure value.",
+                "enum": [
+                  "score",
+                  "note",
+                  "wishability"
+                ]
+              },
+              "score": {
+                "description": "The score, when field is score.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "note": {
+                "description": "The note, when field is note.",
+                "type": "string",
+                "maxLength": 10000
+              },
+              "wishability": {
+                "description": "The wishability, when field is wishability.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              }
+            }
+          }
+        }
+      }
+    },
+    "undo": {
+      "description": "What undo would write: the values before, or for favor_app what take writes now.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "copies",
+        "fields"
+      ],
+      "properties": {
+        "copies": {
+          "description": "The copies' writes, in occ-id order. At most 500 per figure.",
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "description": "One copy's writes: each property present is written to occ/{occ}/{property}; a status of \"removed\" is a tombstone.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "occ"
+            ],
+            "properties": {
+              "occ": {
+                "description": "The copy.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "status": {
+                "description": "Its status, or \"removed\" for a tombstone.",
+                "enum": [
+                  "owned",
+                  "ordered",
+                  "wished",
+                  "former",
+                  "removed"
+                ]
+              },
+              "head_id": {
+                "description": "Its figure, written with the first status of a copy the import creates, or on ROW MOVED.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "collection": {
+                "description": "Its filing, as FILING resets it to {status}/default.",
+                "type": "string",
+                "pattern": "^(owned|ordered|wished|former)/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|default)$"
+              },
+              "origin": {
+                "description": "The origin the write gives a copy the import creates (occ-origin.schema.json).",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "site",
+                  "native_id",
+                  "ordinal"
+                ],
+                "properties": {
+                  "site": {
+                    "description": "The source's site key, e.g. mfc.",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                  },
+                  "native_id": {
+                    "description": "The source's id for the row's item, canonical (for mfc, canonicalMfcId: no leading zeros).",
+                    "type": "string",
+                    "pattern": "^[0-9A-Za-z._~:-]{1,64}$"
+                  },
+                  "ordinal": {
+                    "description": "Which of the row's Count copies, 1 to 99.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 99
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fields": {
+          "description": "The figure values' writes. At most 24 per figure.",
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "description": "One figure value written under one head: the value is the property the `field` names; none is a tombstone.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "head_id",
+              "field"
+            ],
+            "properties": {
+              "head_id": {
+                "description": "The head written under (rule 6's write target, or every head holding it for a tombstone).",
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "field": {
+                "description": "The figure value.",
+                "enum": [
+                  "score",
+                  "note",
+                  "wishability"
+                ]
+              },
+              "score": {
+                "description": "The score, when field is score.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "note": {
+                "description": "The note, when field is note.",
+                "type": "string",
+                "maxLength": 10000
+              },
+              "wishability": {
+                "description": "The wishability, when field is wishability.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

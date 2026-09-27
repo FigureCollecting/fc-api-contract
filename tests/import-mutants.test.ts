@@ -2,12 +2,12 @@
 // fail, and the unmutated model must pass them all. M8 is the one equivalent mutant: import.proto 4.4 (c2) already
 // keeps every copy the app changed out of MATERIALIZE, so dropping the check changes nothing (shown below).
 import { describe, expect, it } from 'vitest';
-import type { Switches } from './support/server-model.js';
+import { stable, type Switches } from './support/server-model.js';
 import { runScenario } from './support/trace-runner.js';
 import { vectors } from './support/vectors.js';
 import { twoDevices, world } from './support/worlds.js';
 
-const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const eq = (a: unknown, b: unknown) => stable(a) === stable(b);
 function scenarioFailures(sw: Switches, staging = true): string[] {
   return vectors.serverScenarios.filter((c) => {
     const r = runScenario(c, sw, { staging });

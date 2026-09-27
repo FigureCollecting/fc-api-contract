@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-held.schema.json",
+  "title": "imp/{site}/held/{head_id} payload",
+  "description": "UPSERT payload of imp/{site}/held/{head_id}: the edits the server holds on the figure instead of replaying them (import.proto HELD). keep applies them now, as knowing edits; take drops them. A tombstone means none is held. Serialized, at most 6,295,923 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rev",
+    "held"
+  ],
+  "properties": {
+    "rev": {
+      "description": "Opaque; changes when an edit joins or leaves the card. An answer names it.",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
+    },
+    "held": {
+      "description": "The held edits, oldest first. At most 16.",
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "description": "One held edit.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "version",
+          "reason"
+        ],
+        "properties": {
+          "key": {
+            "description": "The facet key the edit wrote.",
+            "type": "string",
+            "pattern": "^[a-z0-9/-]{1,128}$"
+          },
+          "payload": {
+            "description": "The edit's payload as JSON text (sync.proto rule 3); absent for a tombstone.",
+            "type": "string",
+            "maxLength": 65536
+          },
+          "version": {
+            "description": "The held edit's version, in the full user-facet form <instant>#<counter>#<device> (sync.proto rule 5).",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z#\\d{10}#[0-9a-f]{32}$"
+          },
+          "reason": {
+            "description": "Why it is held: late_after_knowing (HELD (i)), made_on_revised_result ((ii)), after_answer ((iii)) or past_retention ((iv)).",
+            "enum": [
+              "late_after_knowing",
+              "made_on_revised_result",
+              "after_answer",
+              "past_retention"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

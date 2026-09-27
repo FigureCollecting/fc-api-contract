@@ -1,7 +1,8 @@
-// A plain client for the server model (import.proto THE SERVER DECIDES, client rules): a replica kept by
-// LWW, an outbox whose every entry carries the basis it was minted on, a display that lays the outbox
-// over the replica, and a push that adopts `current`. It decides nothing about imports.
-import { CARD, cmpVersion, type Choice, type Field, type ItemKind, type Json, type Pushable, type PushResult, type Server, type Version } from './server-model.js';
+// A plain client for the server model (sync.proto rule 6, THE IMPORT, ON A CLIENT): a replica kept by LWW
+// that applies a server transaction only once it has all of it (rule 7, F2), an outbox whose every entry
+// carries the basis it was minted on, a display that lays the outbox over the replica, and a push that adopts
+// `current`. It decides nothing about imports.
+import { CARD, cmpVersion, type Choice, type FeedEvent, type Field, type ItemKind, type Json, type Pushable, type PushResult, type Server, type Version } from './server-model.js';
 
 export class Device {
   replica = new Map<string, [Json, Version]>();
@@ -64,18 +65,29 @@ export class Device {
     });
   }
 
+  /** Fetched from the feed so far; `cursor` is the last event applied, always at a transaction boundary (F2). */
+  private fetched = 0;
+  private staged: FeedEvent[] = [];
+
+  /** One Delta page of `n` events (all when undefined). A transaction is applied only once all of it is here. */
   pull(n?: number): void {
-    const evs = this.s.feed.slice(this.cursor, n === undefined ? undefined : this.cursor + n);
-    for (const e of evs) {
+    const page = this.s.feed.slice(this.fetched, n === undefined ? undefined : this.fetched + n);
+    this.fetched += page.length;
+    this.staged.push(...page);
+    const upto = this.opts.staging === false ? this.staged.length - 1 : this.staged.findLastIndex((e) => e.last);
+    for (const e of this.staged.slice(0, upto + 1)) {
       const r = this.replica.get(e.key);
       if (r === undefined || cmpVersion(e.version, r[1]) > 0) this.replica.set(e.key, [e.value, e.version]);
       this.cursor = e.seq;
     }
+    this.staged = this.staged.slice(upto + 1);
   }
 
   replayFromEmpty(): void {
     this.replica = new Map();
     this.cursor = 0;
+    this.fetched = 0;
+    this.staged = [];
     this.pull();
   }
 
