@@ -1,9 +1,10 @@
 // import.proto's server-side import rules (THE SERVER DECIDES), written the simplest way so that
 // golden/import-vectors.json is executed, not only stated: a port of the reviewed Python reference model
-// (design A with the review's fixes F1 to F3), plus Ross's review rules R1 to R8. The server keeps every
-// input (device edits with their basis, imports, answers, spine redirects) and derives its state by REPLAY
-// in canonical order; after every input it diffs that state against what it has emitted and emits the
-// difference as ordinary feed events, one transaction per input.
+// (design A with the review's fixes F1 to F3, HELD decided once per push unit and sticky), plus Ross's review
+// rules R1 to R8. The server keeps every input (device edits with their basis, imports, answers, spine
+// redirects) and derives its state by REPLAY in canonical order; after every input it diffs that state against
+// what it has emitted and emits the difference as ordinary feed events, one transaction per input. HELD is
+// decided when a push arrives, never by a replay.
 //
 // Ids, heads and values are abstract (occ ids order by their names), versions are tuples
 // [minute, counter, device, bump] compared element by element, and a feed position is a 1-based seq.
@@ -77,7 +78,10 @@ export interface Edit {
   version: Version;
   basis: number;
   arr: number;
+  /** Decided once, when its push arrives (HELD), and final until its held-edit card is answered. */
   held: boolean;
+  /** Its HELD unit: the push, and the copy (head, status, collection, disposal) or the facet. */
+  unit?: string;
 }
 export interface Answer {
   type: 'answer';
@@ -105,14 +109,19 @@ export interface Import {
   version: Version;
   arr: number;
   lastSeq: Map<string, number>;
+  /** The position of its marker imp/{site}/import (F1). */
+  markerSeq: number;
   /** pref/{site}/import as the server held it when the import started. */
   policy: Policy;
+  /** ImportMfcExportResponse's counters, as the response carried them. */
+  counters?: ImportCounters;
 }
 export interface Redirect {
   type: 'redirect';
   head: string;
   survivor: string;
   arr: number;
+  version: Version;
 }
 export type Input = Edit | Answer | Import | Redirect;
 export type Choice = 'keep' | 'take' | 'per_copy' | 'undo' | 'dismiss';
@@ -139,28 +148,52 @@ export interface Card {
   /** The MFC ids known to the import that raised it (its rows and row bases), for the projection. */
   known: string[];
 }
-/** MFC's side of a figure (THE MFC PROJECTION): its rows, per-kind Counts and field values. */
-export interface MfcSide {
-  rows: { id: string; kind: Kind; count: number; fields: Partial<Record<Field, Json>> }[];
-  counts: Counts;
-  fields: Record<Field, Json>;
+/** One MFC row of a figure as the import knows it (THE MFC PROJECTION): an export row, or a row base at Count 0. */
+export interface MfcRow {
+  id: string;
+  kind: Kind;
+  count: number;
+  fields: Partial<Record<Field, Json>>;
 }
-/** The app's side as MFC could state it. */
-export interface AppSide {
-  counts: Counts;
-  fields: Record<Field, Json>;
+/** A row as the align plan would have MFC hold it: kind null leaves the collection. */
+export interface PlanRow {
+  id: string;
+  kind: Kind | null;
+  count: number;
 }
-/** ACKNOWLEDGED: both sides as the user left them; `align` when the answer kept the app's side. */
+/** The parts of the projection: the rows' kinds and Counts, and each field. */
+export type Part = 'counts' | Field;
+export const PARTS: readonly Part[] = ['counts', ...FIELDS];
+/** ACKNOWLEDGED: MFC's rows as they stand and, per part that differed, both sides as the user left them. */
 export interface Ack {
-  mfc: MfcSide;
-  app: AppSide;
-  mfcDigest: string;
-  appDigest: string;
+  rows: MfcRow[];
+  parts: Partial<Record<Part, string>>;
+  /** The answer kept the app's side, so an align-MFC entry is kept. */
   align: boolean;
   list?: string;
-  soldRow?: string;
   dismissed?: string;
+  /** Mutant alignFromAck only: the app's live Counts and fields when it was acknowledged. */
+  appAt?: { counts: Counts; fields: Record<Field, Json> };
 }
+/** ImportMfcExportResponse fields 3 to 17. */
+export interface ImportCounters {
+  added: number;
+  moved: number;
+  unchanged: number;
+  removed: number;
+  facets_written: number;
+  kept_newer: number;
+  occurrences_added: number;
+  occurrences_status_changed: number;
+  occurrences_removed: number;
+  conflicts_raised: number;
+  conflicts_pending: number;
+  divergences_pending: number;
+  changes_held: number;
+  align_pending: number;
+  import_number: number;
+}
+type Stats = Omit<ImportCounters, 'facets_written' | 'conflicts_pending' | 'divergences_pending' | 'changes_held' | 'align_pending' | 'import_number'>;
 /** A change entry (imp/{site}/change/{S}): what an import wrote, and its undo. */
 export interface Change {
   kind: 'applied' | 'favor_app' | 'favor_mfc';
@@ -190,6 +223,8 @@ export class Canon {
   redirect = new Map<string, string>();
   decisions: [string, string, string][] = [];
   held: Edit[] = [];
+  /** Per import number: what its decisions did (ImportMfcExportResponse). */
+  stats = new Map<number, Stats>();
 
   constructor(
     readonly namer: Namer,
@@ -736,6 +771,38 @@ export interface Switches {
   forgetDismiss?: boolean;
   /** R8 off: a divergence raised for a figure with no MFC id. */
   divergeWithoutId?: boolean;
+  /** HELD not sticky: the relevance replay resets every other edit's hold (round 5's model). */
+  heldNotSticky?: boolean;
+  /** HELD per edit, not per unit: a copy's head, status and disposal of one push decided apart. */
+  heldPerEdit?: boolean;
+  /** F3 (i) broad: any knowing edit to a copy of S is a reaction, whatever it acts on. */
+  broadReaction?: boolean;
+  /** HELD (iii) counts only answers to a figure item. */
+  answerHoldFigureOnly?: boolean;
+  /** HELD (iii) without its relevance test: every late edit after an answer is held. */
+  answerHoldWithoutRelevance?: boolean;
+  /** A held-edit card lists every held edit, past the schema's 16. */
+  heldNoOverflow?: boolean;
+  /** An answer routed by its rev alone, whatever item it names. */
+  ignoreItem?: boolean;
+  /** A spine merge leaves the merged heads' items in place. */
+  mergeKeepsItems?: boolean;
+  /** A take on an mfc_change does not re-raise what the app is ahead on. */
+  mfcChangeHidesDivergence?: boolean;
+  /** An align-MFC entry built from the acknowledged snapshot, not the app's current side. */
+  alignFromAck?: boolean;
+  /** An acknowledgement compared whole, not per part (a partial catch-up re-opens it). */
+  wholeAck?: boolean;
+  /** add_to_list for any sold copy, not only one of a row the entry lowers. */
+  listAnySale?: boolean;
+  /** The align plan gives up Counts by row number alone, ignoring copy origins. */
+  alignIgnoresOrigin?: boolean;
+  /** X5: an applied decision leaves a stale conflict or mfc_change item. */
+  keepStaleItem?: boolean;
+  /** X6: an absent row counts its base Count on MFC's side. */
+  absentRowCountsBase?: boolean;
+  /** X9: undo restores even when a written value has moved on. */
+  undoIgnoresLaterEdits?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -773,6 +840,7 @@ export interface AppliedItem {
 export interface ImportResult {
   review: ReviewGroup[];
   applied: AppliedItem[];
+  counters: ImportCounters;
 }
 export interface PushResult {
   key: string;
@@ -807,6 +875,14 @@ const ANSWERS: Record<ReviewKind, { answers: Choice[]; bulk: Choice[] }> = {
 };
 const USER_WRITES = new Set(['status', 'create', 'field', 'fieldtomb']);
 const isItemKey = (k: string) => k.startsWith('imp/');
+/** A held-edit card lists at most this many edits (schemas/imp-held.schema.json). */
+export const HELD_CAP = 16;
+/** The facets of a copy that are one HELD unit within a push. */
+const UNIT_FACETS = new Set(['head', 'status', 'collection', 'disposal']);
+const unitKey = (key: string): string => {
+  const p = key.split('/');
+  return p[0] === 'occ' && p.length === 3 && UNIT_FACETS.has(p[2]!) ? `occ/${p[1]}` : key;
+};
 
 export class Server {
   readonly inputs: Input[] = [];
@@ -819,8 +895,8 @@ export class Server {
   private readonly arrSeq = new Map<number, number>();
   /** Per figure: the seqs of replay emissions that revised an import's result. */
   private readonly epochHist = new Map<string, number[]>();
-  private force = new Map<number, 'before' | 'arrival'>();
-  private noHold = false;
+  /** Arrivals the relevance test places at their arrival, not before their import. */
+  private force = new Set<number>();
   private readonly heldReason = new Map<number, HeldReason>();
   readonly namer: Namer;
   readonly rank: Rank;
@@ -856,56 +932,12 @@ export class Server {
   }
 
   canonicalOrder(prev: Canon): Input[] {
-    const imports = this.inputs.filter((i): i is Import => i.type === 'import');
-    const answers = this.inputs.filter((i): i is Answer => i.type === 'answer');
     const anchored = new Map<number, Edit[]>();
     const placed = new Set<number>();
-    const arrOf = (e: Input) => this.arrSeq.get(e.arr) ?? 1e9;
     for (const e of this.inputs) {
-      if (e.type !== 'edit') continue;
-      const figs = this.figsOf(e, prev);
-      const lates = imports.filter((I) => I.arr < e.arr && this.lateFor(I, e, figs));
-      this.heldReason.delete(e.arr);
-      // 5.4 (iii): a late edit whose basis is before an answer on its figure
-      const beforeAnswer = answers.some((r) => r.arr < e.arr && [...figs].some((f) => (r.lastSeq.get(f) ?? 0) > e.basis));
-      e.held = beforeAnswer && (this.sw.broadHold === true || lates.length > 0);
-      if (e.held) this.heldReason.set(e.arr, 'after_answer');
-      const forced = this.force.get(e.arr);
-      if (forced !== undefined) {
-        if (forced === 'before') {
-          anchored.set(lates[0]!.arr, [...(anchored.get(lates[0]!.arr) ?? []), e]);
-          placed.add(e.arr);
-        }
-        continue;
-      }
-      const hold = !this.noHold && !this.sw.noHold;
-      // F3 (i) HOLD ON REACTION: another device made a knowing edit to a copy of the figure after the import
-      if (hold && lates.length > 0 && !e.held) {
-        const I0 = lates[0]!;
-        for (const k of this.inputs) {
-          if (
-            k.type === 'edit' &&
-            k !== e &&
-            I0.arr < k.arr &&
-            k.key.startsWith('occ/') &&
-            k.basis < arrOf(e) &&
-            (this.sw.holdWithoutArrivedBefore === true || k.arr < e.arr || this.arrSeq.get(k.arr) === this.arrSeq.get(e.arr)) &&
-            [...this.figsOf(k, prev)].some((f) => figs.has(f)) &&
-            ![...figs].some((f) => (I0.lastSeq.get(f) ?? 0) > k.basis)
-          ) {
-            e.held = this.sw.holdWithoutRelevance === true || this.relevant(e, figs);
-            if (e.held) this.heldReason.set(e.arr, 'late_after_knowing');
-            break;
-          }
-        }
-      }
-      // F3 (ii): made on a result a later replay revised
-      if (hold && lates.length === 0 && !e.held && [...figs].some((f) => e.basis < this.epochAt(f, e))) {
-        e.held = true;
-        this.heldReason.set(e.arr, 'made_on_revised_result');
-      }
-      if (e.held || this.sw.M1) continue;
-      const I = lates[0];
+      // HELD is decided when the edit's push arrives (decideHolds), never here: a held edit is not replayed
+      if (e.type !== 'edit' || e.held || this.force.has(e.arr) || this.sw.M1) continue;
+      const I = this.lates(e, prev)[0];
       if (I !== undefined) {
         anchored.set(I.arr, [...(anchored.get(I.arr) ?? []), e]);
         placed.add(e.arr);
@@ -922,29 +954,130 @@ export class Server {
     return order;
   }
 
+  /** The imports an edit is late for, earliest first (THE SERVER DECIDES, LATE EDIT). */
+  private lates(e: Edit, st: Canon): Import[] {
+    const figs = this.figsOf(e, st);
+    return this.inputs.filter((I): I is Import => I.type === 'import' && I.arr < e.arr && this.lateFor(I, e, figs));
+  }
+
+  /** HELD, decided once per unit when a push arrives, in push order; final until the held-edit card is answered. */
+  private decideHolds(items: readonly Pushable[], prev: Canon): void {
+    const units = new Map<string, Edit[]>();
+    const push = this.arrSeq.get(items[0]!.arr);
+    for (const e of items) {
+      if (e.type !== 'edit') continue;
+      const u = `${push}:${this.sw.heldPerEdit ? `${e.arr}` : unitKey(e.key)}`;
+      e.unit = u;
+      units.set(u, [...(units.get(u) ?? []), e]);
+    }
+    for (const U of units.values()) {
+      const reason = this.holdReason(U, prev, false);
+      for (const e of U) {
+        e.held = reason !== null;
+        if (reason !== null) this.heldReason.set(e.arr, reason);
+      }
+    }
+  }
+
+  /** Mutant holdWithoutArrivedBefore only: hold an earlier unit again on a reaction that arrived after it. */
+  private redecide(prev: Canon): void {
+    const units = new Map<string, Edit[]>();
+    for (const e of this.inputs) if (e.type === 'edit' && e.unit !== undefined) units.set(e.unit, [...(units.get(e.unit) ?? []), e]);
+    for (const U of units.values()) {
+      if (U[0]!.held) continue;
+      const reason = this.holdReason(U, prev, true);
+      if (reason === null) continue;
+      for (const e of U) {
+        e.held = true;
+        this.heldReason.set(e.arr, reason);
+      }
+    }
+  }
+
+  /** Why unit U is held (HELD (i) to (iii)), or null: it is replayed. */
+  private holdReason(U: readonly Edit[], prev: Canon, allowLater: boolean): HeldReason | null {
+    const figs = new Set(U.flatMap((e) => [...this.figsOf(e, prev)]));
+    const first = U[0]!;
+    const at = this.arrSeq.get(first.arr) ?? 1e9;
+    const lates = new Map(U.map((e) => [e.arr, this.lates(e, prev)]));
+    const late = U.filter((e) => lates.get(e.arr)!.length > 0);
+    const answers = this.inputs.filter((r): r is Answer => r.type === 'answer' && r.arr < first.arr);
+    const before = (r: Answer, basis: number) => [...figs].some((f) => (r.lastSeq.get(f) ?? 0) > basis);
+    if (this.sw.broadHold === true && U.some((e) => answers.some((r) => before(r, e.basis)))) return 'after_answer';
+    if (late.length > 0) {
+      const I0 = late.map((e) => lates.get(e.arr)![0]!).sort((a, b) => a.arr - b.arr)[0]!;
+      const basis = Math.min(...late.map((e) => e.basis));
+      // (iii): made before an answer on S the server accepted
+      const afterAnswer = answers.some((r) => before(r, basis));
+      // (i): a knowing edit to S's copies that arrived before the unit or in its push
+      const hold = !this.sw.noHold;
+      const cands = !hold
+        ? []
+        : this.inputs.filter(
+            (k): k is Edit =>
+              k.type === 'edit' &&
+              !U.includes(k) &&
+              I0.arr < k.arr &&
+              k.key.startsWith('occ/') &&
+              k.basis < at &&
+              (allowLater || this.sw.holdWithoutArrivedBefore === true || k.arr < first.arr || this.arrSeq.get(k.arr) === at) &&
+              [...this.figsOf(k, prev)].some((f) => figs.has(f)) &&
+              ![...figs].some((f) => (I0.lastSeq.get(f) ?? 0) > k.basis),
+          );
+      if (afterAnswer && this.sw.answerHoldWithoutRelevance === true) return 'after_answer';
+      if (cands.length > 0 && this.sw.holdWithoutRelevance === true) return 'late_after_knowing';
+      if (afterAnswer || cands.length > 0) {
+        const { differs, copies } = this.relevant(U, figs);
+        if (differs && afterAnswer) return 'after_answer';
+        const reaction = (k: Edit) => this.sw.broadReaction === true || copies.has(k.key.split('/')[1]!) || this.newCopy(k, I0);
+        if (differs && cands.some(reaction)) return 'late_after_knowing';
+      }
+    }
+    // (ii): a knowing edit made on a result a later replay revised
+    if (!this.sw.noHold)
+      for (const e of U) if (lates.get(e.arr)!.length === 0 && [...this.figsOf(e, prev)].some((f) => e.basis < this.epochAt(f, e))) return 'made_on_revised_result';
+    return null;
+  }
+
+  /** The reaction wrote the head or status of a copy that had no head when I0 ran: a copy added after the import. */
+  private newCopy(k: Edit, I0: Import): boolean {
+    const [, c, facet] = k.key.split('/');
+    if (facet !== 'head' && facet !== 'status') return false;
+    const seqs = this.feed.filter((ev) => ev.key === `occ/${c}/head` && ev.value !== null).map((ev) => ev.seq);
+    return seqs.length === 0 || Math.min(...seqs) > I0.markerSeq;
+  }
+
   /** F3 (i): would placing the late edit before the import change that import's result on its figures? */
-  private relevant(e: Edit, figs: Set<string>): boolean {
-    const saved: [Map<number, 'before' | 'arrival'>, boolean] = [new Map(this.force), this.noHold];
-    this.noHold = true;
+  /**
+   * HELD (i) and (iii): would placing the unit's late edits before their import change S's copies (status and head,
+   * the unit's own keys aside) or items? Every other input keeps its decision; the push's later units are placed as
+   * if not held. Returns whether anything differs and the copies whose status or head differs.
+   */
+  private relevant(U: readonly Edit[], figs: Set<string>): { differs: boolean; copies: Set<string> } {
+    const saved = new Set(this.force);
+    const own = new Set(U.map((e) => e.key));
+    // mutant heldNotSticky: round 5's relevance replay, which reset every other edit's hold
+    if (this.sw.heldNotSticky) for (const e of this.inputs) if (e.type === 'edit' && !U.includes(e)) e.held = false;
     const out: Record<string, string>[] = [];
-    for (const how of ['before', 'arrival'] as const) {
-      this.force = new Map(saved[0]).set(e.arr, how);
+    for (const atArrival of [false, true]) {
+      this.force = new Set([...saved, ...(atArrival ? U.map((e) => e.arr) : [])]);
       const st = this.replay();
       const view: Record<string, string> = {};
       for (const [k, [v]] of st.facets) {
-        if (!k.startsWith('occ/') || k === e.key || !['status', 'head'].includes(k.split('/').at(-1)!)) continue;
+        if (!k.startsWith('occ/') || own.has(k) || !['status', 'head'].includes(k.split('/').at(-1)!)) continue;
         const c = k.split('/')[1]!;
         const hs = new Set(this.headHist.get(c) ?? []);
         const h = st.head(c);
         if (h !== null) hs.add(h);
         if ([...hs].some((x) => figs.has(st.surv(x)))) view[k] = stable(v);
       }
-      for (const f of figs) view[`item:${f}`] = stable(this.cardDigest(st, f));
+      for (const f of figs) for (const kind of ['figure', 'change', 'align'] as const) view[ITEM(kind, f)] = stable(st.val(ITEM(kind, f)));
       out.push(view);
     }
-    [this.force, this.noHold] = saved;
+    this.force = saved;
     const [a, b] = out as [Record<string, string>, Record<string, string>];
-    return [...new Set([...Object.keys(a), ...Object.keys(b)])].some((k) => (a[k] ?? 'null') !== (b[k] ?? 'null'));
+    const diff = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => (a[k] ?? 'null') !== (b[k] ?? 'null'));
+    return { differs: diff.length > 0, copies: new Set(diff.filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!)) };
   }
 
   private epochAt(f: string, e: Edit): number {
@@ -962,19 +1095,24 @@ export class Server {
       if (inp.type === 'edit') this.applyEdit(st, inp);
       else if (inp.type === 'import') this.applyImport(st, inp);
       else if (inp.type === 'answer') this.applyAnswer(st, inp);
-      else st.redirect.set(inp.head, inp.survivor);
+      else this.applyRedirect(st, inp);
     }
     st.held = this.inputs.filter((e): e is Edit => e.type === 'edit' && e.held);
     this.emitHeldCards(st);
     return st;
   }
 
-  /** What the relevance test of F3 compares for a figure's item (the reviewed reference's card digest). */
-  cardDigest(st: Canon, S: string): Json {
-    const cf = st.conflicts.get(S);
-    if (cf === undefined || cf.kind === 'divergence') return null;
-    const summ = st.summary(S);
-    return JSON.parse(stable({ rev: cf.rev, kind: cf.kind, base: cf.B, mfc: cf.M, app: summ.counts, app_copies: summ.copies, comps: cf.comps })) as Json;
+  /** A spine merge: the items of the merged-away head and of its survivor end, and the next import decides the merged figure. */
+  private applyRedirect(st: Canon, R: Redirect): void {
+    const figs = new Set([st.surv(R.head), st.surv(R.survivor)]);
+    st.redirect.set(R.head, R.survivor);
+    if (this.sw.mergeKeepsItems) return;
+    for (const f of [...figs].sort()) {
+      st.conflicts.delete(f);
+      st.changes.delete(f);
+      st.acks.delete(f);
+      this.emitItems(st, f, R.version);
+    }
   }
 
   /** The writes a list of ops would make, without making them (a preview or an undo). */
@@ -1055,8 +1193,18 @@ export class Server {
   }
 
   // ---------------------------------------------------------- held edits (F3, 5.4)
-  private heldOn(st: Canon, S: string, before: number): Edit[] {
-    return this.inputs.filter((e): e is Edit => e.type === 'edit' && e.held && e.arr < before && !st.heldAnswered.has(e.arr) && this.figsOf(e, st).has(S));
+  private heldOn(st: Canon, S: string, before: number): { listed: Edit[]; more: number } {
+    const all = this.inputs.filter((e): e is Edit => e.type === 'edit' && e.held && e.arr < before && !st.heldAnswered.has(e.arr) && this.figsOf(e, st).has(S));
+    if (this.sw.heldNoOverflow) return { listed: all, more: 0 };
+    // the card lists whole units, oldest first, at most HELD_CAP edits; an answer to it answers those, then the next show
+    const units = new Map<string, Edit[]>();
+    for (const e of all) units.set(e.unit ?? `${e.arr}`, [...(units.get(e.unit ?? `${e.arr}`) ?? []), e]);
+    const listed: Edit[] = [];
+    for (const u of units.values()) {
+      if (listed.length > 0 && listed.length + u.length > HELD_CAP) break;
+      listed.push(...u);
+    }
+    return { listed, more: all.length - listed.length };
   }
   private heldRev = (es: readonly Edit[]) => `H:${es.map((e) => e.arr).join(',')}`;
 
@@ -1065,105 +1213,120 @@ export class Server {
     const figs = new Set<string>();
     for (const e of held) for (const f of this.figsOf(e, st)) figs.add(f);
     for (const S of [...figs].sort()) {
-      const es = held.filter((e) => this.figsOf(e, st).has(S));
-      const ver = es.map((e) => e.version).sort(cmpVersion).at(-1)!;
-      const held_ = es.map((e) => ({ key: e.key, value: e.value, version: e.version, reason: this.heldReason.get(e.arr) ?? 'after_answer' }));
-      const payload = JSON.parse(stable({ rev: this.heldRev(es), held: held_ })) as Json;
+      const { listed, more } = this.heldOn(st, S, Infinity);
+      const ver = listed.map((e) => e.version).sort(cmpVersion).at(-1)!;
+      const held_ = listed.map((e) => ({ key: e.key, value: e.value, version: e.version, reason: this.heldReason.get(e.arr) ?? 'after_answer' }));
+      const payload = JSON.parse(stable({ rev: this.heldRev(listed), held: held_, ...(more > 0 ? { more } : {}) })) as Json;
       this.put(st, ITEM('held', S), payload, ver);
     }
   }
 
   // ---------------------------------------------------------- the projection, acknowledgements, align-MFC (R2, R4, R8)
-  private mfcSide(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>): MfcSide {
-    const rows = known.map((id) => {
+  /** MFC's rows of S (THE MFC PROJECTION): the export's rows, and each known row the export lacks at Count 0. */
+  private mfcRows(exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>): MfcRow[] {
+    return [...known].sort(byNum).map((id) => {
       const r = exp.get(id);
       if (r !== undefined) return { id, kind: r.kind, count: r.count, fields: { ...r.fields } };
-      return { id, kind: baseRows.get(id)?.kind ?? ('owned' as Kind), count: 0, fields: {} };
+      const b = baseRows.get(id);
+      return { id, kind: b?.kind ?? ('owned' as Kind), count: this.sw.absentRowCountsBase ? (b?.count ?? 0) : 0, fields: {} };
     });
-    const counts = zero();
-    for (const r of rows) counts[r.kind] += r.count;
-    const fields = Object.fromEntries(FIELDS.map((f) => [f, st.baseField(S, f)])) as Record<Field, Json>;
-    return { rows, counts, fields };
   }
 
-  private appSide(st: Canon, S: string, kinds: number): AppSide {
-    const all = zero();
+  /** The app's live copies of S per kind, and its displayed fields. */
+  private appNow(st: Canon, S: string): { counts: Counts; fields: Record<Field, Json> } {
+    const counts = zero();
     for (const c of st.copiesRel(S)) {
       const k = st.curKind(c, S);
-      if (k !== OUT) all[k]++;
-    }
-    const counts = zero();
-    let kept = 0;
-    for (const k of KINDS) {
-      if (all[k] === 0) continue;
-      if (this.sw.projectAllKinds || kept < kinds) counts[k] = all[k];
-      kept++;
+      if (k !== OUT) counts[k]++;
     }
     return { counts, fields: Object.fromEntries(FIELDS.map((f) => [f, st.displayField(S, f)])) as Record<Field, Json> };
   }
 
-  private static digest(m: MfcSide | AppSide): string {
-    return 'rows' in m ? stable({ rows: m.rows.filter((r) => r.count > 0).map((r) => [r.id, r.kind, r.count]), fields: m.fields }) : stable(m);
-  }
-  private static agree(m: MfcSide, a: AppSide): boolean {
-    return eq(m.counts, a.counts) && eq(m.fields, a.fields);
-  }
-
-  private acknowledge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, align: boolean, policy: Policy): void {
-    if (this.sw.noAck) return;
-    const mfc = this.mfcSide(st, S, exp, known, baseRows);
-    const app = this.appSide(st, S, known.length);
-    const sold = st
-      .copiesRel(S)
-      .filter((c) => {
-        const d = st.val(`occ/${c}/disposal`);
-        return st.status(c) === 'former' && typeof d === 'object' && d !== null && !Array.isArray(d) && ['sold', 'traded'].includes(d.reason as string);
-      })
-      .map((c) => (st.val(`occ/${c}/origin`) as string | null)?.split('#')[0]);
-    const ids = mfc.rows.map((r) => r.id);
-    const soldRow = sold.length === 0 ? undefined : (sold.find((id) => id !== undefined && ids.includes(id)) ?? [...ids].sort(byNum)[0]);
-    st.acks.set(S, {
-      mfc,
-      app,
-      mfcDigest: Server.digest(mfc),
-      appDigest: Server.digest(app),
-      align,
-      ...(policy.disposition_list === undefined ? {} : { list: policy.disposition_list }),
-      ...(soldRow === undefined ? {} : { soldRow }),
-    });
-  }
-
-  /** ALIGN-MFC: what to change on MFC for it to hold the app's side, per MFC row. */
-  private alignOf(st: Canon, S: string): { rev: string; actions: AlignAction[] } | null {
-    const ack = st.acks.get(S);
-    if (ack === undefined || !ack.align || Server.agree(ack.mfc, ack.app)) return null;
-    const rows = [...ack.mfc.rows].sort((a, b) => byNum(a.id, b.id));
-    const plan = rows.map((r) => ({ id: r.id, kind: r.count > 0 ? r.kind : (null as Kind | null), count: r.count }));
-    const T = ack.app.counts;
+  /**
+   * THE ALIGN PLAN (ALIGN-MFC): MFC's rows as they would hold the app's live copies. Per kind, the rows give up an
+   * excess first where their Count is beyond their own live copies (by origin), most first, then the highest-numbered;
+   * a row left with none leaves the collection. A kind the app has more of grows its lowest-numbered row, or takes the
+   * lowest-numbered row out of the collection; what no row can take is richness MFC cannot express.
+   */
+  private plan(st: Canon, S: string, rows: readonly MfcRow[], T: Counts): PlanRow[] {
+    const plan: PlanRow[] = rows.map((r) => ({ id: r.id, kind: r.count > 0 ? r.kind : null, count: r.count }));
+    const own = (id: string, k: Kind) =>
+      this.sw.alignIgnoresOrigin ? 0 : st.copiesRel(S).filter((c) => st.curKind(c, S) === k && (st.val(`occ/${c}/origin`) as string | null)?.split('#')[0] === id).length;
     for (const k of KINDS) {
       const of = plan.filter((p) => p.kind === k);
       let excess = of.reduce((n, p) => n + p.count, 0) - T[k];
-      for (const p of [...of].reverse()) {
-        if (excess <= 0) break;
-        const take = Math.min(excess, p.count);
-        p.count -= take;
-        excess -= take;
-        if (p.count === 0) p.kind = null;
+      const surplus = (p: PlanRow) => Math.max(0, p.count - own(p.id, k));
+      for (const p of [...of].sort((a, b) => surplus(b) - surplus(a) || byNum(b.id, a.id))) {
+        const give = Math.min(Math.max(excess, 0), surplus(p));
+        p.count -= give;
+        excess -= give;
       }
+      for (const p of [...of].sort((a, b) => byNum(b.id, a.id))) {
+        const give = Math.min(Math.max(excess, 0), p.count);
+        p.count -= give;
+        excess -= give;
+      }
+      for (const p of of) if (p.count === 0) p.kind = null;
     }
     for (const k of KINDS) {
       const of = plan.filter((p) => p.kind === k);
       const need = T[k] - of.reduce((n, p) => n + p.count, 0);
       if (need <= 0) continue;
-      if (of.length > 0) of[0]!.count = Math.min(99, of[0]!.count + need);
-      else {
-        const free = plan.find((p) => p.kind === null);
-        if (free !== undefined) {
-          free.kind = k;
-          free.count = Math.min(99, need);
-        }
-      }
+      const row = of[0] ?? plan.find((p) => p.kind === null);
+      if (row === undefined) continue;
+      row.kind = k;
+      row.count = Math.min(99, row.count + need);
     }
+    return plan;
+  }
+
+  /** Each part of the projection, MFC's side and the app's as MFC could state it (the plan); they differ exactly when ALIGN-MFC has an action. */
+  private parts(st: Canon, S: string, rows: readonly MfcRow[]): Record<Part, { mfc: string; app: string }> {
+    const now = this.appNow(st, S);
+    const plan = this.plan(st, S, rows, now.counts);
+    const kept = plan.filter((p) => p.kind !== null);
+    const M = zero();
+    for (const r of rows) M[r.kind] += r.count;
+    const counts = this.sw.projectAllKinds
+      ? { mfc: stable(M), app: stable(now.counts) }
+      : { mfc: stable(rows.filter((r) => r.count > 0).map((r) => [r.id, r.kind, r.count])), app: stable(kept.map((p) => [p.id, p.kind, p.count])) };
+    const out = { counts } as Record<Part, { mfc: string; app: string }>;
+    for (const f of FIELDS) {
+      out[f] = { mfc: stable(kept.map((p) => [p.id, rows.find((r) => r.id === p.id)!.fields[f] ?? null])), app: stable(kept.map((p) => [p.id, now.fields[f]])) };
+    }
+    return out;
+  }
+
+
+  private acknowledge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, align: boolean, policy: Policy): void {
+    if (this.sw.noAck) return;
+    const rows = this.mfcRows(exp, known, baseRows);
+    const ps = this.parts(st, S, rows);
+    const parts: Partial<Record<Part, string>> = {};
+    for (const p of PARTS) if (ps[p].mfc !== ps[p].app || this.sw.wholeAck) parts[p] = stable(ps[p]);
+    st.acks.set(S, {
+      rows,
+      parts,
+      align,
+      ...(policy.disposition_list === undefined ? {} : { list: policy.disposition_list }),
+      ...(this.sw.alignFromAck ? { appAt: this.appNow(st, S) } : {}),
+    });
+  }
+
+  /** ALIGN-MFC: what to change on MFC for it to hold the app's side, per MFC row. */
+  /** ALIGN-MFC: what to change on MFC, per MFC row, for it to hold the app's side as it stands now. */
+  private alignOf(st: Canon, S: string): { rev: string; actions: AlignAction[] } | null {
+    const ack = st.acks.get(S);
+    if (ack === undefined || !ack.align) return null;
+    const now = ack.appAt ?? this.appNow(st, S);
+    const rows = ack.rows;
+    const plan = this.plan(st, S, rows, now.counts);
+    const soldOf = (id: string) =>
+      st.copiesRel(S).some((c) => {
+        const d = st.val(`occ/${c}/disposal`);
+        const sold = st.status(c) === 'former' && typeof d === 'object' && d !== null && !Array.isArray(d) && ['sold', 'traded'].includes(d.reason as string);
+        return sold && (this.sw.listAnySale || (st.val(`occ/${c}/origin`) as string | null)?.split('#')[0] === id);
+      });
     const actions: AlignAction[] = [];
     rows.forEach((r, i) => {
       const p = plan[i]!;
@@ -1173,11 +1336,13 @@ export class Server {
       if (p.kind !== null && (was === null || r.count !== p.count)) a.count = { ...(was === null ? {} : { now: r.count }), should: p.count };
       if (p.kind !== null)
         for (const f of FIELDS) {
-          const now = r.fields[f] ?? null;
-          const should = ack.app.fields[f];
-          if (!eq(now, should)) a[f] = { ...(now === null ? {} : { now }), ...(should === null ? {} : { should }) };
+          const v = r.fields[f] ?? null;
+          const should = now.fields[f];
+          if (!eq(v, should)) a[f] = { ...(v === null ? {} : { now: v }), ...(should === null ? {} : { should }) };
         }
-      if (ack.list !== undefined && ack.soldRow === r.id) a.add_to_list = ack.list;
+      // the configured list, for a row the entry lowers whose own copy the app sold or traded
+      const lowered = was !== null && (p.kind === null || p.count < r.count);
+      if (ack.list !== undefined && (this.sw.listAnySale ? i === 0 : lowered) && soldOf(r.id)) a.add_to_list = ack.list;
       if (Object.keys(a).length > 1) actions.push(a);
     });
     if (actions.length === 0) return null;
@@ -1187,26 +1352,31 @@ export class Server {
   }
 
   /** R4: after a settled decision, a difference of the projection is the app's: one divergence item. */
-  private diverge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, I: Import): void {
-    const mfc = this.mfcSide(st, S, exp, known, baseRows);
-    const app = this.appSide(st, S, known.length);
+  /** R4: after a settled decision, a part of the projection that differs and is not acknowledged at its values is the app's: one divergence item. */
+  private diverge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, n: number): void {
+    const rows = this.mfcRows(exp, known, baseRows);
+    const ps = this.parts(st, S, rows);
+    const differ = PARTS.filter((p) => ps[p].mfc !== ps[p].app);
     const item = st.conflicts.get(S);
-    if (Server.agree(mfc, app)) {
+    if (differ.length === 0) {
       if (item?.kind === 'divergence') st.conflicts.delete(S);
       st.acks.delete(S);
       return;
     }
     const ack = st.acks.get(S);
-    if (ack !== undefined && ack.mfcDigest === Server.digest(mfc) && ack.appDigest === Server.digest(app)) {
+    const acked = (p: Part) => ack?.parts[p] === stable(ps[p]);
+    if (ack !== undefined && (this.sw.wholeAck ? PARTS.every(acked) : differ.every(acked))) {
+      // acknowledged at these values: MFC's rows as they now stand, the parts that still differ
       if (item?.kind === 'divergence') st.conflicts.delete(S);
+      ack.rows = rows;
       return;
     }
     st.acks.delete(S);
-    const rev = `D:${Server.digest(mfc)}:${Server.digest(app)}`;
+    const rev = `D:${stable(differ.map((p) => [p, ps[p]]))}`;
     if (item?.kind === 'divergence' && item.rev === rev) return;
     const M = zero();
     for (const r of exp.values()) M[r.kind] += r.count;
-    st.conflicts.set(S, { kind: 'divergence', rev, exp, expFields: '', B: M, M, comps: {}, import: I.n, known: [...known] });
+    st.conflicts.set(S, { kind: 'divergence', rev, exp, expFields: '', B: M, M, comps: {}, import: n, known: [...known] });
   }
 
   // ---------------------------------------------------------- inputs
@@ -1217,17 +1387,19 @@ export class Server {
   }
 
   /** 6.3: a knowing edit may make a pending conflict's sides agree. */
+  /** 6.3: a knowing edit may make a pending conflict's sides agree; and the figure's items follow the app's side (R8). */
   private recheck(st: Canon, e: Edit, ver: Version): void {
     for (const S of [...this.figsOf(e, st)].sort()) {
       const cf = st.conflicts.get(S);
-      if (cf === undefined || cf.kind !== 'conflict') continue;
-      const d = decide(st, S, cf.exp, this.sw);
-      if (d.status !== 'conflict' && !this.sw.M7) {
-        applyOps(st, d.ops, ver);
-        st.conflicts.delete(S);
-        st.decisions.push([`edit ${e.key}`, S, 'conflict closed: sides agree']);
+      if (cf?.kind === 'conflict') {
+        const d = decide(st, S, cf.exp, this.sw);
+        if (d.status !== 'conflict' && !this.sw.M7) {
+          applyOps(st, d.ops, ver);
+          st.conflicts.delete(S);
+          st.decisions.push([`edit ${e.key}`, S, 'conflict closed: sides agree']);
+        }
       }
-      this.emitItems(st, S, ver);
+      if (cf !== undefined || st.acks.has(S)) this.emitItems(st, S, ver);
     }
   }
 
@@ -1262,13 +1434,6 @@ export class Server {
     }
   }
 
-  private lateList(I: Import, S: string, st: Canon): number[] {
-    return this.inputs
-      .filter((e): e is Edit => e.type === 'edit' && e.arr > I.arr && !e.held && this.figsOf(e, st).has(S) && (I.lastSeq.get(S) ?? 0) > e.basis)
-      .map((e) => e.arr)
-      .sort((a, b) => a - b);
-  }
-
   /** The user facet values a decision may touch, to list what it wrote and how to undo it. */
   private snapshot(st: Canon): Map<string, Json> {
     return new Map([...st.facets].filter(([k]) => k.startsWith('occ/') || k.startsWith('uf/')).map(([k, [v]]) => [k, v]));
@@ -1293,6 +1458,8 @@ export class Server {
       if (b !== undefined && !rows.some((r) => r.id === id)) rows.push({ id, head: b.head, kind: b.kind, count: b.count, fields: { ...b.fields } });
     }
     this.rowMoved(st, I, rows);
+    const stats: Stats = { added: 0, moved: 0, unchanged: 0, removed: 0, kept_newer: 0, occurrences_added: 0, occurrences_status_changed: 0, occurrences_removed: 0, conflicts_raised: 0 };
+    st.stats.set(I.n, stats);
     const figs = new Set([...rows.map((r) => st.surv(r.head)), ...[...st.rowBase.values()].map((b) => st.surv(b.head))]);
     for (const S of [...figs].sort()) {
       const exp = rowsFor(st, S, rows);
@@ -1302,14 +1469,19 @@ export class Server {
       const cf = st.conflicts.get(S);
       const writes = d.ops.some((op) => USER_WRITES.has(op[0]));
       const favor = I.policy.import_policy !== 'ASK' && (d.status === 'conflict' || (this.sw.favorAll === true && writes && baseRows.size > 0));
+      const statuses = new Map(st.copiesRel(S).map((c) => [c, st.status(c)]));
+      let heldForUser = false;
       if (d.status === 'conflict' && !favor) {
-        const late = this.lateList(I, S, st);
         const expFields = stable(Object.fromEntries([...exp].map(([r, row]) => [r, row.fields])));
-        let rev = `I${I.n}:${stable(d.M)}:${expFields}:late${stable(late)}`;
+        // the rev is what the raising import found on both sides (MFC's rows, the disputed parts), kept across imports
+        // that find MFC's side unchanged: a knowing edit, or a late edit that changes neither side, never re-revs it
+        let rev = `I${I.n}:${stable({ M: d.M, exp: expFields, comps: d.comps })}`;
         let raised = I.n;
-        if (cf?.kind === 'conflict' && eq(cf.M, d.M) && cf.expFields === expFields && late.length === 0) [rev, raised] = [cf.rev, cf.import];
+        if (cf?.kind === 'conflict' && eq(cf.M, d.M) && cf.expFields === expFields) [rev, raised] = [cf.rev, cf.import];
+        if (cf?.rev !== rev) stats.conflicts_raised++;
         st.conflicts.set(S, { kind: 'conflict', rev, exp, expFields, B: d.B, M: d.M, comps: d.comps, import: raised, known });
         st.acks.delete(S);
+        heldForUser = true;
         st.decisions.push([`import#${I.n}`, S, 'conflict']);
       } else if (favor) {
         // R5: the preference answers a true conflict itself; the change entry records it, undoable like an answer
@@ -1331,18 +1503,39 @@ export class Server {
         const keepRev = cf?.kind === 'mfc_change' && eq(cf.M, d.M) && cf.expFields === expFields;
         st.conflicts.set(S, keepRev ? cf : { kind: 'mfc_change', rev, exp, expFields, B: d.B, M: d.M, comps: d.comps, import: I.n, known });
         st.acks.delete(S);
+        heldForUser = true;
         st.decisions.push([`import#${I.n}`, S, 'mfc_change held']);
       } else {
         const before = this.snapshot(st);
         applyOps(st, d.ops, I.version);
-        if (cf !== undefined && cf.kind !== 'divergence') st.conflicts.delete(S);
+        if (cf !== undefined && cf.kind !== 'divergence' && !this.sw.keepStaleItem) st.conflicts.delete(S);
         if (writes && baseRows.size > 0) {
           const { writes: w, undo } = this.diff(st, before);
           st.changes.set(S, { kind: 'applied', rev: `C${I.n}:applied:${stable(w)}`, import: I.n, writes: w, undo, exp });
         }
-        this.diverge(st, S, exp, known, baseRows, I);
+        this.diverge(st, S, exp, known, baseRows, I.n);
         st.decisions.push([`import#${I.n}`, S, d.status]);
       }
+      // ImportMfcExportResponse: what this decision did to the figure's rows and copies
+      let wrote = false;
+      let tombstoned = false;
+      for (const c of st.copiesRel(S)) {
+        const [was, now] = [statuses.get(c) ?? null, st.status(c)];
+        if (was === now) continue;
+        const live = (s: Json) => (KINDS as readonly unknown[]).includes(s);
+        wrote = true;
+        if (now === null) {
+          stats.occurrences_removed++;
+          tombstoned = true;
+        } else if (live(now) && !live(was)) stats.occurrences_added++;
+        else if (live(now) && live(was)) stats.occurrences_status_changed++;
+      }
+      const n = exp.size;
+      if (baseRows.size === 0) stats.added += n;
+      else if (heldForUser) stats.kept_newer += n;
+      else if (wrote) stats.moved += n;
+      else stats.unchanged += n;
+      if (tombstoned) stats.removed += [...baseRows.keys()].filter((id) => !exp.has(id)).length;
       this.emitItems(st, S, I.version);
     }
     if (this.sw.divergeWithoutId) {
@@ -1352,7 +1545,7 @@ export class Server {
         if (h !== null && st.status(c) !== null && !figs.has(st.surv(h))) loose.add(st.surv(h));
       }
       for (const S of [...loose].sort()) {
-        const app = this.appSide(st, S, 3);
+        const app = this.appNow(st, S);
         if (KINDS.some((k) => app.counts[k] > 0)) {
           st.conflicts.set(S, { kind: 'divergence', rev: `D:${stable(app)}`, exp: new Map(), expFields: '', B: zero(), M: zero(), comps: {}, import: I.n, known: [] });
           this.emitItems(st, S, I.version);
@@ -1366,11 +1559,14 @@ export class Server {
     const policy = this.policyAt(R.arr);
     R.accepted = false;
     const cf = st.conflicts.get(S);
-    if (cf !== undefined && (cf.rev === R.rev || this.sw.M9)) this.answerFigure(st, S, cf, R, policy);
-    else if (R.rev !== null && R.rev.startsWith('H:')) this.answerHeld(st, S, R);
-    else if (st.changes.get(S)?.rev === R.rev) this.answerChange(st, S, st.changes.get(S)!, R, policy);
-    else if (R.rev !== null && this.alignOf(st, S)?.rev === R.rev && R.choice === 'dismiss') {
-      if (!this.sw.forgetDismiss) st.acks.get(S)!.dismissed = R.rev;
+    // the answer names its item (res-answer `item`) and that item's rev
+    const is = (item: ItemKind, rev: string | undefined) => (this.sw.ignoreItem || R.item === item) && rev !== undefined && rev === R.rev;
+    const heldRev = this.heldOn(st, S, R.arr).listed;
+    if (cf !== undefined && (is('figure', cf.rev) || (this.sw.M9 && R.item === 'figure'))) this.answerFigure(st, S, cf, R, policy);
+    else if (heldRev.length > 0 && is('held', this.heldRev(heldRev))) this.answerHeld(st, S, R);
+    else if (is('change', st.changes.get(S)?.rev)) this.answerChange(st, S, st.changes.get(S)!, R, policy);
+    else if (is('align', this.alignOf(st, S)?.rev) && R.choice === 'dismiss') {
+      if (!this.sw.forgetDismiss) st.acks.get(S)!.dismissed = R.rev!;
       R.accepted = true;
     }
     st.decisions.push([`answer ${R.choice}`, S, R.accepted ? 'accepted' : 'STALE']);
@@ -1390,6 +1586,8 @@ export class Server {
       }
       applyOps(st, d.ops, R.version);
       st.conflicts.delete(S);
+      // what the app is ahead on, which the mfc_change item showed, is a divergence again in the same transaction (R4)
+      if (!this.sw.mfcChangeHidesDivergence) this.diverge(st, S, cf.exp, known, baseRows, cf.import);
       R.accepted = true;
       return;
     }
@@ -1409,9 +1607,9 @@ export class Server {
   }
 
   private answerHeld(st: Canon, S: string, R: Answer): void {
-    const es = this.heldOn(st, S, R.arr);
-    if (es.length === 0 || this.heldRev(es) !== R.rev || !['keep', 'take'].includes(R.choice)) return;
-    for (const e of es) {
+    const { listed } = this.heldOn(st, S, R.arr);
+    if (listed.length === 0 || this.heldRev(listed) !== R.rev || !['keep', 'take'].includes(R.choice)) return;
+    for (const e of listed) {
       st.heldAnswered.add(e.arr);
       if (R.choice === 'keep') {
         st.set(e.key, e.value, R.version);
@@ -1433,7 +1631,7 @@ export class Server {
       applyOps(st, realign(st, S, ch.exp), R.version);
       st.acks.delete(S);
     } else {
-      if (!ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
+      if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
       for (const u of ch.undo) st.set(u.key, u.value, R.version);
       const baseRows = baseRowsFor(st, S);
       this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
@@ -1514,6 +1712,7 @@ export class Server {
       version: [t, this.nImports, '0', 0],
       arr: this.inputs.length,
       lastSeq: new Map(),
+      markerSeq: 0,
       policy: {
         import_policy: pref?.import_policy ?? 'ASK',
         mfc_only: pref?.mfc_only ?? 'APPLY_AND_LIST',
@@ -1527,16 +1726,30 @@ export class Server {
       // F1: the marker, last; a frame for every figure the import decided, written to or not
       this.emit(MARKER, { import: I.n }, [t, 10_000_000 + this.feed.length + 1, '0', 0]);
       const seq = this.feed.length;
+      I.markerSeq = seq;
       const st = this.canon!;
       for (const f of new Set([...I.rows.map((r) => st.surv(r.head)), ...[...st.rowBase.values()].map((b) => st.surv(b.head))]))
         I.lastSeq.set(f, Math.max(I.lastSeq.get(f) ?? 0, seq));
-    }
+    } else I.markerSeq = this.feed.length;
     this.commit(n0);
+    // the response's counters (ImportMfcExportResponse 3 to 17), as they stand when the import returns
+    const st = this.canon!;
+    const items = [...st.conflicts.values()];
+    const figs = new Set([...st.acks.keys()]);
+    I.counters = {
+      ...st.stats.get(I.n)!,
+      facets_written: this.feed.length - n0,
+      conflicts_pending: items.filter((c) => c.kind === 'conflict').length,
+      divergences_pending: items.filter((c) => c.kind === 'divergence').length,
+      changes_held: items.filter((c) => c.kind === 'mfc_change').length,
+      align_pending: [...figs].filter((S) => this.alignOf(st, S) !== null).length,
+      import_number: I.n,
+    };
     return I;
   }
 
   redirect(head: string, survivor: string, t: number): void {
-    this.inputs.push({ type: 'redirect', head, survivor, arr: this.inputs.length });
+    this.inputs.push({ type: 'redirect', head, survivor, arr: this.inputs.length, version: [t, 0, '0', 0] });
     const n0 = this.feed.length;
     this.recompute(t);
     this.commit(n0);
@@ -1544,11 +1757,14 @@ export class Server {
 
   push(items: readonly Pushable[], t: number): PushResult[] {
     if (items.length === 0) return [];
+    const prev = this.canon ?? this.replay();
     for (const it of items) {
       it.arr = this.inputs.length;
       this.arrSeq.set(it.arr, this.feed.length + 1);
       this.inputs.push(it);
     }
+    this.decideHolds(items, prev);
+    if (this.sw.holdWithoutArrivedBefore) this.redecide(prev);
     const n0 = this.feed.length;
     const out = this.recompute(t);
     this.commit(n0);
@@ -1557,9 +1773,12 @@ export class Server {
       if (own.has(k) || isItemKey(k)) continue;
       for (const f of this.figsOfKey(k, this.canon!)) this.epochHist.set(f, [...(this.epochHist.get(f) ?? []), seq]);
     }
+    // HELD (iii): an accepted answer's position, its push's commit
     for (const it of items) {
       if (it.type !== 'answer') continue;
-      for (const [seq, k] of out) if (k === CARD + it.fig) it.lastSeq.set(it.fig, seq);
+      if (this.sw.answerHoldFigureOnly) {
+        for (const [seq, k] of out) if (k === CARD + it.fig) it.lastSeq.set(it.fig, seq);
+      } else if (it.accepted && this.feed.length > n0) it.lastSeq.set(it.fig, this.feed.length);
     }
     return items.map((it) => {
       const key = it.type === 'edit' ? it.key : CARD + it.fig;
@@ -1627,6 +1846,6 @@ export class Server {
         const ch = v as { rev: string; kind: AppliedItem['kind']; writes: { key: string; value: Json }[] };
         return { key: ITEM('change', S), head: S, rev: ch.rev, kind: ch.kind, writes: ch.writes, answers: ['undo', 'dismiss'] as Choice[] };
       });
-    return { review, applied };
+    return { review, applied, counters: I.counters! };
   }
 }

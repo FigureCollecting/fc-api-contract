@@ -84,7 +84,7 @@ src/version.ts, src/hlc.ts           version grammar, comparator, HLC
 src/sync-vocabulary.ts               facet-key grammar and builders, occurrence statuses, REJECTED reason codes
 golden/version-vectors.json          version cases every implementation tests against
 golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
-golden/import-vectors.json           re-import and import-crossing cases, server and client
+golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
 schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
 scripts/buf-breaking.sh              buf breaking against the previous v* tag
 scripts/schema-growth.ts             no published payload schema gains a property
@@ -148,7 +148,9 @@ and the marker `imp/{site}/import`); a user answers an item with `res/{site}/{he
 import's preferences in `pref/{site}/import`. **The server decides** (`import.proto` THE SERVER
 DECIDES): every pushed event carries the basis it was made on, a late edit is replayed where it
 belongs, and conflicts, changes held for confirmation, divergences, held edits and what to change on
-MFC by hand come back as items the client shows right after the import. Copies the import creates
+MFC by hand come back as items the client shows right after the import, once it has pulled the
+import's transaction. A late edit another device has already reacted to is held, a copy's head,
+status, filing and disposal together, until the user keeps or drops it. Copies the import creates
 get occ ids keyed by a secret only the coordinator holds. Every payload schema is closed and stays closed:
 a new attribute is a new facet key, never a new property, because every write replaces the whole
 payload and an older writer would drop a property it does not know.

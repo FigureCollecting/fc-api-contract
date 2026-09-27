@@ -17,7 +17,7 @@
   ],
   "properties": {
     "rev": {
-      "description": "Opaque; changes when either side of the item changes or a late edit joins it, never for a knowing edit. An answer names it.",
+      "description": "Opaque; states what the import that raised the item found on both sides: kept by an import that finds MFC's side unchanged, never changed by a knowing edit, and changed by a late edit only when its replay changes what that import found. An answer names it.",
       "type": "string",
       "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
     },

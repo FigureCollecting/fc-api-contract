@@ -8,10 +8,11 @@
 // each figure (THE SERVER DECIDES below) under the per-user lock and as one
 // server transaction (sync.proto rule 7), and writes the user's facets through
 // the same apply path as SyncService.Push, so the result reaches every device
-// as ordinary Delta events. The response carries the review set (R7) for the
-// client to present at once. Other devices may still be offline with edits the
-// import has not seen; LATE EDITS AND REPLAY below gives them the result they
-// would have had by pushing first.
+// as ordinary Delta events. The response carries the review set (R7), which
+// the client presents once it has pulled the import's transaction (THE REVIEW
+// SET). Other devices may still be offline with edits the import has not seen;
+// LATE EDITS AND REPLAY below gives them the result they would have had by
+// pushing first.
 //
 // VERSIONING (0.3.0). Every write of one import is versioned
 //
@@ -156,14 +157,16 @@
 //
 // THE MFC PROJECTION (R2). MFC keeps one entry per item id: one status (Owned,
 // Ordered or Wished), a Count, and the score, note and wishability. MFC's side
-// of a figure S is its rows' Counts per kind and the field values the decision
-// settled. The app's side, as MFC could state it, is the number of live copies
-// per kind, but only for as many kinds as S has MFC ids known to the import
-// (its export rows and row bases), the highest first in the order owned,
-// ordered, wished; and the displayed score, note and wishability. What that
-// leaves out is APP-ONLY RICHNESS MFC cannot express: a wished or ordered copy
-// beside owned ones of a one-row figure, former copies and their
-// dispositions, filings and tags. Richness never raises an item or an
+// of a figure S is its MFC ROWS: the export's rows of S, and each row base of S
+// the export lacks, at Count 0, each with the field values it states. The app's
+// side, as MFC could state it, is what THE ALIGN PLAN (ALIGN-MFC) makes of those
+// rows for the app's live copies per kind and its displayed score, note and
+// wishability. The two sides are compared part by part, the rows' kinds and
+// Counts and each field, and a part differs exactly when the plan would change
+// it on some row. What no row can take is APP-ONLY RICHNESS MFC cannot
+// express: a wished or ordered copy beside owned ones when no row is free for
+// its kind (a one-row figure, or merged rows all in use), former copies and
+// their dispositions, filings and tags. Richness never raises an item or an
 // align-MFC entry by itself.
 //
 // WHAT AN IMPORT DOES WITH A DECISION. The user's preferences pref/{site}/import
@@ -180,14 +183,20 @@
 //     nothing is written, no base moves, and it is a figure item of kind
 //     "mfc_change" (R3). A figure new to the import (no row base) is always
 //     added, counted in `added` and never listed.
-//   * Every other decision settles. Then, when the two sides of the projection
-//     differ, the difference is the app's: MFC has not caught up with it. It
-//     writes nothing and is one figure item of kind "divergence" (R4), which an
-//     import of the same export neither raises again nor duplicates.
+//   * Every other decision settles. Then, when a part of the projection
+//     differs and is not acknowledged at its present values (ACKNOWLEDGED), the
+//     difference is the app's: MFC has not caught up with it. It writes nothing
+//     and is one figure item of kind "divergence" (R4), which an import of the
+//     same export neither raises again nor duplicates.
 // The items are server-owned facets keyed by the survivor's head_id: a figure
 // item, a held-edit card imp/{site}/held/{S}, a change entry and an align-MFC
 // entry imp/{site}/align/{S}. Their payload schemas are closed
-// (schemas/imp-*.schema.json).
+// (schemas/imp-*.schema.json). A SPINE MERGE re-derives the merged figure: when
+// a redirect makes a head no longer a survivor, the figure item, change entry,
+// align-MFC entry and acknowledgement of that head and of its survivor end (an
+// answer to one is then STALE), and the next import decides the merged figure
+// as one, its rows together. Held edits follow their copies to the survivor's
+// card.
 //
 // LATE EDITS AND REPLAY. An edit that meets no frame is applied by LWW, as
 // ever. Otherwise the server's state of S is the REPLAY of its inputs in the
@@ -204,29 +213,44 @@
 // replay and STALE, with `current`, when the replay leaves another value (an
 // import placed after it changed the facet, or another device's edit won).
 //
-// HELD. An edit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown in
+// HELD. The server decides HELD once, when a push arrives, for each UNIT of the
+// push in push order: the push's edits to one copy's head, status, collection
+// and disposal are one unit, held or replayed together; every other edit (a
+// tag, a figure value) is a unit by itself. A unit is late when an edit of it
+// is late. A unit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown in
 // its figure's held-edit card, when
-//   (i)   it is late, placing it before the import would change that import's
-//         result on S (the server replays both placements and compares S's
-//         copies and items), and some device made a knowing edit to a copy of S
-//         after the import, without having seen the late edit's replay, that
-//         arrived before it or in the same push: HOLD ON REACTION, another
-//         device acted on the result the late edit would withdraw;
-//   (ii)  its basis is before a replay's revision of S (a withdrawal the device
-//         had not seen): it was made on a result that has since changed;
-//   (iii) it is late and its basis is before an answer on S: the user decided
-//         without it; or
+//   (i)   it is late, it passes the RELEVANCE TEST (placing its late edits
+//         before their import I would change S's copies, their status and
+//         head, or S's items: the server replays S both ways, every earlier
+//         input as decided and the push's later units as if not held, and
+//         compares), and a REACTION arrived before it or in the same push: a
+//         knowing edit, made after I without having seen the unit's replay,
+//         that writes a copy whose status or head the two placements leave
+//         different, or that adds a copy to S (writes the head or status of a
+//         copy that had no head when I ran). HOLD ON REACTION: another device
+//         acted on the result the late edit would withdraw;
+//   (ii)  a knowing edit of it has its basis before a replay's revision of S
+//         (a withdrawal the device had not seen): it was made on a result that
+//         has since changed;
+//   (iii) it is late, its basis is before an answer on S that the server
+//         accepted (to any of S's items), and it passes the relevance test: the
+//         user decided without it; or
 //   (iv)  it is late for a frame the server no longer keeps. Frames are kept at
 //         least 180 days and while any enrolled device's cursor is before them.
-// A knowing edit made before an answer reached its device is applied, never
-// held. The card's keep applies the held edits now, as knowing edits; its take
-// drops them.
+// The decision is final: a held unit stays held, whatever arrives later, until
+// its card is answered, and a unit replayed is never held later. A knowing edit
+// made before an answer reached its device is applied, never held. The card
+// lists the held units of S whole, oldest first, as many as fit in 16 edits,
+// and `more` counts the held edits it does not list. Its keep applies the
+// listed edits now, as knowing edits; its take drops them; the card then lists
+// the next.
 //
-// ITEMS AND ANSWERS. The user answers an item by writing res/{site}/{S}
-// through Push, naming the item's rev and a choice. An answer is accepted only
-// while a pending item of S carries that rev; otherwise it is STALE, with
-// `current` (the item changed, or another device answered first, and the
-// client shows what is there now). The first accepted answer wins.
+// ITEMS AND ANSWERS. The user answers an item by writing res/{site}/{S} through
+// Push, naming the item (figure, held, change or align), its rev and a choice.
+// An answer is accepted only while that item of S is pending with that rev;
+// otherwise it is STALE, with `current` (the item changed, or another device
+// answered first, and the client shows what is there now). The first accepted
+// answer wins.
 //   * A conflict. keep: the app's side of every disputed part stands, and what
 //     only MFC changed is still applied. take: MFC's side is made true on the
 //     copies MFC tracks (copies with a live base, and placeholders):
@@ -241,9 +265,11 @@
 //     Count, get that base; other copies get base OUT, and MFC's Counts beyond
 //     the app's copies become placeholders.
 //   * An mfc_change. take: the change is applied now, as the import would have
-//     applied it (if the app has changed S since, the item becomes a conflict
-//     and the answer is STALE). keep: the bases realign and the app's side
-//     stays.
+//     applied it, and in the same transaction what the app is ahead on (the
+//     parts of the projection that still differ, which the item shows beside
+//     MFC's) is raised as a divergence (R4); if the app has changed S since, the
+//     item becomes a conflict and the answer is STALE. keep: the bases realign
+//     and the app's side stays.
 //   * A divergence. keep ("MFC is behind") acknowledges it; take makes MFC's
 //     side true as for a conflict.
 //   * A held-edit card: keep or take, as HELD says.
@@ -251,38 +277,55 @@
 //     write restored while it still holds the value the import wrote (else
 //     STALE), and a favor_app settlement is taken now. dismiss: it goes.
 //   * An align-MFC entry: dismiss.
-// A figure item's rev changes when either side of it changes or a late edit
-// joins it, never for a knowing edit. An item ends only by an answer naming its
-// rev, when a later import finds MFC back at the base or the two sides
-// agreeing, or when a knowing edit makes the sides of a conflict agree; never
-// by a replay, another device's write or an older edit.
+// A figure item's rev states what the import that raised it found on both
+// sides (MFC's rows and the disputed parts): an import that finds MFC's side
+// unchanged keeps it, a knowing edit never changes it, and a late edit changes
+// it only when its replay changes what the raising import found. An item ends
+// by an answer naming it and its rev, when a later import finds MFC back at the
+// base or the two sides agreeing, when a knowing edit makes the sides of a
+// conflict agree, or at a spine merge (WHAT AN IMPORT DOES). A replay
+// re-derives items like the rest of S: a late edit replayed before the import
+// that raised an item can withdraw the item or change its rev, and every
+// device sees that as ordinary events (the item's tombstone, or its new rev).
+// An answer to an item a replay withdrew or re-revved is void: its writes go
+// with it, its recorded PushResult stands, and the client shows the item and
+// the facets as they now are. A replay voids an accepted answer only when S's
+// copies and items end the same either way; otherwise HELD (iii) holds the late
+// edit.
 //
 // ACKNOWLEDGED (R4, R7). A keep on a conflict, an mfc_change or a divergence,
 // a per_copy answer, an undo that restores the app's side, and a FAVOR_APP
-// settlement ACKNOWLEDGE the figure: the server records MFC's side of the
-// projection (its rows' kinds and Counts and its field values) and the app's,
-// as they stand. A take on a conflict or a divergence and a FAVOR_MFC
-// settlement record the two sides too, with no align-MFC entry, since the
-// user took MFC's side. An import that finds both unchanged raises nothing for
-// the figure. A new MFC change to its rows, or a new app change, re-opens it (a
-// new item, with a new rev); an import that finds the two sides equal ends it.
+// settlement ACKNOWLEDGE the figure: the server records MFC's rows and, for
+// each part of the projection that differs, both sides' values, as they stand.
+// A take on a conflict or a divergence and a FAVOR_MFC settlement record them
+// too, with no align-MFC entry, since the user took MFC's side. An import
+// raises nothing for a part acknowledged at its present values, and records
+// MFC's rows as it found them, so a partial catch-up on MFC leaves the rest
+// acknowledged. A part that comes to differ at other values, by a new MFC
+// change or a new app change, re-opens the figure (a new item, with a new
+// rev); an import that finds every part equal ends the acknowledgement.
 //
 // ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
-// truth"). For an acknowledged figure whose two sides differ and that has an
-// MFC id, the server keeps an align-MFC entry imp/{site}/align/{S}: what to
-// change on MFC, by hand, so that MFC holds the app's side. Each action names
-// an MFC item id and gives MFC's current value and the value it should hold:
-// its status, its Count, its score, note or wishability, and add_to_list when
-// the user has configured a disposition list (disposition_list, e.g. 206369)
-// and the figure has a former copy disposed of as sold or traded. The rows are
-// taken in ascending id: per kind, the rows of that kind keep their Counts
-// while the sum allows and the highest-numbered give up the excess first (a row
-// left with none leaves the collection); a kind the app has more of grows its
-// lowest-numbered row, or, when no row has that kind, takes the lowest-numbered
-// row whose kind the projection does not keep. The server never writes to MFC;
-// a client links each action to the item's page on MFC. An entry clears itself
-// when an import finds MFC matching, and a dismissed entry is not shown again
-// until the difference changes.
+// truth"). For an acknowledged figure that has an MFC id, the server keeps an
+// align-MFC entry imp/{site}/align/{S} while THE ALIGN PLAN changes a row: what
+// to change on MFC, by hand, so that MFC holds the app's side as it stands now.
+// The entry follows every change of the app's side, knowing edits included.
+// Each action names an MFC item id and gives MFC's current value and the value
+// it should hold: its status, its Count, its score, note or wishability, and
+// add_to_list on a row whose Count the entry lowers, or which leaves the
+// collection, when the user has configured a disposition list
+// (disposition_list, e.g. 206369) and a former copy of that row (by its origin)
+// is disposed of as sold or traded. THE ALIGN PLAN takes MFC's rows in
+// ascending id; a row at Count 0 is out of the collection. Per kind, while the
+// rows of that kind hold more than the app's live copies of it, they give up
+// the excess first from the Count beyond their own live copies of the kind
+// (copies whose origin is the row), the row with the most such Count first and
+// the highest-numbered on a tie, then from the highest-numbered row; a row
+// left with none leaves the collection. A kind the app has more of grows its
+// lowest-numbered row of that kind, or takes the lowest-numbered row out of the
+// collection. The server never writes to MFC; a client links each action to
+// the item's page on MFC. An entry clears itself when an import finds MFC
+// matching, and a dismissed entry is not shown again until its actions change.
 //
 // THE REVIEW SET (R7). The response carries, in this order, the pending figure
 // items of kind conflict, then mfc_change, then divergence, then the held-edit
@@ -290,8 +333,14 @@
 // group in head_id order, each item with the answers it allows, and a bulk
 // answer per group (conflict: keep or take; mfc_change: take or keep;
 // divergence: keep or take; held edits: keep or take; align-MFC: dismiss).
-// Then the change entries this import made, each with undo. The client presents
-// them at once. What the user skips stays pending on every device and is
+// Then the change entries this import made, each with undo. Before it presents
+// the review set, or mints any edit or answer, the client that asked for the
+// import pulls until it has applied the import's transaction: until its
+// replica's marker imp/{site}/import holds an import at or above
+// import_number. What the user then does about the review set is knowing,
+// placed after the import; an edit minted on an older basis would be a late
+// edit, replayed before the import, and would withdraw what the user was
+// reacting to. What the user skips stays pending on every device and is
 // badged, and an answered or acknowledged item never recurs on an import of an
 // unchanged row.
 //
@@ -404,8 +453,8 @@ export type ImportMfcExportResponse = Message<"coordinator.v1.ImportMfcExportRes
   unchanged: number;
 
   /**
-   * MFC ids of earlier imports absent from this export for which this import
-   * tombstoned at least one occurrence status.
+   * MFC ids of earlier imports absent from this export, of a figure whose
+   * decision tombstoned at least one occurrence status.
    *
    * @generated from field: uint32 removed = 6;
    */
@@ -575,7 +624,8 @@ export type ImportReviewItem = Message<"coordinator.v1.ImportReviewItem"> & {
   headId: string;
 
   /**
-   * The rev an answer names (res/{site}/{head_id} `rev`).
+   * The rev an answer names (res/{site}/{head_id} `rev`), with the item it
+   * names (`item`: figure, held, change or align, as facet_key has it).
    *
    * @generated from field: string rev = 3;
    */

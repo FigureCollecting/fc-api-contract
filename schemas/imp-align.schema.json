@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-align.schema.json",
   "title": "imp/{site}/align/{head_id} payload",
-  "description": "UPSERT payload of imp/{site}/align/{head_id}: what to change on MFC, by hand, for MFC to hold the app's side of the figure (import.proto ALIGN-MFC). The server never writes to MFC; a client links each action to the item's page on MFC. Answered with dismiss; a tombstone means none. Serialized, at most 7,698,582 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "description": "UPSERT payload of imp/{site}/align/{head_id}: what to change on MFC, by hand, for MFC to hold the app's side of the figure as it stands now (import.proto ALIGN-MFC). The server never writes to MFC; a client links each action to the item's page on MFC. Answered with dismiss; a tombstone means none. Serialized, at most 7,698,582 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,7 +11,7 @@
   ],
   "properties": {
     "rev": {
-      "description": "Opaque; changes when the difference changes. dismiss names it.",
+      "description": "Opaque; changes when the actions change. dismiss names it.",
       "type": "string",
       "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
     },

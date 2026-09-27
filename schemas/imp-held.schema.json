@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-held.schema.json",
   "title": "imp/{site}/held/{head_id} payload",
-  "description": "UPSERT payload of imp/{site}/held/{head_id}: the edits the server holds on the figure instead of replaying them (import.proto HELD). keep applies them now, as knowing edits; take drops them. A tombstone means none is held. Serialized, at most 6,295,923 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "description": "UPSERT payload of imp/{site}/held/{head_id}: the edits the server holds on the figure instead of replaying them (import.proto HELD), listed whole units at a time, oldest first. keep applies the listed edits now, as knowing edits; take drops them; the card then lists the next. A tombstone means none is held. Serialized, at most 6,295,941 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,12 +11,12 @@
   ],
   "properties": {
     "rev": {
-      "description": "Opaque; changes when an edit joins or leaves the card. An answer names it.",
+      "description": "Opaque; changes when the listed edits change. An answer names it.",
       "type": "string",
       "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
     },
     "held": {
-      "description": "The held edits, oldest first. At most 16.",
+      "description": "The held edits listed: whole units (one push's edits to a copy's head, status, collection and disposal are one unit), oldest first. At most 16.",
       "type": "array",
       "maxItems": 16,
       "items": {
@@ -55,6 +55,12 @@
           }
         }
       }
+    },
+    "more": {
+      "description": "How many held edits of the figure the card does not list yet; absent when it lists them all.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
     }
   }
 }

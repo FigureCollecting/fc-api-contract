@@ -210,8 +210,9 @@
 //         uf/{head_id}/ktag/{kind}/{tag}    {}
 //         coll/{kind}/{cid|default}/name    {"name": "1..100 code points"}
 //         tag/{tag}/name                    {"name": "1..100 code points"}
-//         res/{site}/{head_id}              {"rev", "choice": "keep"|"take"|
-//                                            "per_copy"|"undo"|"dismiss",
+//         res/{site}/{head_id}              {"item": "figure"|"held"|"change"|
+//                                            "align", "rev", "choice": "keep"|
+//                                            "take"|"per_copy"|"undo"|"dismiss",
 //                                            "copies"?, "fields"?}
 //         pref/{site}/import                {"import_policy": "ASK"|"FAVOR_APP"|
 //                                            "FAVOR_MFC", "mfc_only":
@@ -221,8 +222,8 @@
 //     Every payload in this table also carries edited_at (ISO-8601 with the
 //     device's local offset) and tz (IANA name), for display only; {} carries
 //     nothing else. res/{site}/{head_id} answers one of the import's items on
-//     the figure {head_id}, naming the item's rev; pref/{site}/import holds the
-//     import's preferences (import.proto THE SERVER DECIDES).
+//     the figure {head_id}, naming the item and its rev; pref/{site}/import
+//     holds the import's preferences (import.proto THE SERVER DECIDES).
 //
 //     SERVER-OWNED KEYS a client reads but never pushes:
 //
@@ -328,6 +329,11 @@
 //       * The client pushes before it pulls, every outbox entry, oldest first,
 //         and adopts `current` on every outcome (THE CLIENT RULE), HELD
 //         included; a held edit is shown in its figure's held-edit card.
+//       * After its own ImportMfcExport returns, it pulls until it has applied
+//         the import's transaction (its replica's marker imp/{site}/import
+//         holds an import at or above the response's import_number) before it
+//         presents the review set or mints any edit or answer, so what the user
+//         does about the review set is knowing (import.proto THE REVIEW SET).
 //       * It shows every live figure item, held-edit card, change entry and
 //         align-MFC entry (import.proto THE REVIEW SET), never blocks an edit
 //         while one is pending, and answers one by writing res/{site}/{head_id}
@@ -357,7 +363,11 @@
 //     client applies a transaction only once it has all of its events, and
 //     keeps the rest of the page staged until then, so what it shows, and the
 //     basis it mints an edit on, are always at a transaction boundary: it
-//     never shows half of an import and has the user react to it.
+//     never shows half of an import and has the user react to it. A
+//     commit_cursor is a legal DeltaRequest.cursor: a client resumes, after a
+//     restart included, from the commit_cursor of the last transaction it
+//     applied, and fetches what it had staged again; it parks a next_cursor
+//     past staged events only if it persists those events with it.
 //     DEFERRED, DELIBERATELY: there is no Resync or prune signal and no Ack
 //     RPC in 0.2.0, and the feed never prunes yet. The recovery for an
 //     unreadable cursor is INVALID_ARGUMENT followed by a replay from an empty
@@ -437,7 +447,8 @@ export type SyncEvent = Message<"coordinator.v1.SyncEvent"> & {
    * Delta only: the cursor just after this event when it is the last event of
    * a server transaction (rule 7); empty on every other event and on Push. A
    * client applies a transaction's events only once it has the one carrying
-   * commit_cursor.
+   * commit_cursor, and resumes from the commit_cursor of the last transaction
+   * it applied: it is a legal DeltaRequest.cursor.
    *
    * @generated from field: string commit_cursor = 6;
    */
@@ -462,8 +473,9 @@ export const SyncEventSchema: GenMessage<SyncEvent> = /*@__PURE__*/
  */
 export type DeltaRequest = Message<"coordinator.v1.DeltaRequest"> & {
   /**
-   * Opaque resume token from a previous DeltaResponse. Empty means "from the
-   * beginning of this user's feed".
+   * Opaque resume token: a previous DeltaResponse's next_cursor, or a
+   * SyncEvent's commit_cursor (rule 7). Empty means "from the beginning of this
+   * user's feed".
    *
    * @generated from field: string cursor = 1;
    */
