@@ -113,16 +113,38 @@ export function reimport(c: ReimportCase): ReimportResult {
     if (skipped.has(id)) continue;
     const row = rows.get(id);
     const ofRow = () => [...copies.values()].filter((x) => x.origin?.id === id).sort(byOcc);
+    const kindB = ofRow().find((x) => x.base?.status != null)?.base!.status ?? null;
+    const countB = ofRow().filter((x) => x.base?.status != null).length;
+    const M = row === undefined ? 0 : row.count;
+    const kind = M === 0 ? kindB : row!.kind;
+    const nextOrdinal = () => {
+      const used = new Set(ofRow().map((x) => x.origin!.ordinal));
+      let k = 1;
+      while (used.has(k)) k++;
+      return k;
+    };
+    // ADOPTION IN PLACE: when this export changes the row, a copy a device removed while its base is live gives way to
+    // an app copy (no origin) of its base head's figure and base status, lowest occ id first on both sides.
+    const changesRow = M !== countB || (M > 0 && kind !== kindB) || (row !== undefined && ofRow().some((x) => x.base?.head != null && !sameHead(row.figure, x.base.head)));
+    if (changesRow) {
+      for (const gone of ofRow().filter((x) => x.status === null && x.base?.status != null)) {
+        const { head, status } = gone.base!;
+        const app = [...copies.values()].sort(byOcc).find((y) => y.origin === undefined && y.status === status && sameHead(y.head, head));
+        if (app === undefined) continue;
+        app.origin = { id, ordinal: nextOrdinal() };
+        app.base = { head, status };
+        gone.base = { head, status: null };
+        writes.add(`occ/${app.occ}/origin`);
+        start.set(app.occ, structuredClone(app));
+        start.set(gone.occ, structuredClone(gone));
+      }
+    }
     const baseLive = ofRow().filter((x) => x.base?.status != null);
-    const kindB = baseLive[0]?.base!.status ?? null;
-    const countB = baseLive.length;
-    // UNCHANGED: status and head at the start equal their bases at the start.
+    // UNCHANGED: status and head at the start (after ADOPTION IN PLACE) equal their bases then.
     const unchanged = (x: Copy) => {
       const s = start.get(x.occ);
       return s !== undefined && same(s.status, s.base?.status) && sameHead(s.head, s.base?.head);
     };
-    const M = row === undefined ? 0 : row.count;
-    const kind = M === 0 ? kindB : row!.kind;
     const baseHead = ofRow().map((x) => start.get(x.occ)?.base?.head).find((h) => h != null);
     const figure = row?.figure ?? (baseHead == null ? undefined : survivor(baseHead));
 
@@ -153,12 +175,6 @@ export function reimport(c: ReimportCase): ReimportResult {
     const A = liveOfKind().length;
     const raisedAdd: Copy[] = [];
     const raisedRemove: Copy[] = [];
-    const nextOrdinal = () => {
-      const used = new Set(ofRow().map((x) => x.origin!.ordinal));
-      let k = 1;
-      while (used.has(k)) k++;
-      return k;
-    };
     const mint = (live: boolean): Copy => {
       const k = nextOrdinal();
       const x: Copy = { occ: `new:${k}`, origin: { id, ordinal: k }, head: figure!, status: null };
@@ -187,13 +203,24 @@ export function reimport(c: ReimportCase): ReimportResult {
       }
       for (; d > 0; d--) mint(true);
       let r = A - M;
+      // While the app changed a copy of another row for the figure, one whose status or base status is the row's kind,
+      // it removes none and raises the difference: that change may be the one MFC's Count records.
+      const alongside = [...start.values()].some(
+        (y) =>
+          y.origin !== undefined &&
+          y.origin.id !== id &&
+          !unchanged(y) &&
+          [y.head, y.base?.head].some((h) => h != null && survivor(h) === figure) &&
+          [y.status, y.base?.status].includes(kind),
+      );
       for (const x of liveOfKind().reverse()) {
-        if (r > 0 && unchanged(x)) {
+        if (r > 0 && unchanged(x) && !alongside) {
           setStatus(x, null);
           r--;
         }
       }
-      for (const x of liveOfKind().reverse()) if (r-- > 0) raisedRemove.push(x);
+      const live = liveOfKind().reverse();
+      raisedRemove.push(...[...live.filter(unchanged), ...live.filter((x) => !unchanged(x))].slice(0, Math.max(r, 0)));
     } else if (M > A) {
       let d = M - A;
       for (const x of ofRow()) if (d > 0 && x.status === null && survivor(x.head) === figure && d--) raisedAdd.push(x);
@@ -232,10 +259,12 @@ export function reimport(c: ReimportCase): ReimportResult {
       const K = live[0] ?? s;
       const b = bases[0] === undefined ? null : (figures[bases[0]]![f]!.base ?? null);
       const m = sources.some((r) => same(r[f], b)) ? b : (sources[0]?.[f] ?? null);
+      // Rows stating different values, none of them B: which row MFC changed is unknown, so nothing is written.
+      const ambiguous = !sources.some((r) => same(r[f], b)) && new Set(sources.map((r) => r[f] ?? null)).size > 1;
       const a = live[0] === undefined ? null : figures[live[0]]![f]!.value;
       if (same(m, b)) continue;
       const cell = ((figures[K] ??= {})[f] ??= { value: null });
-      if (same(a, b)) {
+      if (same(a, b) && !ambiguous) {
         for (const h of m === null ? live : [K]) {
           figures[h]![f]!.value = m;
           figures[h]![f]!.v = IMPORT_V;

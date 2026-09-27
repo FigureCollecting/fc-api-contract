@@ -1,7 +1,8 @@
-// A published payload schema never gains a property (sync.proto rule 6), and never changes what it accepts. For
+// A published payload schema never gains a property (sync.proto rule 6), and never narrows what it accepts. For
 // every schema the previous v* tag published, every keyword must be unchanged at every depth except the
-// ANNOTATIONS, which no validator reads, and an enum, which may only grow: no property, pattern property or
-// subschema is added or removed, a closed object stays closed, and no type, bound, pattern or format changes.
+// ANNOTATIONS, which no validator reads, and an enum: an enum may only grow, and none may be added where there was
+// none (an absent enum accepts every value). No property, pattern property or subschema is added or removed, a
+// closed object stays closed, and no type, bound, pattern or format changes.
 // buf breaking guards the protos; this guards schemas/ the same way, against the same baseline
 // (scripts/buf-breaking.sh --print-baseline). Run: node scripts/schema-growth.ts
 import { execFileSync } from 'node:child_process';
@@ -79,6 +80,8 @@ export function schemaGrowthViolations(file: string, before: unknown, after: unk
         const unrequired = missing(items(a.required), items(b.required));
         if (required.length > 0) say(`required gained ${required.join(', ')}`);
         if (unrequired.length > 0) say(`required lost ${unrequired.join(', ')}`);
+      } else if (key === 'enum' && a.enum === undefined) {
+        say(`gained enum ${items(b.enum).map((x) => JSON.stringify(x)).join(', ')}`);
       } else if (key === 'enum') {
         const enumLost = missing(items(a.enum), items(b.enum));
         if (enumLost.length > 0) say(`enum lost ${enumLost.map((x) => JSON.stringify(x)).join(', ')}`);

@@ -15,11 +15,9 @@ export interface Event extends Facet {
 interface Edit extends Event {
   /** The facet the client held for the key before minting it: what dropping the edit restores. */
   prior: Facet | undefined;
-  /** What the client had taken from the server, key by key, when it minted it. */
-  takenBefore: ReadonlyMap<string, string>;
   phase: 'unpushed' | 'pushed' | 'answered';
-  /** OPEN until the client's Delta delivers its key at or above its version. */
-  open: boolean;
+  /** Its Delta delivered its key at or above its version. It stays OPEN while a pending import conflict holds it. */
+  delivered: boolean;
 }
 export interface Crossing {
   /** MFC's side: the import write, or for a conflict the base's value at the conflict's version. */
@@ -33,6 +31,7 @@ const deviceOf = (version: string) => parseVersion(version)?.deviceId;
 const CONFLICT = 'imp/mfc/conflict/';
 const BASE = 'imp/mfc/base/';
 const STATUS = /^occ\/([^/]+)\/status$/;
+const COPY_FIELD = /^occ\/([^/]+)\/(status|head)$/;
 
 export class KeyedCrossingClient {
   constructor(readonly deviceId: string) {}
@@ -59,13 +58,13 @@ export class KeyedCrossingClient {
     const prior = this.local.get(key);
     if (prior !== undefined && !above(version, prior.version)) throw new Error(`edit ${version} not above local`);
     if (!above(version, this.taken.get(key))) throw new Error(`edit ${version} not above what the client took`);
-    this.edits.push({ key, value, version, prior, takenBefore: new Map(this.taken), phase: 'unpushed', open: true });
+    this.edits.push({ key, value, version, prior, phase: 'unpushed', delivered: false });
     this.local.set(key, { value, version });
   }
 
   /** Push every unpushed edit no pending conflict holds, and return them. */
   push(): Event[] {
-    const held = new Set([...this.crossings.values()].flatMap((c) => [...c.holds]));
+    const held = this.held();
     const pushed = this.edits.filter((e) => e.phase === 'unpushed' && !held.has(e.key));
     for (const e of pushed) e.phase = 'pushed';
     return pushed.map(({ key, value, version }) => ({ key, value, version }));
@@ -99,25 +98,37 @@ export class KeyedCrossingClient {
     this.edit(key, value, version);
   }
 
+  /** The keys every pending import conflict holds: its own and those of the edits it crossed. */
+  private held(): Set<string> {
+    return new Set([...this.crossings.values()].flatMap((c) => [...c.holds]));
+  }
+
+  /** OPEN until its Delta delivers its key at or above its version, and for as long as a pending conflict holds it. */
+  private isOpen(e: Edit, held: Set<string>): boolean {
+    return !e.delivered || held.has(e.key);
+  }
+
   private receive(ev: Event, stale: Edit | undefined): void {
     const target = ev.key.startsWith(CONFLICT) ? ev.key.slice(CONFLICT.length) : undefined;
     const key = target ?? ev.key;
     const fromImport = target !== undefined || deviceOf(ev.version) === SERVER_DEVICE_ID;
     const side: Facet = target === undefined ? ev : { value: this.shows(BASE + target), version: ev.version };
+    // NEW: the client has not taken this version of the event's key, or a higher one. A replay crosses nothing.
+    const fresh = above(ev.version, this.taken.get(ev.key));
     const pending = this.crossings.get(key);
     if (fromImport && pending !== undefined) {
       // A later import write to K, or conflict on K, only replaces MFC's side.
       if (above(side.version, pending.mfc.version)) pending.mfc = side;
       if (target !== undefined) this.apply(ev, stale);
-    } else if (fromImport && this.crosses(ev, key, side)) {
+    } else if (fromImport && fresh && this.crosses(ev, key, side)) {
       if (target !== undefined) this.apply(ev, stale);
     } else {
       // A write to K by any other device ends a pending conflict; every write follows the ordinary rules.
       if (pending !== undefined && deviceOf(ev.version) !== this.deviceId) this.crossings.delete(key);
       this.apply(ev, stale);
     }
-    if (above(ev.version, this.taken.get(ev.key))) this.taken.set(ev.key, ev.version);
-    if (stale === undefined) for (const e of this.edits) if (e.key === ev.key && compareVersion(ev.version, e.version) >= 0) e.open = false;
+    if (fresh) this.taken.set(ev.key, ev.version);
+    if (stale === undefined) for (const e of this.edits) if (e.key === ev.key && compareVersion(ev.version, e.version) >= 0) e.delivered = true;
   }
 
   /** The ordinary rules: adopt `current` whole for the edit it answers, else apply only a newer version. */
@@ -128,17 +139,14 @@ export class KeyedCrossingClient {
     }
   }
 
-  /** Whether an import write to `key`, or a conflict raised on it, crosses open edits; records the crossing. */
+  /** Whether a new import write to `key`, or a new conflict raised on it, crosses open edits; records the crossing. */
   private crosses(ev: Event, key: string, side: Facet): boolean {
-    // The open edits to a key, when `ev` is NEW to them: the client had not taken its version, or a higher
-    // one, before the oldest was minted.
-    const openTo = (k: string) => {
-      const open = this.edits.filter((e) => e.open && e.key === k);
-      return open.length > 0 && above(ev.version, open[0]!.takenBefore.get(ev.key)) ? open : [];
-    };
+    const held = this.held();
+    const openTo = (k: string) => this.edits.filter((e) => e.key === k && this.isOpen(e, held));
     const changes = (open: Edit[]) => open.length > 0 && open.at(-1)!.value !== (open[0]!.prior?.value ?? null);
     let own = openTo(key);
     if (own.length > 0 && !changes(own) && own.every((e) => e.phase === 'unpushed')) {
+      // Dropped: K's local facet reverts to its value and version from before the oldest of them.
       this.edits = this.edits.filter((e) => !own.includes(e));
       if (own[0]!.prior === undefined) this.local.delete(key);
       else this.local.set(key, own[0]!.prior);
@@ -148,18 +156,29 @@ export class KeyedCrossingClient {
     const crossed = [...own];
     const x = STATUS.exec(ev.key)?.[1];
     if (x !== undefined && (this.shows(key) === null) !== (ev.value === null)) {
-      // ROW GRAIN: a removal or an addition also crosses changed statuses of the row's other copies and, for an
-      // addition, app copies (no origin) of its figure set to the kind it adds.
+      // ROW GRAIN: a removal or an addition also crosses the open edits that change another copy's count for the row.
+      const adds = ev.value !== null;
       const row = this.shows(`occ/${x}/origin`);
       const figure = this.shows(`occ/${x}/head`);
       for (const k of new Set(this.edits.map((e) => e.key))) {
-        const y = STATUS.exec(k)?.[1];
+        const [, y, field] = COPY_FIELD.exec(k) ?? [];
         const open = openTo(k);
-        if (y === undefined || y === x || !changes(open)) continue;
+        if (y === undefined || y === x || figure === null || !changes(open)) continue;
         const origin = this.shows(`occ/${y}/origin`);
-        const sameRow = row !== null && origin === row;
-        const appCopy = ev.value !== null && origin === null && this.shows(`occ/${y}/head`) === figure && open.at(-1)!.value === ev.value;
-        if (sameRow || appCopy) crossed.push(...open);
+        const ofRow = row !== null && origin === row;
+        const before = open[0]!.prior?.value ?? null;
+        const after = open.at(-1)!.value;
+        const counts =
+          field === 'status'
+            ? // Its status: any copy of x's row; for a removal, a copy of another row on x's figure; for an addition,
+              // another copy of x's figure set to the kind it adds.
+              ofRow || (adds ? this.shows(`occ/${y}/head`) === figure && after === ev.value : origin !== null && this.shows(`occ/${y}/head`) === figure)
+            : // Its head: for a removal, a copy with an origin re-pointed off x's figure; for an addition, a copy
+              // showing the kind it adds re-pointed onto x's figure.
+              adds
+              ? before !== null && before !== figure && after === figure && this.shows(`occ/${y}/status`) === ev.value
+              : origin !== null && before === figure && after !== figure;
+        if (counts) crossed.push(...open);
       }
     }
     if (crossed.length === 0) return false;

@@ -88,17 +88,33 @@
 // numerically lowest MFC id among them; a survivor no row resolves to states
 // no score, note or wishability. So MFC changes a merged figure only when
 // none of its rows still states the base, and an unchanged export writes
-// nothing whatever versions the merged heads' bases carry. The import writes
-// K, its base and its conflict there, and tombstones a field, as a device
-// delete does, on every one of those heads holding it live.
+// nothing whatever versions the merged heads' bases carry; a change MFC makes
+// to one of those rows while another still states B is not seen (an accepted
+// cost: bases are per head, not per row). When those rows state different
+// values and none states B, which row MFC changed is unknown, so the case
+// where only MFC changed it is a CONFLICT instead (GR-Q1): K is not written
+// and the base moves to M. The import writes K, its base and its conflict
+// there, and tombstones a field, as a device delete does, on every one of
+// those heads holding it live.
 //
 // A ROW'S COPIES. The row's copies are the occurrences whose origin names its
-// canonical id. A copy is UNCHANGED when its status and head, as the server
-// holds them when the import starts, equal their bases then (absent equals
-// absent). B_kind is the kind of the row's copies with a live base status,
-// and B_count their number. A row absent from this export, or with Count 0,
-// has M_count 0 and B_kind as its kind; otherwise M_count is its Count.
+// canonical id. B_kind is the kind of the row's copies with a live base
+// status, and B_count their number. A row absent from this export, or with
+// Count 0, has M_count 0 and B_kind as its kind; otherwise M_count is its
+// Count. A copy is UNCHANGED when its status and head, as the server holds
+// them when the import starts (after ADOPTION IN PLACE), equal their bases
+// then (absent equals absent).
 //
+//   ADOPTION IN PLACE. When this export changes the row (its figure, kind or
+//   Count differs from what the row's bases state), each copy of the row
+//   whose status is a tombstone while its base status is live (a device
+//   removed it, as keeping the app's side of an addition crossing does,
+//   sync.proto rule 6) first gives way to a live copy with no origin whose
+//   head resolves to its base head's figure and whose status is its base
+//   status, lowest occ id first on both sides. The import writes that copy's
+//   origin at the lowest unused ordinal and gives it the removed copy's base
+//   head and status, and the removed copy gets a tombstone base status, so
+//   MFC's later changes to the Count reach the app's copy.
 //   HEAD. For a row in this export, each of its copies with a base head runs
 //   the three-way on its head, M being the row's figure.
 //   KIND. When M_count > 0 and the row's kind differs from B_kind, each copy
@@ -119,7 +135,11 @@
 //     the lowest unused ordinals, writing each one's origin, head and status
 //     in that order. To remove, it tombstones the status of the
 //     row's unchanged live copies of its figure and kind, highest occ id
-//     first; any it still lacks it raises for removal, as below.
+//     first; any it still lacks it raises for removal, as below. While the
+//     app changed a copy of another row resolving to the row's figure, one
+//     whose status or base status is the row's kind, it removes none and
+//     raises the whole difference for removal instead: one figure's MFC rows
+//     are fungible, and that change may be the one MFC's Count records.
 //   * Otherwise the count is a CONFLICT, held per copy so that each is
 //     resolved by an ordinary write to that copy's status. For each copy MFC
 //     has and the app lacks, the import raises for addition the row's copies

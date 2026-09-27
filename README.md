@@ -45,9 +45,10 @@ never gains a property (a new attribute is a new facet key, since every write re
 payload). `scripts/schema-growth.ts` (`npm run schema-growth`, in the contract job and before every
 publish) compares each schema the previous `v*` tag published with the working tree: every keyword
 must be unchanged at every depth except the annotations (`title`, `description`, `$comment`,
-`examples`), which no validator reads, and `enum`, which may only grow. So no property, pattern
-property or subschema is added or removed, a closed object stays closed, and no type, bound, pattern
-or format changes. A schema is removed only by retiring it by name in the script's `RETIRED_SCHEMAS`.
+`examples`), which no validator reads, and `enum`, which may only grow. An `enum` gained where there
+was none narrows what the schema accepts, so it is flagged too. So no property, pattern property or
+subschema is added or removed, a closed object stays closed, and no type, bound, pattern or format
+changes. A schema is removed only by retiring it by name in the script's `RETIRED_SCHEMAS`.
 
 **The gate of record is the contract job on the PR**, where a break is cheap to fix. The publish
 workflow re-runs the same check as belt and braces, because a tag can be cut from any commit and
