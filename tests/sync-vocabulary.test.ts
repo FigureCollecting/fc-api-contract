@@ -154,7 +154,9 @@ describe('builders', () => {
     expect(id).toBe('fffefdfc-fbfa-89f8-b7f6-f5f4f3f2f1f0');
     expect(id[14]).toBe('8'); // version 8
     expect('89ab').toContain(id[19]!); // RFC 9562 variant
-    expect(importOccIdFromMac(Buffer.from(mac))).toBe(id);
+    const buffer = Buffer.from(mac);
+    expect(importOccIdFromMac(buffer)).toBe(id);
+    expect(Buffer.compare(buffer, Buffer.from(mac))).toBe(0); // the caller's MAC is never written to
     expect(parseUserFacetKey(`occ/${id}/head`)).toEqual({ family: 'occ/head', occId: id });
     for (const bad of [new Uint8Array(16), new Uint8Array(31), new Uint8Array(33), 'f'.repeat(64), undefined]) {
       expect(() => importOccIdFromMac(bad as never), String(bad)).toThrow(TypeError);

@@ -25,6 +25,7 @@
     "./proto/coordinator/v1/import.proto": "./proto/coordinator/v1/import.proto",
     "./golden/version-vectors.json": "./golden/version-vectors.json",
     "./golden/key-vectors.json": "./golden/key-vectors.json",
+    "./golden/import-vectors.json": "./golden/import-vectors.json",
     "./schemas/*": "./schemas/*",
     "./package.json": "./package.json"
   },
@@ -44,11 +45,12 @@
     "generate": "buf generate",
     "lint": "buf lint",
     "breaking": "bash scripts/buf-breaking.sh",
+    "schema-growth": "node scripts/schema-growth.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:ci": "vitest run --coverage",
-    "verify": "npm run lint && npm run typecheck && npm run breaking && npm run build && npm run test:ci",
+    "verify": "npm run lint && npm run typecheck && npm run breaking && npm run schema-growth && npm run build && npm run test:ci",
     "prepublishOnly": "npm run verify"
   },
   "peerDependencies": {

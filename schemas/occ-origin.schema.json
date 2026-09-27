@@ -17,7 +17,7 @@
       "pattern": "^[a-z][a-z0-9-]{0,31}$"
     },
     "native_id": {
-      "description": "The source's id for the row's item, verbatim.",
+      "description": "The source's id for the row's item, canonical (for mfc, canonicalMfcId: no leading zeros).",
       "type": "string",
       "pattern": "^[0-9A-Za-z._~:-]{1,64}$"
     },

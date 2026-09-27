@@ -80,6 +80,11 @@ jobs:
         # highest tag would compare the release against itself.
         run: npm run breaking
 
+      - name: Schema growth (against the previous release tag)
+        # Belt and braces, as above: a published payload schema never gains a
+        # property, checked against the same previous tag.
+        run: npm run schema-growth
+
       - name: Build
         run: npm run build
 

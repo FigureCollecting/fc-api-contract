@@ -41,12 +41,14 @@ export const SERVER_FACET_FAMILIES = ['occ/origin', 'imp/base', 'imp/conflict'] 
 export type ServerFacetFamily = (typeof SERVER_FACET_FAMILIES)[number];
 export type FacetFamily = UserFacetFamily | ServerFacetFamily;
 
-/** The user-owned families the MFC import writes; it never writes a filing, a tag or a name. */
+/**
+ * The user-owned families THE THREE-WAY RULE compares (import.proto), each with an imp/{site}/base and
+ * conflict key: a copy's head and status, a disposal (only status former plus a disposal, for rows of the
+ * user's configured disposition list (import.proto DISPOSITIONS)) and the three figure fields. Besides these
+ * the import writes a filing only as {status}/default beside a status of another kind, never compared.
+ */
 export const IMPORT_WRITTEN_FAMILIES = ['occ/head', 'occ/status', 'occ/disposal', 'uf/score', 'uf/note', 'uf/wishability'] as const;
 export type ImportWrittenFamily = (typeof IMPORT_WRITTEN_FAMILIES)[number];
-
-/** uuidv5 namespace of the MFC import's occurrence ids (import.proto): uuidv5(this, mfcImportOccName(...)). */
-export const MFC_IMPORT_OCC_NAMESPACE = '43aafcfa-3970-4244-ac59-0b380a374980';
 
 export const PUSH_REJECT_REASONS = [
   'version_malformed',
@@ -328,11 +330,29 @@ export function collectionRef(kind: CollectionKind, id: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// The MFC import's occurrence ids: uuidv5(MFC_IMPORT_OCC_NAMESPACE, this name), k = 1..Count.
+// The MFC import's ids (import.proto ROWS and OCCURRENCE IDS). An occurrence id is
+// importOccIdFromMac(HMAC-SHA256(key, mfcImportOccName(...))) under a key only the coordinator holds.
 // ---------------------------------------------------------------------------
+/** The canonical MFC item id: leading zeros stripped, then 1 to 64 ASCII digits. TypeError otherwise. */
+export function canonicalMfcId(raw: string): string {
+  const id = typeof raw === 'string' && /^[0-9]+$/.test(raw) ? raw.replace(/^0+/, '') : '';
+  return /^[1-9][0-9]{0,63}$/.test(id) ? id : fail('an MFC item id', raw);
+}
+
+/** The HMAC message naming copy `ordinal` of an MFC row: "{user_id}:mfc:{canonical mfc_id}:{ordinal}". */
 export function mfcImportOccName(userId: string, mfcId: string, ordinal: number): string {
   const user = uuid(userId, 'a user id');
-  if (typeof mfcId !== 'string' || !/^[0-9]+$/.test(mfcId)) fail('an MFC item id', mfcId);
+  const id = canonicalMfcId(mfcId);
   if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 99) fail('an ordinal 1..99', ordinal);
-  return `${user}:mfc:${mfcId}:${ordinal}`;
+  return `${user}:mfc:${id}:${ordinal}`;
+}
+
+/** An import copy's occ id from its HMAC-SHA256: the first 16 bytes as an RFC 9562 version 8 uuid. */
+export function importOccIdFromMac(mac: Uint8Array): string {
+  if (!(mac instanceof Uint8Array) || mac.length !== 32) fail('a 32-byte HMAC-SHA256', mac);
+  const b = Uint8Array.from(mac.subarray(0, 16));
+  b[6] = (b[6]! & 0x0f) | 0x80;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

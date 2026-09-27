@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RETIRED_SCHEMAS, checkSchemaGrowth, main, schemaGrowthViolations } from '../scripts/schema-growth.js';
 
 // A closed object schema, the shape every payload schema here has.
-const closed = (properties: Record<string, object>, required = Object.keys(properties)) => ({
+const closed = <P extends Record<string, object>>(properties: P, required: string[] = Object.keys(properties)) => ({
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
   additionalProperties: false,
@@ -203,7 +203,7 @@ describe('main', () => {
     commit('one');
     git(repo, 'tag', 'v0.1.0');
     commit('two');
-    expect(run(repo)).toEqual({ code: 0, out: 'Schema growth: 1 schema published at v0.1.0 kept every property.' });
+    expect(run(repo)).toEqual({ code: 0, out: 'Schema growth against v0.1.0: every published schema kept its properties (1 checked).' });
   });
 
   it('exits 0 with a skip note when there is no earlier tag', () => {

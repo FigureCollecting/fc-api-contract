@@ -15,10 +15,11 @@ published to GitHub Packages as `@figurecollecting/fc-api-contract`.
 The package ships a few **hand-written helpers**, and only for grammars that are part of the wire
 contract: the `version` token (`parseVersion`, `compareVersion`, `canonicalInstant`,
 `canonicalVersion`, and the `Hlc` that mints tokens) and the facet keys (`parseUserFacetKey`,
-`parseServerFacetKey`, `buildFacetKey` and one builder per family, `parseCollectionRef`,
-`mfcImportOccName`). The coordinator and every client must order and validate these identically,
-so they live next to the protos with shared test files, `golden/version-vectors.json` and
-`golden/key-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
+`parseServerFacetKey`, `buildFacetKey` and one builder per family, `parseCollectionRef`, and the
+MFC import's `canonicalMfcId`, `mfcImportOccName` and `importOccIdFromMac`). The coordinator and
+every client must order and validate these identically, so they live next to the protos with
+shared test files, `golden/version-vectors.json`, `golden/key-vectors.json` and
+`golden/import-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
 
 ## The compatibility rule
 
@@ -38,6 +39,13 @@ So the breaking check here runs buf's strictest category, `FILE`, which adds `FI
 checks. (`WIRE_JSON` waves through a field or enum-value deletion once the number is reserved,
 which is exactly how a careful author retires one.) The rule above is not a convention anyone has
 to remember; CI enforces it.
+
+The payload JSON Schemas get the same treatment, because `buf` cannot see them: a published schema
+never gains a property (a new attribute is a new facet key, since every write replaces the whole
+payload). `scripts/schema-growth.ts` (`npm run schema-growth`, in the contract job and before every
+publish) compares each schema the previous `v*` tag published with the working tree: the properties
+and `required` sets must be unchanged at every depth, a closed object must stay closed, and an enum
+may only grow. A schema is removed only by retiring it by name in the script's `RETIRED_SCHEMAS`.
 
 **The gate of record is the contract job on the PR**, where a break is cheap to fix. The publish
 workflow re-runs the same check as belt and braces, because a tag can be cut from any commit and
@@ -72,8 +80,11 @@ src/index.ts                         re-export barrel
 src/version.ts, src/hlc.ts           version grammar, comparator, HLC
 src/sync-vocabulary.ts               facet-key grammar and builders, occurrence statuses, REJECTED reason codes
 golden/version-vectors.json          version cases every implementation tests against
-golden/key-vectors.json              facet-key cases every implementation tests against
+golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
+golden/import-vectors.json           re-import and import-crossing cases, server and client
 schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
+scripts/buf-breaking.sh              buf breaking against the previous v* tag
+scripts/schema-growth.ts             no published payload schema gains a property
 tests/                               codec round-trips and the invariants the comments claim
 ```
 
@@ -130,7 +141,10 @@ occurrence (`occ/{occ}/head`, `/status`, `/collection`, `/disposal`, `/tag/{tag}
 the count of live copies, figure-level fields and tags live under `uf/{head_id}/…`, and
 collections and tags have name facets (`coll/{kind}/{cid|default}/name`, `tag/{tag}/name`). The
 server owns `occ/{occ}/origin` and the import's `imp/{site}/base|conflict/{key}` facets
-(`import.proto` has the three-way re-import rule). Every payload schema is closed and stays closed:
+(`import.proto` has the three-way re-import rule, run per field and on each row's Count, with heads
+compared through the spine's redirect chain; its copies get occ ids keyed by a secret only the
+coordinator holds). An import write that crosses an edit still on a phone is presented to the user
+there, never silently adopted (rule 6, IMPORT CROSSINGS). Every payload schema is closed and stays closed:
 a new attribute is a new facet key, never a new property, because every write replaces the whole
 payload and an older writer would drop a property it does not know.
 
@@ -162,6 +176,7 @@ only signal a client gets that the spine changed how a verdict is derived.
 npm ci
 npm run lint        # buf lint (STANDARD, no exceptions)
 npm run breaking    # buf breaking vs the PREVIOUS v* tag; skips cleanly when there is none
+npm run schema-growth  # no payload schema that tag published gained a property
 npm run generate    # regenerate src/gen from proto/ — commit the result
 npm run typecheck
 npm run build       # tsc -> dist/

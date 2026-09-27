@@ -14,40 +14,53 @@
 // server_now) and the reserved server device is the all-zero id (sync.proto
 // rule 5). The per-user import counter increases with every import. Which
 // side's change stands is no longer decided by version: THE THREE-WAY RULE
-// below decides. A facet whose stored version is not below the import's (a
-// device edit minted within the clock skew of the import) is left, base
-// included, for the next import. The import stamps edited_at as midnight
-// UTC of export_date ("YYYY-MM-DDT00:00:00Z") and tz as "UTC".
+// below decides, and a phone catches an import write that crosses an edit it
+// has not pushed or seen come back (sync.proto rule 6, IMPORT CROSSINGS). A
+// facet whose stored version is not below the import's (a device edit minted
+// within the clock skew of the import) is left, base included, for the next
+// import. The import stamps edited_at as midnight UTC of export_date
+// ("YYYY-MM-DDT00:00:00Z") and tz as "UTC".
 //
-// ROWS TO OCCURRENCES. A resolved row with Count n (blank means 1) is n
-// occurrences, ordinals k = 1..n, with
+// ROWS. An ID is made canonical first (canonicalMfcId): leading zeros are
+// stripped, and what remains must be 1 to 64 ASCII digits. Every later step,
+// occurrence ids and origin facets included, uses the canonical id. A row is
+// unresolved, with the first reason that applies, in this order:
+// "invalid_id" (no canonical id: "0", a sign, a space, a non-ASCII digit),
+// "duplicate_id" (an earlier row has the same canonical id; the first row
+// stands), "invalid_count" (Count is neither blank nor ASCII digits),
+// "count_over_99", "no_product". An unresolved row writes nothing, and the
+// import leaves its id's earlier copies and their figure values alone. Count
+// blank means 1; Count 0 states no copies, and the row still states its
+// figure values. Owned, Ordered and Wished map to the kinds owned, ordered
+// and wished. A row's figure values are uf/{head_id}/score ("N/10"), note
+// and wishability (1..5; 0 or blank is no value).
 //
-//     occ_id = uuidv5(MFC_IMPORT_OCC_NAMESPACE, "{user_id}:mfc:{mfc_id}:{k}")
+// OCCURRENCE IDS. A copy the import creates at ordinal k gets
 //
-// (user_id the coordinator's user uuid, lowercase and dashed; mfc_id as
-// exported; mfcImportOccName builds the name), so a re-import addresses the
-// same keys. With a copy it creates the import writes occ/{occ}/origin
-// {site "mfc", native_id, ordinal}, server-owned, and finds its occurrences
-// later through those origin facets, never by guessing ids. Per occurrence it
-// writes occ/{occ}/head (the resolved head_id) and occ/{occ}/status (Owned,
-// Ordered and Wished map to owned, ordered and wished); per head,
-// uf/{head_id}/score ("N/10"), note and wishability (1..5; 0 or blank is no
-// value). Rows that resolve to one head_id each add their occurrences, and
-// the uf values come from the lowest MFC id among them. The import never
-// writes a filing, a tag, a collection or a tag name, and 0.3.0 maps no
-// column to `former` or a disposal. A Count over 99 returns the row in
-// `unresolved` and nothing is written for it.
+//     occ_id = importOccIdFromMac(HMAC-SHA256(key, "{user_id}:mfc:{mfc_id}:{k}"))
+//
+// the MAC's first 16 bytes as an RFC 9562 version 8 uuid, lowercase and
+// dashed (user_id the coordinator's user uuid, mfc_id the canonical id;
+// mfcImportOccName builds the name). The key is the import occ-id key, held
+// by the coordinator alone: never sent to a client, logged or shipped in this
+// package (golden/key-vectors.json uses a published test key that is never
+// the production one). So an occurrence key and a user id do not reveal an
+// MFC id, and a retry of an import mints the same ids. With a copy it creates
+// the import writes occ/{occ}/origin {site "mfc", native_id, ordinal},
+// server-owned, and it finds its copies later through origin facets, never by
+// recomputing ids: rotating or losing the key changes only the ids of copies
+// created afterwards, and duplicates or re-keys nothing. The key never
+// changes during an import.
 //
 // THE THREE-WAY RULE (Ross, 2026-09-27: a field changed both in the app and
 // on MFC is presented to the user and not written until resolved). For each
-// facet K the import writes, the server keeps K's BASE, the value the last
-// import took from MFC, in imp/mfc/base/{K} (K's own payload schema; a
-// tombstone means MFC had no value). An import compares, over K's own fields
-// and never edited_at or tz: M, what this export states; B, the base; and A,
-// K as the server holds it (a tombstone or no facet is no value). An ordinal
-// absent from this export (its row gone, or its Count lowered) states no
-// status, and its head and origin are left alone; a head no row resolves to
-// states no score, note or wishability.
+// facet K the import compares (IMPORT_WRITTEN_FAMILIES: a copy's head and
+// status, a disposal, a figure's score, note and wishability), the server
+// keeps K's BASE, the value the last import took from MFC, in
+// imp/mfc/base/{K} (K's own payload schema; a tombstone means MFC had no
+// value). An import compares, over K's own fields and never edited_at or tz:
+// M, what this export states; B, the base; and A, K as the server holds it
+// (a tombstone or no facet is no value).
 //
 //   * M == B: MFC did not change it. Nothing is written.
 //   * M != B and A == B: only MFC changed it. K and the base are set to M.
@@ -56,16 +69,86 @@
 //     K is not written. The base moves to M, so it holds MFC's side, and
 //     imp/mfc/conflict/{K} is upserted {against: K's version, export_date}.
 //
-// A conflict is PENDING while its facet is live and K's version is still
-// `against`. The user resolves it with an ordinary write to K through Push:
-// keep the app's value (write it again) or take MFC's (the base's value, or
-// a tombstone when the base is one). Any write to K after the conflict was
-// raised resolves it, so a client shows a pending conflict wherever K is
-// edited. Before its three-way, each import tombstones every conflict facet
-// that is no longer pending; the base already holds the value the user
-// decided against or took. A pending conflict is re-upserted, with the same
-// `against`, only when M changed again, and tombstoned when M now equals A.
-// A re-import of the same export writes nothing beyond those tombstones.
+// ER MERGES. Heads are compared through the spine's redirect chain: two
+// heads are equal when they resolve to one survivor, so a spine merge alone
+// changes no M, B or A, writes nothing and re-keys nothing. A row's figure is
+// the survivor its id resolves to. Rows resolving to one survivor each add
+// their copies, and its figure values come from the numerically lowest MFC
+// id among them; a survivor no row resolves to states no score, note or
+// wishability. For a figure field, B is the base with the higher version
+// among the heads resolving to the survivor, A is the value rule 6 displays,
+// and K is rule 6's write target among those heads (the head of the live
+// facet with the higher version, else the survivor): the head its base was
+// written under unless the app deleted the field since. The import writes K,
+// its base and its conflict there, and tombstones a field, as a device delete
+// does, on every one of those heads holding it live.
+//
+// A ROW'S COPIES. The row's copies are the occurrences whose origin names its
+// canonical id. A copy is UNCHANGED when its status and head, as the server
+// holds them when the import starts, equal their bases then (absent equals
+// absent). B_kind is the kind of the row's copies with a live base status,
+// and B_count their number. A row absent from this export, or with Count 0,
+// has M_count 0 and B_kind as its kind; otherwise M_count is its Count.
+//
+//   HEAD. For a row in this export, each of its copies with a base head runs
+//   the three-way on its head, M being the row's figure.
+//   KIND. When M_count > 0 and the row's kind differs from B_kind, each copy
+//   with a live base status runs the three-way on its status, M being the
+//   row's kind.
+//   COUNT. Then A_count is the number of the row's copies that are live with
+//   the row's kind and whose head resolves to the row's figure (for an absent
+//   row, the survivor of its base heads).
+//   * M_count == B_count: nothing more.
+//   * A_count == M_count: only bases move.
+//   * A_count == B_count: only MFC changed the count, and the import adds or
+//     removes the difference by rule 6's PICKS, never picking a copy the app
+//     changed. To add, it upserts the status of the row's unchanged copies of
+//     its figure that have no live status, lowest occ id first; then adopts
+//     the live copies of the row's figure and kind that carry no origin
+//     (added in the app), lowest occ id first, writing only their origin;
+//     then creates copies (origin, head and status) at the lowest unused
+//     ordinals. To remove, it tombstones the status of the row's unchanged
+//     live copies of its figure and kind, highest occ id first; any it still
+//     lacks it raises for removal, as below.
+//   * Otherwise the count is a CONFLICT, held per copy so that each is
+//     resolved by an ordinary write to that copy's status. For each copy MFC
+//     has and the app lacks, the import raises for addition the row's copies
+//     of its figure with no live status, lowest occ id first, then new copies
+//     (origin and head written, status not); for each copy the app has and
+//     MFC lacks, it raises for removal the row's live copies of its figure and
+//     kind, unchanged ones first, highest occ id first. A raised copy's status
+//     is not written, and imp/mfc/conflict/occ/{occ}/status is upserted.
+//   Whenever M_count != B_count, the row's bases then describe MFC: a copy
+//   raised for addition, or left live with the row's kind, its head resolving
+//   to the row's figure and not raised for removal, gets the row's kind as
+//   its base status and the row's figure as its base head; every other copy
+//   of the row gets a tombstone base status.
+//
+// FILING. Whenever the import upserts a copy's status to a kind its filing is
+// not of, it writes occ/{occ}/collection {"collection": "{status}/default"}
+// in the same batch, as a device kind change does. That is the only filing it
+// writes, and it never compares one.
+//
+// DISPOSITIONS. Ross tracks dispositions on MFC as a list plus a note in a
+// user field (GR-Q3). The import MAY write status former and
+// occ/{occ}/disposal for rows of the user's configured disposition list; its
+// list and field names are desk item DL, and no request field carries them
+// yet, so a 0.3.0 import writes neither. No other row, and nothing else on
+// the server, writes a former status or a disposal. The import never writes
+// a tag, a collection name or a tag name.
+//
+// CONFLICTS. A conflict is PENDING while its facet is live and K's version is
+// still `against`; `against` is absent when K had no version, and the
+// conflict is then pending while K has none. The user resolves it with an
+// ordinary write to K through Push: keep the app's value (write it again) or
+// take MFC's (the base's value, or a tombstone when the base is one). Any
+// write to K after the conflict was raised resolves it, so a client shows a
+// pending conflict wherever K is edited. Before its three-way, each import
+// tombstones every conflict facet that is no longer pending; the base already
+// holds the value the user decided against or took. A pending conflict is
+// re-upserted, with the same `against`, only when M changed again, and
+// tombstoned when M now equals A. A re-import of the same export writes
+// nothing beyond those tombstones. golden/import-vectors.json has the cases.
 //
 // SEMANTIC CHANGE (0.3.0), SAFE ONLY BECAUSE NO IMPORT HAS RUN. 0.2.x wrote
 // per-figure holding facets versioned at the export date, and any later
@@ -90,12 +173,13 @@ message ImportMfcExportRequest {
 }
 
 message ImportMfcExportResponse {
-  // Rows whose MFC id resolved to a product and whose Count is at most 99.
-  // added + moved + unchanged + kept_newer == resolved.
+  // Rows not returned in `unresolved`: a canonical id first in the export, a
+  // valid Count and a product. added + moved + unchanged + kept_newer ==
+  // resolved.
   uint32 resolved = 1;
 
-  // Rows whose MFC id matched no product, or whose Count is over 99.
-  // Nothing is written for them.
+  // Rows the import skipped, each with its reason (ROWS above). Nothing is
+  // written for them.
   repeated UnresolvedMfcRow unresolved = 2;
 
   // Resolved rows with no occurrence from an earlier import.
@@ -123,7 +207,9 @@ message ImportMfcExportResponse {
   // conflicts_pending).
   uint32 kept_newer = 8;
 
-  // Occurrences this import created.
+  // Copies this import made live: created, or restored after an earlier
+  // import removed them. An adopted app copy was live already and is not
+  // counted.
   uint32 occurrences_added = 9;
 
   // Existing occurrences whose status this import changed to another kind.
@@ -153,8 +239,9 @@ message UnresolvedMfcRow {
   // 1-based line number in csv_text, header included.
   uint32 line = 3;
 
-  // Why nothing was written: "no_product" (the MFC id matched no product)
-  // or "count_over_99". Empty from a 0.2.x server, meaning "no_product".
+  // Why nothing was written, the first that applies: "invalid_id",
+  // "duplicate_id", "invalid_count", "count_over_99" or "no_product" (ROWS
+  // above). Empty from a 0.2.x server, meaning "no_product".
   string reason = 4;
 }
 

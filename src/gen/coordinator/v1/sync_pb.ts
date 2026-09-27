@@ -13,7 +13,10 @@
 // merge rule it serves is LWW-per-facet: the client applies an event when
 // `version > local[facet_key]`, and drops it otherwise. Per-facet, not
 // per-record — two devices editing different facets of the same record both
-// win, which is the property bare record-level LWW throws away.
+// win, which is the property bare record-level LWW throws away. The one
+// exception is an import write that crosses an open edit of the client's own
+// (rule 6, IMPORT CROSSINGS): it is presented to the user, neither applied
+// nor dropped.
 //
 // SEVEN RULES THIS SHAPE ENCODES:
 //
@@ -247,9 +250,10 @@
 //     when the filing is dangling or of another kind. So every live copy
 //     shows in exactly one collection, and a stale filing can lose a move but
 //     never an arrival. A device write that changes a copy's kind also writes
-//     or tombstones its filing in the same batch; the import never writes
-//     filing. Deleting a collection tombstones its name only: its copies show
-//     in the default, and undo restores them.
+//     or tombstones its filing in the same batch, and an import write that
+//     sets a status of another kind than the filing writes it {status}/default
+//     (import.proto FILING). Deleting a collection tombstones its name only:
+//     its copies show in the default, and undo restores them.
 //
 //     TAGS. A tag exists while tag/{tag}/name is live. Membership is one facet
 //     per (target, tag): upsert = member, tombstone = not. Three scopes:
@@ -293,8 +297,33 @@
 //     requested_as; the display, write-target and delete rules apply to that
 //     union.
 //
+//     IMPORT CROSSINGS. An import write is an event whose version carries the
+//     reserved all-zero device (rule 5). The import's three-way rule
+//     (import.proto) sees only edits the server holds, so a client catches
+//     the rest. An edit of its own to K is OPEN from when the client mints it
+//     until its Delta delivers K at or above the edit's version. An import
+//     write to K CROSSES the open edits to K when it arrives, in Delta or as
+//     `current` on a STALE result, with a version above every version the
+//     client had taken from the server for K before the oldest of them was
+//     minted, and with a value different from the latest one's (K's own
+//     fields, never edited_at or tz; a tombstone is no value). The client
+//     then neither applies nor drops it: it keeps showing its own value, keeps
+//     its unpushed edits to K unpushed, holds the import write as MFC's side
+//     and shows a pending import conflict on K, stored with the outbox so a
+//     reload keeps it. A later import write to K only replaces MFC's side; a
+//     write to K by any other device ends the conflict and follows the
+//     ordinary rules, and so do the held edits. The user resolves it with an
+//     ordinary write to K, minted with Hlc.tick(base) on the higher of the
+//     local and the import write's version, that replaces the unpushed edits:
+//     keep the app's value (write it again) or take MFC's (its value, or a
+//     tombstone). An edit already pushed cannot be recalled; if it lands the
+//     conflict stays until the user resolves it. golden/import-vectors.json
+//     has the cases.
+//
 //     PRIVACY. Every user-owned facet is private to its user. Neither the
-//     coordinator nor a client logs a payload or a name facet.
+//     coordinator nor a client logs a payload or a name facet. An import
+//     copy's occ id is a keyed MAC (import.proto OCCURRENCE IDS), so a key and
+//     a user id do not reveal an MFC id.
 //
 //     SEMANTIC CHANGE, SAFE ONLY BECAUSE NO DEVICE HAS INSTALLED AND NO IMPORT
 //     HAS RUN. 0.3.0 replaces 0.2.x's per-figure holding grain (one status per
@@ -504,6 +533,9 @@ export const PushRequestSchema: GenMessage<PushRequest> = /*@__PURE__*/
  *   * local has moved past that event since the push (a Delta event or a
  *     newer local edit): treat `current` as a Delta event and apply it only
  *     if current.version > local[facet_key].
+ *   * the one exception: `current` that is an import write crossing the
+ *     client's open edits to facet_key (rule 6, IMPORT CROSSINGS) is held as
+ *     MFC's side of a pending import conflict, and neither bullet applies.
  * ---------------------------------------------------------------------------
  *
  * @generated from message coordinator.v1.PushResult
