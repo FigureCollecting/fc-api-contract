@@ -1,6 +1,6 @@
 {
-  "$comment": "Golden vectors for the coordinator.v1 facet-key grammar (sync.proto rule 6, 0.3.0). Every implementation (this package's parsers and builders, fc-coordinator's Push validation, fc-mobile's store) must agree with every case. Ids are lowercase dashed uuids; `default` is legal only as a collection id; kinds are owned | ordered | wished | former. `valid` keys parse to exactly one family, user- or server-owned; `invalid` keys parse to none (a Push of one is REJECTED facet_key_not_user_owned). `build` folds case; `buildRejects` throw. `mfcImportOccIds` are uuidv5(mfcImportOccNamespace, name), the ids the MFC import gives each copy.",
-  "mfcImportOccNamespace": "43aafcfa-3970-4244-ac59-0b380a374980",
+  "$comment": "Golden vectors for the coordinator.v1 facet-key grammar (sync.proto rule 6, 0.3.0). Every implementation (this package's parsers and builders, fc-coordinator's Push validation, fc-mobile's store) must agree with every case. Ids are lowercase dashed uuids; `default` is legal only as a collection id; kinds are owned | ordered | wished | former. `valid` keys parse to exactly one family, user- or server-owned; `invalid` keys parse to none (a Push of one is REJECTED facet_key_not_user_owned). `build` folds case; `buildRejects` throw. `mfcIds` are the canonical MFC ids (leading zeros stripped, 1 to 64 ASCII digits; canonicalMfcId) and the ones refused. `mfcImportOccIds` are importOccIdFromMac(HMAC-SHA256(key, name)), the ids the MFC import gives each copy, minted here under `mfcImportOccTestKey`: a PUBLISHED TEST key that is never the production key, which the coordinator alone holds.",
+  "mfcImportOccTestKey": {"hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "note": "TEST ONLY. The production key is held by the coordinator alone and never published (import.proto OCCURRENCE IDS)."},
   "valid": [
     {"key": "occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/head", "owner": "user", "parsed": {"family": "occ/head", "occId": "6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7"}, "note": "the copy's figure; re-pointed by one write, never tombstoned by a removal"},
     {"key": "occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/status", "owner": "user", "parsed": {"family": "occ/status", "occId": "6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7"}, "note": "owned | ordered | wished | former; live status + head = a live copy"},
@@ -51,7 +51,7 @@
     {"key": "occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/note", "note": "a deferred family, not in 0.3.0"},
     {"key": "occ/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/home", "note": "design B's head-in-key shape, not chosen"},
     {"key": "tagm/0192f3a4-5b6c-7d8e-9f01-23456789abcd/f/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "note": "design B's membership shape, not chosen"},
-    {"key": "imp/mfc/base/occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/collection", "note": "the import never writes filing"},
+    {"key": "imp/mfc/base/occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/collection", "note": "the import never compares a filing"},
     {"key": "imp/mfc/base/occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/tag/0192f3a4-5b6c-7d8e-9f01-23456789abcd", "note": "the import never writes tags"},
     {"key": "imp/mfc/base/occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/origin", "note": "a server-owned target"},
     {"key": "imp/mfc/base/holding/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/status", "note": "a retired target"},
@@ -77,7 +77,7 @@
     {"input": {"family": "coll/name", "collKind": "custom", "collId": "default"}, "note": "unknown kind"},
     {"input": {"family": "uf/ktag", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "collKind": "research", "tagId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd"}, "note": "unknown kind"},
     {"input": {"family": "holding/status", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"}, "note": "retired family"},
-    {"input": {"family": "imp/base", "site": "mfc", "target": {"family": "occ/collection", "occId": "6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7"}}, "note": "the import never writes filing"},
+    {"input": {"family": "imp/base", "site": "mfc", "target": {"family": "occ/collection", "occId": "6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7"}}, "note": "the import never compares a filing"},
     {"input": {"family": "imp/base", "site": "MFC", "target": {"family": "occ/status", "occId": "6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7"}}, "note": "a site is lowercase"},
     {"input": {"family": "imp/base", "site": "mfc", "target": {"family": "occ/origin", "occId": "6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7"}}, "note": "a server-owned target"}
   ],
@@ -97,9 +97,35 @@
       {"ref": "/default", "note": "empty kind"}
     ]
   },
+  "mfcIds": {
+    "canonical": [
+      {"raw": "1144", "id": "1144"},
+      {"raw": "01144", "id": "1144", "note": "leading zeros are stripped, so one item has one id"},
+      {"raw": "0000001", "id": "1"},
+      {"raw": "3743689", "id": "3743689"},
+      {"raw": "01000000000000000000000000000000000000000000000000000000000000000", "id": "1000000000000000000000000000000000000000000000000000000000000000", "note": "64 digits once the zero is stripped"}
+    ],
+    "invalid": [
+      {"raw": "0", "note": "zero is no MFC id"},
+      {"raw": "000", "note": "nothing left once zeros are stripped"},
+      {"raw": "", "note": "empty"},
+      {"raw": "11a4", "note": "non-numeric"},
+      {"raw": "+1144", "note": "a sign"},
+      {"raw": "-1144", "note": "a sign"},
+      {"raw": " 1144", "note": "a leading space"},
+      {"raw": "1144 ", "note": "a trailing space"},
+      {"raw": "1144\n", "note": "a trailing newline"},
+      {"raw": "1e3", "note": "an exponent"},
+      {"raw": "1144.0", "note": "a decimal"},
+      {"raw": "\uff11\uff11\uff14\uff14", "note": "fullwidth digits"},
+      {"raw": "10000000000000000000000000000000000000000000000000000000000000000", "note": "65 digits"}
+    ]
+  },
   "mfcImportOccIds": [
-    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "1144", "ordinal": 1, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:1144:1", "occId": "e3cb7157-6990-5fbf-b056-c4ef34042be5"},
-    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "1144", "ordinal": 2, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:1144:2", "occId": "62d94f51-e9bf-5b43-9922-ccacefcbd9d1"},
-    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "3743689", "ordinal": 1, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:3743689:1", "occId": "fcf0ffd8-d1c0-5f19-bf9b-2b20e2e5d76f"}
+    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "1144", "ordinal": 1, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:1144:1", "occId": "5f48c675-98d1-891f-901d-f1337af0af6b"},
+    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "1144", "ordinal": 2, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:1144:2", "occId": "cd13f42b-9d6c-8e6d-82a3-9a4ad932dba7"},
+    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "01144", "ordinal": 1, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:1144:1", "occId": "5f48c675-98d1-891f-901d-f1337af0af6b", "note": "a leading zero names the same copy"},
+    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "1144", "ordinal": 99, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:1144:99", "occId": "2ab054f6-5a83-86c5-813c-69558474e7e3"},
+    {"userId": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "mfcId": "3743689", "ordinal": 1, "name": "1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f:mfc:3743689:1", "occId": "adc2dde3-b785-83de-b6c9-f4b481071734"}
   ]
 }

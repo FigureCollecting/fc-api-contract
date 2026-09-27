@@ -39,6 +39,7 @@ describe('publish workflow — the gate must exist (finding B)', () => {
     ['Build', 'build'],
     ['Test with coverage', 'test:ci'],
     ['buf breaking (against the previous release tag)', 'breaking'],
+    ['Schema growth (against the previous release tag)', 'schema-growth'],
   ])('runs %s before publishing', (stepName) => {
     const at = stepIndex(publishYml, stepName);
     expect(at, `step "${stepName}" is missing from publish.yml`).toBeGreaterThan(-1);
@@ -66,6 +67,14 @@ describe('build workflow', () => {
     // on HEAD, and the step name has to say what it actually does.
     expect(buildYml).toContain('buf breaking (against the previous release tag)');
     expect(buildYml).not.toContain('against the last release tag');
+  });
+
+  it('runs the schema growth guard in the contract job, which has the tags to find a baseline', () => {
+    const contractJob = buildYml.slice(buildYml.indexOf('  contract:'), buildYml.indexOf('  build-and-test:'));
+    const at = contractJob.indexOf('- name: Schema growth (against the previous release tag)');
+    expect(at).toBeGreaterThan(contractJob.indexOf('- name: buf breaking (against the previous release tag)'));
+    expect(contractJob.slice(at)).toMatch(/^- name: Schema growth \(against the previous release tag\)\n\s+(#[^\n]*\n\s+)*run: npm run schema-growth\n/);
+    expect(contractJob).toMatch(/fetch-depth: 0/);
   });
 
   it('gates both entry jobs with the fork shift-left expression', () => {
@@ -98,8 +107,9 @@ describe('coverage gate (finding G)', () => {
     expect(thresholds?.perFile).toBe(true);
   });
 
-  it('measures the code the package actually ships', () => {
+  it('measures the code the package actually ships, and the scripts that guard it', () => {
     expect(vitestConfig.test?.coverage?.provider).toBe('v8');
     expect(vitestConfig.test?.coverage?.include).toContain('src/**/*.ts');
+    expect(vitestConfig.test?.coverage?.include).toContain('scripts/**/*.ts');
   });
 });

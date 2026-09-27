@@ -8,12 +8,14 @@ const catalog = read('proto/coordinator/v1/catalog.proto');
 const importProto = read('proto/coordinator/v1/import.proto');
 const readme = read('README.md');
 const hlcSource = read('src/hlc.ts');
+const vocabSource = read('src/sync-vocabulary.ts');
 const genSync = read('src/gen/coordinator/v1/sync_pb.ts');
 const pkg = JSON.parse(read('package.json')) as {
   version: string;
   files: string[];
   exports: Record<string, unknown>;
   description: string;
+  scripts: Record<string, string>;
 };
 
 // Collapse comment markers and whitespace so a rule reflowed across lines still matches.
@@ -32,6 +34,11 @@ const errorEntry = (start: string) => {
 };
 
 describe('sync.proto', () => {
+  it('names the one exception to plain LWW where the merge rule is stated', () => {
+    const header = prose(sync.slice(0, sync.indexOf('SEVEN RULES THIS SHAPE ENCODES')));
+    expect(header).toMatch(/The one exception is an import write that crosses an open edit of the client's own \(rule 6, IMPORT CROSSINGS\): it is presented to the user, neither applied nor dropped\./);
+  });
+
   it('no longer tells a client to keep its losing payload under the server version', () => {
     expect(sync).not.toMatch(/whatever the outcome/);
     expect(prose(sync)).toMatch(/adopt `current` whole/i);
@@ -223,7 +230,8 @@ describe('sync.proto', () => {
     const text = rule6();
     expect(text).toMatch(/A copy is shown in its filed collection if that collection exists and its kind equals the copy's status; otherwise in \{status\}\/default/);
     expect(text).toMatch(/every live copy shows in exactly one collection/i);
-    expect(text).toMatch(/A device write that changes a copy's kind also writes or tombstones its filing in the same batch; the import never writes filing/);
+    expect(text).toMatch(/A device write that changes a copy's kind also writes or tombstones its filing in the same batch, and an import write that sets a status of another kind than the filing writes it \{status\}\/default \(import\.proto FILING\)/);
+    expect(text).not.toMatch(/the import never writes filing/);
     expect(text).toMatch(/Deleting a collection tombstones its name only: its copies show in the default, and undo restores them/);
   });
 
@@ -240,6 +248,23 @@ describe('sync.proto', () => {
     expect(text).toMatch(/A reader stores an unknown key form, kind, status or reason, hides it, never counts it and never pushes it, and re-parses its stored rows on every local-store upgrade/);
     expect(text).toMatch(/picks by occurrence id alone: the lowest to receive or keep, the highest to remove/);
     expect(text).toMatch(/Neither the coordinator nor a client logs a payload or a name facet/);
+    expect(text).toMatch(/An import copy's occ id is a keyed MAC \(import\.proto OCCURRENCE IDS\), so a key and a user id do not reveal an MFC id/);
+  });
+
+  it('makes a client present, never silently resolve, an import write that crosses an open edit of its own', () => {
+    const text = rule6();
+    expect(text).toMatch(/IMPORT CROSSINGS\. An import write is an event whose version carries the reserved all-zero device \(rule 5\)\. The import's three-way rule \(import\.proto\) sees only edits the server holds, so a client catches the rest\./);
+    expect(text).toMatch(/An edit of its own to K is OPEN from when the client mints it until its Delta delivers K at or above the edit's version\./);
+    expect(text).toMatch(/An import write to K CROSSES the open edits to K when it arrives, in Delta or as `current` on a STALE result, with a version above every version the client had taken from the server for K before the oldest of them was minted, and with a value different from the latest one's \(K's own fields, never edited_at or tz; a tombstone is no value\)\./);
+    expect(text).toMatch(/The client then neither applies nor drops it: it keeps showing its own value, keeps its unpushed edits to K unpushed, holds the import write as MFC's side and shows a pending import conflict on K, stored with the outbox so a reload keeps it\./);
+    expect(text).toMatch(/A later import write to K only replaces MFC's side; a write to K by any other device ends the conflict and follows the ordinary rules, and so do the held edits\./);
+    expect(text).toMatch(/The user resolves it with an ordinary write to K, minted with Hlc\.tick\(base\) on the higher of the local and the import write's version, that replaces the unpushed edits: keep the app's value \(write it again\) or take MFC's \(its value, or a tombstone\)\./);
+    expect(text).toMatch(/An edit already pushed cannot be recalled; if it lands the conflict stays until the user resolves it\. golden\/import-vectors\.json has the cases\./);
+  });
+
+  it('carves the crossing out of THE CLIENT RULE, so adopting `current` whole never drops a crossed edit', () => {
+    const clientRule = prose(sync.slice(sync.indexOf('// PushResult — one per pushed event.'), sync.indexOf('message PushResult {')));
+    expect(clientRule).toMatch(/the one exception: `current` that is an import write crossing the client's open edits to facet_key \(rule 6, IMPORT CROSSINGS\) is held as MFC's side of a pending import conflict, and neither bullet applies/);
   });
 
   it('restates the ER-merge rules for occurrences: counts sum, no status tiebreak, tags union', () => {
@@ -379,15 +404,25 @@ describe('import.proto', () => {
     expect(text).toMatch(/<instant> is the server's clock when the import starts \(at most server_now\)/);
     expect(text).not.toMatch(/whichever is earlier|Any device edit made after that instant outranks the import/);
     expect(text).toMatch(/A facet whose stored version is not below the import's \(a device edit minted within the clock skew of the import\) is left, base included, for the next import/);
+    expect(text).toMatch(/a phone catches an import write that crosses an edit it has not pushed or seen come back \(sync\.proto rule 6, IMPORT CROSSINGS\)/);
   });
 
-  it('maps rows to occurrences with published uuidv5 ids found again through origin facets', () => {
+  it('derives import occ ids with a key the coordinator alone holds, never a published namespace', () => {
     const text = header();
-    expect(text).toMatch(/occ_id = uuidv5\(MFC_IMPORT_OCC_NAMESPACE, "\{user_id\}:mfc:\{mfc_id\}:\{k\}"\)/);
-    expect(text).toMatch(/finds its occurrences later through those origin facets, never by guessing ids/);
-    expect(text).toMatch(/The import never writes a filing, a tag, a collection or a tag name/);
-    expect(text).toMatch(/A Count over 99 returns the row in `unresolved` and nothing is written for it/);
-    expect(text).toMatch(/the uf values come from the lowest MFC id among them/);
+    expect(text).toMatch(/occ_id = importOccIdFromMac\(HMAC-SHA256\(key, "\{user_id\}:mfc:\{mfc_id\}:\{k\}"\)\) the MAC's first 16 bytes as an RFC 9562 version 8 uuid, lowercase and dashed/);
+    expect(text).toMatch(/The key is the import occ-id key, held by the coordinator alone: never sent to a client, logged or shipped in this package \(golden\/key-vectors\.json uses a published test key that is never the production one\)\. So an occurrence key and a user id do not reveal an MFC id, and a retry of an import mints the same ids\./);
+    expect(text).toMatch(/finds its copies later through origin facets, never by recomputing ids: rotating or losing the key changes only the ids of copies created afterwards, and duplicates or re-keys nothing\. The key never changes during an import\./);
+    for (const doc of [importProto, sync, readme, vocabSource]) expect(doc).not.toMatch(/uuidv5|MFC_IMPORT_OCC_NAMESPACE/);
+  });
+
+  it('canonicalises MFC ids, orders the unresolved reasons and says what Count 0 and a duplicate mean', () => {
+    const text = header();
+    expect(text).toMatch(/An ID is made canonical first \(canonicalMfcId\): leading zeros are stripped, and what remains must be 1 to 64 ASCII digits\. Every later step, occurrence ids and origin facets included, uses the canonical id\./);
+    expect(text).toMatch(/A row is unresolved, with the first reason that applies, in this order: "invalid_id" \(no canonical id: "0", a sign, a space, a non-ASCII digit\), "duplicate_id" \(an earlier row has the same canonical id; the first row stands\), "invalid_count" \(Count is neither blank nor ASCII digits\), "count_over_99", "no_product"\./);
+    expect(text).toMatch(/An unresolved row writes nothing, and the import leaves its id's earlier copies and their figure values alone\./);
+    expect(text).toMatch(/Count blank means 1; Count 0 states no copies, and the row still states its figure values\./);
+    const reason = prose(importProto.slice(importProto.indexOf('message UnresolvedMfcRow {'), importProto.indexOf('// ImportService')));
+    expect(reason).toMatch(/Why nothing was written, the first that applies: "invalid_id", "duplicate_id", "invalid_count", "count_over_99" or "no_product" \(ROWS above\)/);
   });
 
   it('states the three-way rule Ross decided and the four cases', () => {
@@ -400,8 +435,42 @@ describe('import.proto', () => {
     expect(text).toMatch(/imp\/mfc\/conflict\/\{K\} is upserted \{against: K's version, export_date\}/);
   });
 
+  it('compares heads through the redirect chain, so a spine merge alone writes nothing and re-keys nothing', () => {
+    const text = header();
+    expect(text).toMatch(/ER MERGES\. Heads are compared through the spine's redirect chain: two heads are equal when they resolve to one survivor, so a spine merge alone changes no M, B or A, writes nothing and re-keys nothing\./);
+    expect(text).toMatch(/its figure values come from the numerically lowest MFC id among them; a survivor no row resolves to states no score, note or wishability/);
+    expect(text).toMatch(/For a figure field, B is the base with the higher version among the heads resolving to the survivor, A is the value rule 6 displays, and K is rule 6's write target among those heads \(the head of the live facet with the higher version, else the survivor\): the head its base was written under unless the app deleted the field since\./);
+    expect(text).toMatch(/tombstones a field, as a device delete does, on every one of those heads holding it live/);
+    expect(text).not.toMatch(/the uf values come from the lowest MFC id among them/);
+  });
+
+  it('runs the three-way on a row\'s Count, never picking a copy the app changed', () => {
+    const text = header();
+    expect(text).toMatch(/A copy is UNCHANGED when its status and head, as the server holds them when the import starts, equal their bases then \(absent equals absent\)\./);
+    expect(text).toMatch(/A row absent from this export, or with Count 0, has M_count 0 and B_kind as its kind; otherwise M_count is its Count\./);
+    expect(text).toMatch(/HEAD\. For a row in this export, each of its copies with a base head runs the three-way on its head, M being the row's figure\./);
+    expect(text).toMatch(/KIND\. When M_count > 0 and the row's kind differs from B_kind, each copy with a live base status runs the three-way on its status, M being the row's kind\./);
+    expect(text).toMatch(/\* M_count == B_count: nothing more\. \* A_count == M_count: only bases move\./);
+    expect(text).toMatch(/\* A_count == B_count: only MFC changed the count, and the import adds or removes the difference by rule 6's PICKS, never picking a copy the app changed\./);
+    expect(text).toMatch(/then adopts the live copies of the row's figure and kind that carry no origin \(added in the app\), lowest occ id first, writing only their origin/);
+    expect(text).toMatch(/\* Otherwise the count is a CONFLICT, held per copy so that each is resolved by an ordinary write to that copy's status\./);
+    expect(text).toMatch(/Whenever M_count != B_count, the row's bases then describe MFC/);
+    expect(text).not.toMatch(/An ordinal absent from this export/);
+  });
+
+  it('resets a filing beside a kind change, and keeps disposals to the configured disposition list', () => {
+    const text = header();
+    expect(text).toMatch(/FILING\. Whenever the import upserts a copy's status to a kind its filing is not of, it writes occ\/\{occ\}\/collection \{"collection": "\{status\}\/default"\} in the same batch, as a device kind change does\. That is the only filing it writes, and it never compares one\./);
+    expect(text).toMatch(/DISPOSITIONS\. Ross tracks dispositions on MFC as a list plus a note in a user field \(GR-Q3\)\. The import MAY write status former and occ\/\{occ\}\/disposal for rows of the user's configured disposition list; its list and field names are desk item DL, and no request field carries them yet, so a 0\.3\.0 import writes neither\. No other row, and nothing else on the server, writes a former status or a disposal\./);
+    expect(text).not.toMatch(/The import never writes a filing|maps no column to `former`/);
+    const doc = prose(vocabSource.slice(vocabSource.indexOf('export const DISPOSAL_REASONS'), vocabSource.indexOf('export const IMPORT_WRITTEN_FAMILIES')));
+    expect(doc).toMatch(/only status former plus a disposal, for rows of the user's configured disposition list \(import\.proto DISPOSITIONS\)/);
+    expect(doc).toMatch(/Besides these the import writes a filing only as \{status\}\/default beside a status of another kind, never compared\./);
+  });
+
   it('makes a resolution an ordinary write and a re-import idempotent', () => {
     const text = header();
+    expect(text).toMatch(/`against` is absent when K had no version, and the conflict is then pending while K has none/);
     expect(text).toMatch(/A conflict is PENDING while its facet is live and K's version is still `against`/);
     expect(text).toMatch(/The user resolves it with an ordinary write to K through Push/);
     expect(text).toMatch(/each import tombstones every conflict facet that is no longer pending/);
@@ -414,8 +483,7 @@ describe('import.proto', () => {
 
   it('names the reason a row is unresolved', () => {
     const row = prose(importProto.slice(importProto.indexOf('message UnresolvedMfcRow {'), importProto.indexOf('// ImportService')));
-    expect(row).toMatch(/"no_product"/);
-    expect(row).toMatch(/"count_over_99"/);
+    for (const reason of ['no_product', 'count_over_99', 'invalid_count', 'invalid_id', 'duplicate_id']) expect(row).toContain(`"${reason}"`);
   });
 
   it('never versions an import in the future and still refuses a future export_date', () => {
@@ -431,6 +499,9 @@ describe('README', () => {
 
   it('names the key helpers and the key vectors, and records the 0.3.0 semantic change', () => {
     expect(readme).toMatch(/golden\/key-vectors\.json/);
+    expect(readme).toMatch(/golden\/import-vectors\.json/);
+    expect(readme).toMatch(/canonicalMfcId/);
+    expect(readme).toMatch(/importOccIdFromMac/);
     expect(readme).toMatch(/parseUserFacetKey/);
     expect(readme).toMatch(/buildFacetKey/);
     expect(readme).not.toMatch(/userFacetKey`|holding states/);
@@ -438,9 +509,21 @@ describe('README', () => {
   });
 });
 
+describe('README: the schema guard', () => {
+  it('says the payload schemas are guarded mechanically, like the protos', () => {
+    expect(readme).toMatch(/scripts\/schema-growth\.ts/);
+    expect(readme).toMatch(/npm run schema-growth/);
+  });
+});
+
 describe('package', () => {
   it('is 0.3.0', () => {
     expect(pkg.version).toBe('0.3.0');
+  });
+
+  it('runs the schema growth guard in verify, right after the proto breaking check', () => {
+    expect(pkg.scripts['schema-growth']).toBe('node scripts/schema-growth.ts');
+    expect(pkg.scripts.verify).toContain('npm run breaking && npm run schema-growth && ');
   });
 
   it('ships and exports the new protos, the golden vectors and the payload schemas', () => {
@@ -450,6 +533,7 @@ describe('package', () => {
       './proto/coordinator/v1/import.proto',
       './golden/version-vectors.json',
       './golden/key-vectors.json',
+      './golden/import-vectors.json',
       './schemas/*',
     ]) {
       expect(pkg.exports, key).toHaveProperty([key]);

@@ -8,7 +8,6 @@ import {
   DISPOSAL_REASONS,
   FACET_KEY_GRAMMARS,
   IMPORT_WRITTEN_FAMILIES,
-  MFC_IMPORT_OCC_NAMESPACE,
   OCCURRENCE_STATUSES,
   OCC_FIELDS,
   PUSH_REJECT_REASONS,
@@ -19,11 +18,13 @@ import {
   USER_FACET_FAMILIES,
   USER_FACET_PAYLOAD_SCHEMAS,
   buildFacetKey,
+  canonicalMfcId,
   collNameKey,
   collectionRef,
   compareVersion,
   importBaseKey,
   importConflictKey,
+  importOccIdFromMac,
   mfcImportOccName,
   occFacetKey,
   occOriginKey,
@@ -70,12 +71,12 @@ describe('vocabulary', () => {
     }
   });
 
-  it('lets the import write only heads, statuses, disposals and the three figure fields: never a filing or a tag', () => {
+  it('lets the import compare only heads, statuses, disposals and the three figure fields: never a filing or a tag', () => {
     expect(IMPORT_WRITTEN_FAMILIES).toEqual(['occ/head', 'occ/status', 'occ/disposal', 'uf/score', 'uf/note', 'uf/wishability']);
   });
 
-  it('publishes a fixed MFC import namespace', () => {
-    expect(MFC_IMPORT_OCC_NAMESPACE).toBe('43aafcfa-3970-4244-ac59-0b380a374980');
+  it('publishes no namespace an import occ id could be recomputed from (the key is the coordinator\'s alone)', () => {
+    expect(contract).not.toHaveProperty('MFC_IMPORT_OCC_NAMESPACE');
   });
 
   it('names the five REJECTED reason codes', () => {
@@ -128,13 +129,36 @@ describe('builders', () => {
     expect(() => importBaseKey('mfc', 7 as never)).toThrow(TypeError);
   });
 
-  it('name an import copy only from a uuid user, a numeric MFC id and an ordinal 1..99', () => {
+  it('name an import copy only from a uuid user, a canonical MFC id and an ordinal 1..99', () => {
     const user = '1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
     expect(mfcImportOccName(user, '1144', 99)).toBe(`${user}:mfc:1144:99`);
+    expect(mfcImportOccName(user, '001144', 1)).toBe(`${user}:mfc:1144:1`);
     expect(() => mfcImportOccName('user-1', '1144', 1)).toThrow(TypeError);
     expect(() => mfcImportOccName(user, '11a4', 1)).toThrow(TypeError);
     expect(() => mfcImportOccName(user, '', 1)).toThrow(TypeError);
+    expect(() => mfcImportOccName(user, '0', 1)).toThrow(TypeError);
     for (const ordinal of [0, 100, 1.5]) expect(() => mfcImportOccName(user, '1144', ordinal), String(ordinal)).toThrow(TypeError);
+  });
+
+  it('canonicalise an MFC id by stripping leading zeros, and refuse anything but ASCII digits', () => {
+    expect(canonicalMfcId('0001144')).toBe('1144');
+    expect(canonicalMfcId('1'.repeat(64))).toBe('1'.repeat(64));
+    expect(() => canonicalMfcId('1'.repeat(65))).toThrow(TypeError);
+    expect(() => canonicalMfcId('000')).toThrow(TypeError);
+    expect(() => canonicalMfcId(1144 as never)).toThrow(TypeError);
+  });
+
+  it('spell an import occ id as the MAC\'s first 16 bytes in an RFC 9562 version 8 uuid', () => {
+    const mac = Uint8Array.from({ length: 32 }, (_, i) => 255 - i);
+    const id = importOccIdFromMac(mac);
+    expect(id).toBe('fffefdfc-fbfa-89f8-b7f6-f5f4f3f2f1f0');
+    expect(id[14]).toBe('8'); // version 8
+    expect('89ab').toContain(id[19]!); // RFC 9562 variant
+    expect(importOccIdFromMac(Buffer.from(mac))).toBe(id);
+    expect(parseUserFacetKey(`occ/${id}/head`)).toEqual({ family: 'occ/head', occId: id });
+    for (const bad of [new Uint8Array(16), new Uint8Array(31), new Uint8Array(33), 'f'.repeat(64), undefined]) {
+      expect(() => importOccIdFromMac(bad as never), String(bad)).toThrow(TypeError);
+    }
   });
 
   it('build a collection ref only for a known kind and a uuid or default id', () => {

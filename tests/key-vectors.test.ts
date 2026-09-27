@@ -6,11 +6,12 @@ import {
   COLLECTION_KINDS,
   FACET_KEY_GRAMMARS,
   IMPORT_WRITTEN_FAMILIES,
-  MFC_IMPORT_OCC_NAMESPACE,
   OCC_FIELDS,
   UF_FIELDS,
   buildFacetKey,
+  canonicalMfcId,
   collectionRef,
+  importOccIdFromMac,
   mfcImportOccName,
   parseCollectionRef,
   parseServerFacetKey,
@@ -20,10 +21,10 @@ import {
   type ServerFacetKey,
   type UserFacetKey,
 } from '../src/index.js';
-import { uuidv5 } from './support/uuidv5.js';
+import { importOccMac, uuidV8 } from './support/import-occ-id.js';
 
 interface Vectors {
-  mfcImportOccNamespace: string;
+  mfcImportOccTestKey: { hex: string; note: string };
   valid: { key: string; owner: 'user' | 'server'; parsed: FacetKey; note: string }[];
   invalid: { key: string; note: string }[];
   build: { input: FacetKey; key: string; note: string }[];
@@ -32,6 +33,7 @@ interface Vectors {
     valid: { ref: string; kind: string; collId: string }[];
     invalid: { ref: string; note: string }[];
   };
+  mfcIds: { canonical: { raw: string; id: string }[]; invalid: { raw: string; note: string }[] };
   mfcImportOccIds: { userId: string; mfcId: string; ordinal: number; name: string; occId: string }[];
 }
 
@@ -85,14 +87,41 @@ describe('golden key vectors', () => {
     expect(parseCollectionRef(ref)).toBeUndefined();
   });
 
-  it('publishes the MFC import namespace the vectors were minted under', () => {
-    expect(vectors.mfcImportOccNamespace).toBe(MFC_IMPORT_OCC_NAMESPACE);
+  it('mint import copies under a published TEST key, never a namespace anyone can recompute from', () => {
+    expect(vectors.mfcImportOccTestKey.hex).toMatch(/^[0-9a-f]{64}$/);
+    expect(vectors.mfcImportOccTestKey.note).toMatch(/TEST ONLY/);
+    expect(vectors).not.toHaveProperty('mfcImportOccNamespace');
   });
 
-  it.each(vectors.mfcImportOccIds.map((v) => [v.name, v] as const))('names and mints the import copy %s', (name, v) => {
-    expect(mfcImportOccName(v.userId, v.mfcId, v.ordinal)).toBe(name);
-    expect(mfcImportOccName(v.userId.toUpperCase(), v.mfcId, v.ordinal)).toBe(name);
-    expect(uuidv5(MFC_IMPORT_OCC_NAMESPACE, name)).toBe(v.occId);
+  it.each(vectors.mfcIds.canonical.map((v) => [v.raw, v.id] as const))('canonicalises the MFC id %j to %j', (raw, id) => {
+    expect(canonicalMfcId(raw)).toBe(id);
+    expect(canonicalMfcId(id)).toBe(id);
+  });
+
+  it.each(vectors.mfcIds.invalid.map((v) => [v.raw, v.note] as const))('refuses the MFC id %j (%s)', (raw) => {
+    expect(() => canonicalMfcId(raw)).toThrow(TypeError);
+    expect(() => mfcImportOccName(vectors.mfcImportOccIds[0]!.userId, raw, 1)).toThrow(TypeError);
+  });
+
+  it.each(vectors.mfcImportOccIds.map((v) => [`${v.mfcId}:${v.ordinal}`, v] as const))('names and mints the import copy %s', (_label, v) => {
+    expect(mfcImportOccName(v.userId, v.mfcId, v.ordinal)).toBe(v.name);
+    expect(mfcImportOccName(v.userId.toUpperCase(), v.mfcId, v.ordinal)).toBe(v.name);
+    const mac = importOccMac(vectors.mfcImportOccTestKey.hex, v.name);
+    expect(uuidV8(mac)).toBe(v.occId);
+    expect(importOccIdFromMac(mac)).toBe(v.occId);
+    expect(parseUserFacetKey(`occ/${v.occId}/status`)).toEqual({ family: 'occ/status', occId: v.occId });
+  });
+
+  it('gives one MFC item one set of copies, however many leading zeros the export writes', () => {
+    const user = vectors.mfcImportOccIds[0]!.userId;
+    fc.assert(
+      fc.property(fc.bigInt({ min: 1n, max: 10n ** 20n }), fc.nat({ max: 5 }), (n, zeros) => {
+        const id = n.toString();
+        expect(canonicalMfcId('0'.repeat(zeros) + id)).toBe(id);
+        expect(mfcImportOccName(user, '0'.repeat(zeros) + id, 1)).toBe(mfcImportOccName(user, id, 1));
+      }),
+      { numRuns: 500 },
+    );
   });
 });
 

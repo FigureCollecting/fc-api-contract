@@ -86,6 +86,7 @@ describe('payload schemas', () => {
     ['occ/origin', { site: 'mfc', native_id: '1144', ordinal: 1 }],
     ['occ/origin', { site: 'mfc', native_id: '3743689', ordinal: 99 }],
     ['imp/conflict', { against: VERSION, export_date: '2026-09-09' }],
+    ['imp/conflict', { export_date: '2026-09-09' }], // K had no version: a copy the import raised for addition
   ] as const)('%s accepts %o', (family, payload) => {
     const v = validator(family);
     expect(v(payload), JSON.stringify(v.errors)).toBe(true);

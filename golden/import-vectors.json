@@ -1,0 +1,399 @@
+{
+  "$comment": "Golden cases for the MFC re-import (import.proto) and for an import write crossing a client's own edit (sync.proto rule 6, IMPORT CROSSINGS). Every implementation (fc-coordinator's import, fc-mobile's store and sync engine) must agree with every case. `crossings`: one facet K on one client whose device is devices.self; each step is a Delta event (take), a user edit (edit), a Push of the unpushed edits (push), the PushResult of the oldest pushed edit (answer) or the user's resolution (resolve), and `expect` is the client after it: the value shown, the pending import conflict (MFC's side) or null, and the unpushed edits. Values stand for K's own fields; null is a tombstone. `reimports`: one import over abstract ids (occ ids order by name; new:{k} is the copy minted at ordinal k), heads (survivors maps a merged head to its survivor) and values. A figure cell is {value, v, base, baseV}: v and baseV rank versions, and this import writes at 100. `expect` is the whole state after the import, the user-owned and origin keys it wrote, the conflicts pending, and the unresolved rows.",
+  "devices": {"self": "0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "import": "00000000000000000000000000000000", "other": "9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"},
+  "crossings": [
+    {"name": "an offline edit made before the import, the import write arriving by Delta first, is held and presented (S1)", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}, "expect": {"shows": 5, "crossing": null}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 9, "crossing": null, "outbox": [9]}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": [9]}},
+      {"push": true, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": [9]}},
+      {"resolve": {"choice": "keep", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 9, "crossing": null, "outbox": [9]}},
+      {"push": true, "expect": {"shows": 9, "crossing": null, "outbox": []}},
+      {"answer": {"outcome": "APPLIED", "current": {"value": 9, "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}, "expect": {"shows": 9, "crossing": null}}
+    ]},
+    {"name": "the same edit pushed first and answered STALE with the import write is kept and presented, not adopted", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true, "expect": {"shows": 9, "crossing": null, "outbox": []}},
+      {"answer": {"outcome": "STALE", "current": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": []}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": []}},
+      {"resolve": {"choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 7, "crossing": null, "outbox": [7]}}
+    ]},
+    {"name": "an edit made after the import ran but before the phone saw it, already APPLIED, still presents the older import write (S2)", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "APPLIED", "current": {"value": 9, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}, "expect": {"shows": 9, "crossing": null, "outbox": []}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": []}},
+      {"take": {"value": 9, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": []}},
+      {"resolve": {"choice": "keep", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 9, "crossing": null, "outbox": [9]}}
+    ]},
+    {"name": "with the import write first, a newer unpushed edit is held, not pushed over it, until the user resolves (S2)", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": [9]}},
+      {"push": true, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": [9]}},
+      {"resolve": {"choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 7, "crossing": null, "outbox": [7]}}
+    ]},
+    {"name": "an import write equal to the edit crosses nothing", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": 9, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": null, "outbox": [9]}},
+      {"push": true, "expect": {"shows": 9, "crossing": null, "outbox": []}},
+      {"answer": {"outcome": "STALE", "current": {"value": 9, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}}, "expect": {"shows": 9, "crossing": null}}
+    ]},
+    {"name": "an import write the client had already taken, delivered again, crosses nothing", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 7, "crossing": null}},
+      {"edit": {"value": 9, "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": null, "outbox": [9]}}
+    ]},
+    {"name": "another device's write is ordinary LWW, not an import conflict", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "expect": {"shows": 8, "crossing": null, "outbox": [9]}},
+      {"push": true},
+      {"answer": {"outcome": "STALE", "current": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}}, "expect": {"shows": 8, "crossing": null, "outbox": []}}
+    ]},
+    {"name": "another device's write ends a pending import conflict, and the held edit then follows the ordinary rules", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 9, "crossing": {"mfc": 7}, "outbox": [9]}},
+      {"take": {"value": 6, "version": "2026-10-01T11:30:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "expect": {"shows": 6, "crossing": null, "outbox": [9]}},
+      {"push": true, "expect": {"shows": 6, "crossing": null, "outbox": []}},
+      {"answer": {"outcome": "STALE", "current": {"value": 6, "version": "2026-10-01T11:30:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}}, "expect": {"shows": 6, "crossing": null}}
+    ]},
+    {"name": "an import tombstone (MFC removed the copy) crossing an unpushed status edit is presented; taking MFC's side writes the tombstone", "key": "occ/{occ}/status", "steps": [
+      {"take": {"value": "ordered", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": "owned", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": "owned", "crossing": {"mfc": null}, "outbox": ["owned"]}},
+      {"resolve": {"choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": null, "crossing": null, "outbox": [null]}}
+    ]},
+    {"name": "once the phone's own write has come back through Delta, a later import write is ordinary", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "APPLIED", "current": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}},
+      {"take": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 9, "crossing": null, "outbox": []}},
+      {"take": {"value": 3, "version": "2026-10-01T13:00:00.000000Z#0000000003#00000000000000000000000000000000"}, "expect": {"shows": 3, "crossing": null, "outbox": []}}
+    ]}
+  ],
+  "reimports": [
+    {
+      "name": "an unchanged export writes nothing",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "", "score": 8}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "a figure value changed only on MFC is written, with its base",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "", "score": 9}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 9, "v": 100, "base": 9, "baseV": 100}}},
+        "writes": ["uf/H1/score"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "a figure value changed only in the app is kept",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 5, "v": 2, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "", "score": 8}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 5, "v": 2, "base": 8, "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "a figure value changed alike on both sides moves only its base",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 9, "v": 2, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "", "score": 9}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 9, "v": 2, "base": 9, "baseV": 100}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "a figure value changed differently on both sides is a conflict, and nothing is written",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 5, "v": 2, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "", "score": 9}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 5, "v": 2, "base": 9, "baseV": 100}}},
+        "writes": [],
+        "conflicts": ["uf/H1/score"],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "after a spine merge an unchanged export writes nothing, re-keys nothing and raises no conflict",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}, "note": {"value": "my own note", "v": 2, "base": "mfc note", "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 8, "note": "mfc note"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}, "note": {"value": "my own note", "v": 2, "base": "mfc note", "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "after a spine merge a value MFC changed is written under the head its base was written under",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 9}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 9, "v": 100, "base": 9, "baseV": 100}}},
+        "writes": ["uf/H1/score"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "after a spine merge a value the app deleted conflicts at the survivor, where the resolving write goes",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": null, "v": 2, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 9}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": null, "v": 2, "base": 8, "baseV": 1}}, "H2": {"score": {"value": null, "base": 9, "baseV": 100}}},
+        "writes": [],
+        "conflicts": ["uf/H2/score"],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "GR-Q3: one of two owned copies marked former in the app and the Count lowered on MFC writes nothing; the other copy stays owned",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "former", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "1"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "former", "base": {"head": "H1", "status": null}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC lowered the Count and the app changed nothing: the highest occ id is removed",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "1"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}],
+        "writes": ["occ/o2/status"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC raised the Count: a new copy at the lowest unused ordinal",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "2"}],
+      "expect": {
+        "copies": [{"occ": "new:2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "writes": ["occ/new:2/head", "occ/new:2/origin", "occ/new:2/status"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC raised the Count after an import removed a copy: that copy is restored, filing and all",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "filing": "owned/C1", "base": {"head": "H1", "status": null}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "2"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "filing": "owned/C1", "base": {"head": "H1", "status": "owned"}}],
+        "writes": ["occ/o2/status"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "the app added a copy and MFC raised the Count: the app copy is adopted, not duplicated",
+      "copies": [{"occ": "a1", "head": "H1", "status": "owned"}, {"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "2"}],
+      "expect": {
+        "copies": [{"occ": "a1", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "writes": ["occ/a1/origin"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "the app removed a copy (the highest, by PICKS) and MFC lowered the Count: nothing is written",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "1"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}],
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "the Count changed differently on both sides: a conflict per copy, and no status is written",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "3"}],
+      "expect": {
+        "copies": [{"occ": "new:3", "origin": {"id": "1144", "ordinal": 3}, "head": "H1", "status": null, "base": {"head": "H1", "status": "owned"}}, {"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": "owned"}}],
+        "writes": ["occ/new:3/head", "occ/new:3/origin"],
+        "conflicts": ["occ/new:3/status", "occ/o2/status"],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC changed the kind and the app did not: the status is written and a filing of the old kind is reset",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "ordered", "filing": "ordered/C1", "base": {"head": "H1", "status": "ordered"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": ""}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "filing": "owned/default", "base": {"head": "H1", "status": "owned"}}],
+        "writes": ["occ/o1/collection", "occ/o1/status"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC and the app both marked the copy arrived: only the base moves",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "filing": "owned/default", "base": {"head": "H1", "status": "ordered"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": ""}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "filing": "owned/default", "base": {"head": "H1", "status": "owned"}}],
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC marked the copy arrived and the app marked it former: a conflict on its status",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "former", "base": {"head": "H1", "status": "ordered"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": ""}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "former", "base": {"head": "H1", "status": "owned"}}],
+        "writes": [],
+        "conflicts": ["occ/o1/status"],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "MFC went from two ordered to one owned and the app had marked one arrived: the arrival is kept, the other copy removed",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "ordered"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "ordered", "base": {"head": "H1", "status": "ordered"}}],
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "1"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}],
+        "writes": ["occ/o2/status"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "a row gone from the export removes the copies and figure values the app did not change",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}],
+        "figures": {"H1": {"score": {"value": null, "v": 100, "base": null, "baseV": 100}}},
+        "writes": ["occ/o1/status", "occ/o2/status", "uf/H1/score"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "only MFC removed the copies, but the app changed some: the shortfall is raised as a conflict",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "former", "base": {"head": "H1", "status": "owned"}}, {"occ": "o3", "origin": {"id": "1144", "ordinal": 3}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": null}}],
+      "export": [],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 2}, "head": "H1", "status": "former", "base": {"head": "H1", "status": null}}, {"occ": "o3", "origin": {"id": "1144", "ordinal": 3}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": null}}],
+        "writes": ["occ/o1/status"],
+        "conflicts": ["occ/o3/status"],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "Count 0 states no copies, and the row still states its figure values",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H1", "status": "Owned", "count": "0", "score": 8}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": null, "base": {"head": "H1", "status": null}}],
+        "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+        "writes": ["occ/o1/status"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "a later row with the same canonical id is unresolved, and the first row stands",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "export": [{"line": 2, "id": "01144", "head": "H1", "status": "Owned", "count": ""}, {"line": 3, "id": "1144", "head": "H1", "status": "Owned", "count": "2"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "writes": [],
+        "conflicts": [],
+        "unresolved": [{"line": 3, "reason": "duplicate_id"}]
+      }
+    },
+    {
+      "name": "unresolved rows write nothing and leave their earlier copies and figure values alone",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": null, "status": "Owned", "count": ""}, {"line": 3, "id": "0", "head": "H3", "status": "Owned", "count": ""}, {"line": 4, "id": "11a4", "head": "H3", "status": "Owned", "count": ""}, {"line": 5, "id": "3743689", "head": "H3", "status": "Owned", "count": "100"}, {"line": 6, "id": "555", "head": "H3", "status": "Owned", "count": "two"}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": [{"line": 2, "reason": "no_product"}, {"line": 3, "reason": "invalid_id"}, {"line": 4, "reason": "invalid_id"}, {"line": 5, "reason": "count_over_99"}, {"line": 6, "reason": "invalid_count"}]
+      }
+    },
+    {
+      "name": "the spine now resolves the id to another figure (not a merge): unchanged heads follow, and so do the figure values",
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 1, "base": 8, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H3", "status": "Owned", "count": "", "score": 8}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H3", "status": "owned", "base": {"head": "H3", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": null, "v": 100, "base": null, "baseV": 100}}, "H3": {"score": {"value": 8, "v": 100, "base": 8, "baseV": 100}}},
+        "writes": ["occ/o1/head", "uf/H1/score", "uf/H3/score"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "rows resolving to one survivor take its figure values from the numerically lowest MFC id",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+      "figures": {"H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 9}, {"line": 3, "id": "900", "head": "H2", "status": "Owned", "count": "", "score": 7}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
+        "figures": {"H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    }
+  ]
+}
