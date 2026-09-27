@@ -11,12 +11,12 @@ import {
   StatusResponseSchema,
   SyncEventSchema,
   SyncOp,
-  USER_FACET_FIELDS,
-  userFacetKey,
+  OCC_FIELDS,
+  occFacetKey,
 } from '../src/index.js';
 
-const HEAD = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
-const STATUS_KEY = userFacetKey(HEAD, 'status');
+const OCC = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+const STATUS_KEY = occFacetKey(OCC, 'status');
 const UPSERT = {
   facetKey: STATUS_KEY,
   version: '2026-09-14T11:30:00.123456Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e',
@@ -151,7 +151,7 @@ describe('Push', () => {
     ];
     const msg = create(PushResponseSchema, {
       results: outcomes.map((outcome, i) => ({
-        facetKey: userFacetKey(HEAD, USER_FACET_FIELDS[i % USER_FACET_FIELDS.length]!),
+        facetKey: occFacetKey(OCC, OCC_FIELDS[i % OCC_FIELDS.length]!),
         outcome,
         version: '2026-09-14T11:30:00.123456Z',
       })),

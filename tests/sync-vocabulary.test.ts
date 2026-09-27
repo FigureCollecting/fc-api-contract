@@ -1,63 +1,81 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
+import * as contract from '../src/index.js';
 import {
-  GetProductsResponseSchema,
-  HOLDING_STATUSES,
-  Hlc,
+  COLLECTION_KINDS,
+  DEFAULT_COLLECTION_ID,
+  DISPOSAL_REASONS,
+  FACET_KEY_GRAMMARS,
+  IMPORT_WRITTEN_FAMILIES,
+  MFC_IMPORT_OCC_NAMESPACE,
+  OCCURRENCE_STATUSES,
+  OCC_FIELDS,
   PUSH_REJECT_REASONS,
+  SERVER_FACET_FAMILIES,
+  SERVER_FACET_PAYLOAD_SCHEMAS,
   SyncOp,
-  USER_FACET_FIELDS,
+  UF_FIELDS,
+  USER_FACET_FAMILIES,
   USER_FACET_PAYLOAD_SCHEMAS,
+  buildFacetKey,
+  collNameKey,
+  collectionRef,
   compareVersion,
+  importBaseKey,
+  importConflictKey,
+  mfcImportOccName,
+  occFacetKey,
+  occOriginKey,
+  occTagKey,
+  parseServerFacetKey,
   parseUserFacetKey,
-  userFacetKey,
+  payloadSchemaPath,
+  tagNameKey,
+  ufFacetKey,
+  ufKindTagKey,
+  ufTagKey,
+  type FacetKey,
 } from '../src/index.js';
 
+const OCC = '6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7';
 const HEAD = '5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b';
+const TAG = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
+const CID = '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b';
 
-describe('user-owned facet keys', () => {
-  it.each([
-    [`holding/${HEAD}/status`, 'status'],
-    [`holding/${HEAD}/count`, 'count'],
-    [`uf/${HEAD}/score`, 'score'],
-    [`uf/${HEAD}/note`, 'note'],
-  ])('parses %s', (key, field) => {
-    expect(parseUserFacetKey(key)).toEqual({ headId: HEAD, field });
+describe('vocabulary', () => {
+  it('names the four occurrence statuses, which are also the four collection kinds', () => {
+    expect(OCCURRENCE_STATUSES).toEqual(['owned', 'ordered', 'wished', 'former']);
+    expect(COLLECTION_KINDS).toEqual(OCCURRENCE_STATUSES);
+    expect(DEFAULT_COLLECTION_ID).toBe('default');
   });
 
-  it.each([
-    [`holding/${HEAD}/score`, 'score lives under uf/'],
-    [`uf/${HEAD}/status`, 'status lives under holding/'],
-    [`holding/${HEAD.toUpperCase()}/status`, 'uppercase head id: a second spelling of one facet'],
-    [`holding/${HEAD.replaceAll('-', '')}/status`, 'dashless head id'],
-    [`holding/owned/${HEAD}`, 'the per-list grain that was not chosen'],
-    [`holding/${HEAD}/status/extra`, 'trailing segment'],
-    [`price/${HEAD}/amiami/new/list`, 'a server-owned kind'],
-    ['holding:01J8Z9/condition', 'the 0.1.0 example spelling'],
-    ['', 'empty'],
-  ])('rejects %s (%s)', (key) => {
-    expect(parseUserFacetKey(key)).toBeUndefined();
+  it('names the seven disposal reasons (Ross, 2026-09-27)', () => {
+    expect(DISPOSAL_REASONS).toEqual(['sold', 'traded', 'gifted', 'damaged', 'lost', 'stolen', 'other']);
   });
 
-  it('builds the canonical key, folding the head id to lowercase', () => {
-    expect(userFacetKey(HEAD.toUpperCase(), 'status')).toBe(`holding/${HEAD}/status`);
-    expect(userFacetKey(HEAD, 'note')).toBe(`uf/${HEAD}/note`);
-    for (const field of USER_FACET_FIELDS) {
-      expect(parseUserFacetKey(userFacetKey(HEAD, field))).toEqual({ headId: HEAD, field });
+  it('names twelve user-owned and three server-owned families, one grammar each', () => {
+    expect(USER_FACET_FAMILIES).toEqual([
+      'occ/head', 'occ/status', 'occ/collection', 'occ/disposal', 'occ/tag',
+      'uf/score', 'uf/note', 'uf/wishability', 'uf/tag', 'uf/ktag',
+      'coll/name', 'tag/name',
+    ]);
+    expect(SERVER_FACET_FAMILIES).toEqual(['occ/origin', 'imp/base', 'imp/conflict']);
+    expect(OCC_FIELDS).toEqual(['head', 'status', 'collection', 'disposal']);
+    expect(UF_FIELDS).toEqual(['score', 'note', 'wishability']);
+    expect(FACET_KEY_GRAMMARS.map((g) => g.family)).toEqual([...USER_FACET_FAMILIES, ...SERVER_FACET_FAMILIES]);
+    for (const g of FACET_KEY_GRAMMARS) {
+      expect(g.owner).toBe((USER_FACET_FAMILIES as readonly string[]).includes(g.family) ? 'user' : 'server');
+      expect(g.pattern.source.startsWith('^') && g.pattern.source.endsWith('$'), g.family).toBe(true);
     }
   });
 
-  it('refuses to build a key from something that is not a head id', () => {
-    expect(() => userFacetKey('not-a-uuid', 'status')).toThrow(TypeError);
-    expect(() => userFacetKey(HEAD, 'condition' as never)).toThrow(TypeError);
+  it('lets the import write only heads, statuses, disposals and the three figure fields: never a filing or a tag', () => {
+    expect(IMPORT_WRITTEN_FAMILIES).toEqual(['occ/head', 'occ/status', 'occ/disposal', 'uf/score', 'uf/note', 'uf/wishability']);
   });
-});
 
-describe('vocabulary', () => {
-  it('names the three holding states', () => {
-    expect(HOLDING_STATUSES).toEqual(['owned', 'ordered', 'wished']);
+  it('publishes a fixed MFC import namespace', () => {
+    expect(MFC_IMPORT_OCC_NAMESPACE).toBe('43aafcfa-3970-4244-ac59-0b380a374980');
   });
 
   it('names the five REJECTED reason codes', () => {
@@ -70,94 +88,201 @@ describe('vocabulary', () => {
     ]);
   });
 
-  it('points every field at a schema file the package ships', () => {
-    expect(Object.keys(USER_FACET_PAYLOAD_SCHEMAS).sort()).toEqual([...USER_FACET_FIELDS].sort());
-    for (const rel of Object.values(USER_FACET_PAYLOAD_SCHEMAS)) {
-      expect(existsSync(fileURLToPath(new URL(`../${rel}`, import.meta.url))), rel).toBe(true);
-    }
+  it('no longer exports the 0.2.x holding vocabulary', () => {
+    for (const name of ['HOLDING_STATUSES', 'USER_FACET_FIELDS', 'userFacetKey']) expect(contract).not.toHaveProperty(name);
   });
 });
 
-describe('rule 6: a merged card', () => {
-  const A = '5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b';
-  const B = '0192f3a4-5b6c-7d8e-9f01-23456789abcd';
-  const DEVICE = '0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e';
-  const OTHER = '9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a';
-  type Held = { version: string; op: SyncOp; status?: string };
-
-  const statusAt = (id: string, day: string, status: string, device = DEVICE): [string, Held] => [
-    userFacetKey(id, 'status'),
-    { version: `${day}#0000000000#${device}`, op: SyncOp.UPSERT, status },
-  ];
-  const clockAt = () => {
-    const now = Date.parse('2026-09-14T11:30:00.000Z');
-    const hlc = new Hlc({ deviceId: DEVICE, clock: { wallMs: () => now, monoMs: () => 0 } });
-    hlc.measure('2026-09-14T11:30:00.000000Z', 0);
-    return hlc;
-  };
-
-  // Rule 6's interim display: the live status with the higher version among requested_as. Its
-  // head_id is also where a new write for the card goes.
-  const displayed = (local: Map<string, Held>, requestedAs: string[]) =>
-    requestedAs
-      .map((id) => ({ id, held: local.get(userFacetKey(id, 'status')) }))
-      .filter((h): h is { id: string; held: Held } => h.held !== undefined && h.held.op === SyncOp.UPSERT)
-      .sort((x, y) => compareVersion(y.held.version, x.held.version))[0];
-  const shown = (local: Map<string, Held>, requestedAs: string[]) => displayed(local, requestedAs)?.held.status;
-
-  // A delete on the card: tombstone every live status among requested_as, each above its own version.
-  const deleteCard = (hlc: Hlc, local: Map<string, Held>, requestedAs: string[]) => {
-    const tombstones = requestedAs
-      .map((id) => userFacetKey(id, 'status'))
-      .filter((key) => local.get(key)?.op === SyncOp.UPSERT)
-      .map((key) => ({ facetKey: key, version: hlc.tick(local.get(key)!.version), op: SyncOp.DELETE }));
-    for (const t of tombstones) {
-      if (compareVersion(local.get(t.facetKey)!.version, t.version) < 0) local.set(t.facetKey, { version: t.version, op: t.op });
-    }
-    return tombstones.map((t) => t.facetKey);
-  };
-
-  it('clears with one delete that tombstones every live status among requested_as, each above its own version', () => {
-    const local = new Map<string, Held>([
-      statusAt(A, '2026-09-01T00:00:00.000000Z', 'owned'),
-      // Written by another device whose clock ran 3 minutes ahead.
-      statusAt(B, '2026-09-14T11:33:00.000000Z', 'wished', OTHER),
-    ]);
-    expect(shown(local, [A, B])).toBe('wished');
-
-    expect(deleteCard(clockAt(), local, [A, B])).toEqual([userFacetKey(A, 'status'), userFacetKey(B, 'status')]);
-    expect(shown(local, [A, B])).toBeUndefined();
+describe('builders', () => {
+  it('build one key per family, folding case', () => {
+    expect(occFacetKey(OCC.toUpperCase(), 'status')).toBe(`occ/${OCC}/status`);
+    expect(occFacetKey(OCC, 'disposal')).toBe(`occ/${OCC}/disposal`);
+    expect(occTagKey(OCC, TAG)).toBe(`occ/${OCC}/tag/${TAG}`);
+    expect(ufFacetKey(HEAD, 'wishability')).toBe(`uf/${HEAD}/wishability`);
+    expect(ufTagKey(HEAD, TAG)).toBe(`uf/${HEAD}/tag/${TAG}`);
+    expect(ufKindTagKey(HEAD, 'owned', TAG)).toBe(`uf/${HEAD}/ktag/owned/${TAG}`);
+    expect(collNameKey('owned', 'default')).toBe('coll/owned/default/name');
+    expect(collNameKey('wished', CID.toUpperCase())).toBe(`coll/wished/${CID}/name`);
+    expect(tagNameKey(TAG)).toBe(`tag/${TAG}/name`);
+    expect(occOriginKey(OCC)).toBe(`occ/${OCC}/origin`);
+    expect(importBaseKey('mfc', occFacetKey(OCC, 'status'))).toBe(`imp/mfc/base/occ/${OCC}/status`);
+    expect(importConflictKey('mfc', `uf/${HEAD.toUpperCase()}/note`)).toBe(`imp/mfc/conflict/uf/${HEAD}/note`);
   });
 
-  it('groups cards by head_id across GetProducts calls and unions requested_as, so display, write target and delete see both held ids', () => {
-    const SURVIVOR = '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b';
-    const held = () => new Map<string, Held>([
-      statusAt(A, '2026-09-01T00:00:00.000000Z', 'owned'),
-      statusAt(B, '2026-09-10T00:00:00.000000Z', 'wished'),
-    ]);
-    // 1,144 held ids take six calls of at most 200 refs. A and B fell in different calls, so each
-    // call's card names only its own ref.
-    const ref = (id: string) => ({ ref: { case: 'headId' as const, value: id } });
-    const calls = [
-      create(GetProductsResponseSchema, { products: [{ headId: SURVIVOR, requestedAs: [ref(A)] }] }),
-      create(GetProductsResponseSchema, { products: [{ headId: SURVIVOR, requestedAs: [ref(B)] }] }),
+  it('throw TypeError on anything else', () => {
+    expect(() => occFacetKey('not-a-uuid', 'status')).toThrow(TypeError);
+    expect(() => occFacetKey(OCC, 'acq' as never)).toThrow(TypeError);
+    expect(() => ufFacetKey(HEAD, 'status' as never)).toThrow(TypeError);
+    expect(() => ufKindTagKey(HEAD, 'research' as never, TAG)).toThrow(TypeError);
+    expect(() => collNameKey('owned', 'mine')).toThrow(TypeError);
+    expect(() => tagNameKey('default')).toThrow(TypeError);
+    expect(() => importBaseKey('mfc', occFacetKey(OCC, 'collection'))).toThrow(TypeError);
+    expect(() => importBaseKey('mfc', `holding/${HEAD}/status`)).toThrow(TypeError);
+    expect(() => importConflictKey('mfc', occOriginKey(OCC))).toThrow(TypeError);
+    expect(() => importConflictKey('m fc', occFacetKey(OCC, 'status'))).toThrow(TypeError);
+    expect(() => buildFacetKey({ family: 'holding/status', headId: HEAD } as never)).toThrow(TypeError);
+    expect(() => buildFacetKey(null as never)).toThrow(TypeError);
+    // Malformed input from an untyped caller (a JSON body, an IndexedDB row) is refused, never coerced.
+    expect(() => occFacetKey(7 as never, 'status')).toThrow(TypeError);
+    expect(() => collNameKey('owned', null as never)).toThrow(TypeError);
+    expect(() => importBaseKey('mfc', 7 as never)).toThrow(TypeError);
+  });
+
+  it('name an import copy only from a uuid user, a numeric MFC id and an ordinal 1..99', () => {
+    const user = '1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+    expect(mfcImportOccName(user, '1144', 99)).toBe(`${user}:mfc:1144:99`);
+    expect(() => mfcImportOccName('user-1', '1144', 1)).toThrow(TypeError);
+    expect(() => mfcImportOccName(user, '11a4', 1)).toThrow(TypeError);
+    expect(() => mfcImportOccName(user, '', 1)).toThrow(TypeError);
+    for (const ordinal of [0, 100, 1.5]) expect(() => mfcImportOccName(user, '1144', ordinal), String(ordinal)).toThrow(TypeError);
+  });
+
+  it('build a collection ref only for a known kind and a uuid or default id', () => {
+    expect(collectionRef('former', 'default')).toBe('former/default');
+    expect(collectionRef('owned', CID.toUpperCase())).toBe(`owned/${CID}`);
+    expect(() => collectionRef('custom' as never, 'default')).toThrow(TypeError);
+    expect(() => collectionRef('owned', 'mine')).toThrow(TypeError);
+  });
+
+  it('parse nothing that is not a string', () => {
+    expect(parseUserFacetKey(undefined as never)).toBeUndefined();
+    expect(parseServerFacetKey(7 as never)).toBeUndefined();
+    expect(contract.parseCollectionRef(undefined as never)).toBeUndefined();
+  });
+});
+
+describe('payload schemas', () => {
+  const shipped = (rel: string) => existsSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)));
+
+  it('points every user-owned family at a schema file the package ships', () => {
+    expect(Object.keys(USER_FACET_PAYLOAD_SCHEMAS)).toEqual([...USER_FACET_FAMILIES]);
+    for (const rel of Object.values(USER_FACET_PAYLOAD_SCHEMAS)) expect(shipped(rel), rel).toBe(true);
+  });
+
+  it('points the server-owned origin and conflict at their own schemas, and a base at its target\'s', () => {
+    expect(SERVER_FACET_PAYLOAD_SCHEMAS).toEqual({
+      'occ/origin': 'schemas/occ-origin.schema.json',
+      'imp/conflict': 'schemas/imp-conflict.schema.json',
+    });
+    for (const rel of Object.values(SERVER_FACET_PAYLOAD_SCHEMAS)) expect(shipped(rel), rel).toBe(true);
+    const target = { family: 'uf/note', headId: HEAD } as const;
+    expect(payloadSchemaPath({ family: 'imp/base', site: 'mfc', target })).toBe('schemas/uf-note.schema.json');
+    expect(payloadSchemaPath({ family: 'imp/conflict', site: 'mfc', target })).toBe('schemas/imp-conflict.schema.json');
+    expect(payloadSchemaPath({ family: 'occ/origin', occId: OCC })).toBe('schemas/occ-origin.schema.json');
+    expect(payloadSchemaPath({ family: 'occ/tag', occId: OCC, tagId: TAG })).toBe('schemas/occ-tag.schema.json');
+  });
+
+  it('ships no schema for the retired holding grain', () => {
+    expect(shipped('schemas/holding-status.schema.json')).toBe(false);
+    expect(shipped('schemas/holding-count.schema.json')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule 6, executed. Each device holds facets under LWW; these helpers are the rules sync.proto
+// states, written the simplest way, so the claims the comment makes are checked, not just stated.
+// ---------------------------------------------------------------------------
+describe('rule 6: occurrences under LWW', () => {
+  type Facet = { version: string; op: SyncOp; value?: Record<string, unknown> };
+  type Replica = Map<string, Facet>;
+  const DEVICE_A = '0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e';
+  const DEVICE_B = '9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a';
+  const v = (minute: number, device: string) => `2026-09-27T01:${String(minute).padStart(2, '0')}:00.000000Z#0000000000#${device}`;
+  const put = (key: FacetKey, minute: number, device: string, value?: Record<string, unknown>): [string, Facet] => [
+    buildFacetKey(key),
+    { version: v(minute, device), op: value === undefined ? SyncOp.DELETE : SyncOp.UPSERT, value },
+  ];
+  // Deliver every event to every replica in any order: the higher version wins per key.
+  const converge = (...events: [string, Facet][]): Replica => {
+    const r: Replica = new Map();
+    for (const [key, f] of events) if (!r.has(key) || compareVersion(r.get(key)!.version, f.version) < 0) r.set(key, f);
+    return r;
+  };
+  const live = (r: Replica, key: string) => (r.get(key)?.op === SyncOp.UPSERT ? r.get(key)!.value : undefined);
+  const occ = (occId: string) => ({
+    head: (r: Replica) => live(r, occFacetKey(occId, 'head'))?.head_id as string | undefined,
+    status: (r: Replica) => live(r, occFacetKey(occId, 'status'))?.status as string | undefined,
+    // THE DISPLAY RULE: the filed collection if it exists and its kind is the copy's status, else {status}/default.
+    shownIn: (r: Replica) => {
+      const status = live(r, occFacetKey(occId, 'status'))?.status as string;
+      const ref = contract.parseCollectionRef((live(r, occFacetKey(occId, 'collection'))?.collection as string) ?? '');
+      const exists = ref !== undefined && (ref.collId === 'default' || live(r, collNameKey(ref.kind, ref.collId)) !== undefined);
+      return exists && ref.kind === status ? collectionRef(ref.kind, ref.collId) : collectionRef(status as never, 'default');
+    },
+  });
+  // Live copies of a card: a live status and a head among requested_as.
+  const copies = (r: Replica, occIds: string[], requestedAs: string[]) =>
+    occIds.filter((o) => occ(o).status(r) !== undefined && requestedAs.includes(occ(o).head(r) ?? ''));
+  const O1 = '00000000-0000-4000-8000-000000000001';
+  const O2 = '00000000-0000-4000-8000-000000000002';
+  const O3 = '00000000-0000-4000-8000-000000000003';
+  const C2027 = '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b';
+
+  it('keeps an arrival when a stale device re-files the copy within its old kind at a higher version (the O3-H revert)', () => {
+    const base = [
+      put({ family: 'occ/head', occId: O1 }, 0, DEVICE_A, { head_id: HEAD }),
+      put({ family: 'coll/name', collKind: 'ordered', collId: C2027 }, 0, DEVICE_A, { name: '2027 preorders' }),
     ];
-    const perCall = held();
-    deleteCard(clockAt(), perCall, [B]);
-    expect(shown(perCall, [A, B])).toBe('owned'); // a delete through one call's card leaves the other live
-
-    const byHead = new Map<string, string[]>();
-    for (const card of calls.flatMap((c) => c.products)) {
-      const ids = card.requestedAs.flatMap((r) => (r.ref.case === 'headId' ? [r.ref.value] : []));
-      byHead.set(card.headId, [...new Set([...(byHead.get(card.headId) ?? []), ...ids])]);
+    // Desktop marks it arrived (status + filing in one batch); the phone, offline, files it into an ordered collection later.
+    const arrived = put({ family: 'occ/status', occId: O1 }, 5, DEVICE_A, { status: 'owned' });
+    const arrivedFiling = put({ family: 'occ/collection', occId: O1 }, 5, DEVICE_A, { collection: 'owned/default' });
+    const staleRefile = put({ family: 'occ/collection', occId: O1 }, 9, DEVICE_B, { collection: `ordered/${C2027}` });
+    for (const order of [[arrived, arrivedFiling, staleRefile], [staleRefile, arrivedFiling, arrived]]) {
+      const r = converge(...base, put({ family: 'occ/status', occId: O1 }, 1, DEVICE_A, { status: 'ordered' }), ...order);
+      expect(occ(O1).status(r)).toBe('owned');
+      expect(occ(O1).shownIn(r)).toBe('owned/default'); // a mismatched filing never moves the copy
     }
-    const requestedAs = byHead.get(SURVIVOR)!;
-    const local = held();
-    expect(requestedAs).toEqual([A, B]);
-    expect(shown(local, requestedAs)).toBe('wished');
-    expect(displayed(local, requestedAs)?.id).toBe(B); // the write target
+  });
 
-    deleteCard(clockAt(), local, requestedAs);
-    expect(shown(local, requestedAs)).toBeUndefined();
+  it('shows every live copy in exactly one collection, falling back to the default for a deleted or other-kind filing', () => {
+    const r = converge(
+      put({ family: 'occ/head', occId: O1 }, 0, DEVICE_A, { head_id: HEAD }),
+      put({ family: 'occ/status', occId: O1 }, 0, DEVICE_A, { status: 'ordered' }),
+      put({ family: 'occ/collection', occId: O1 }, 1, DEVICE_A, { collection: `ordered/${C2027}` }),
+      put({ family: 'coll/name', collKind: 'ordered', collId: C2027 }, 0, DEVICE_A, { name: '2027 preorders' }),
+    );
+    expect(occ(O1).shownIn(r)).toBe(`ordered/${C2027}`);
+    const deleted = converge(...r, put({ family: 'coll/name', collKind: 'ordered', collId: C2027 }, 2, DEVICE_B));
+    expect(occ(O1).shownIn(deleted)).toBe('ordered/default');
+    const undone = converge(...deleted, put({ family: 'coll/name', collKind: 'ordered', collId: C2027 }, 3, DEVICE_B, { name: '2027' }));
+    expect(occ(O1).shownIn(undone)).toBe(`ordered/${C2027}`); // undo restores the filing with no copy write
+  });
+
+  it('counts copies, never a quantity field: ordered two from two shops, got one, want another', () => {
+    const events = [O1, O2, O3].map((o) => put({ family: 'occ/head', occId: o }, 0, DEVICE_A, { head_id: HEAD }));
+    const r = converge(
+      ...events,
+      put({ family: 'occ/status', occId: O1 }, 1, DEVICE_A, { status: 'owned' }),
+      put({ family: 'occ/status', occId: O2 }, 1, DEVICE_A, { status: 'ordered' }),
+      put({ family: 'occ/status', occId: O3 }, 1, DEVICE_B, { status: 'wished' }),
+    );
+    const byKind = (k: string) => copies(r, [O1, O2, O3], [HEAD]).filter((o) => occ(o).status(r) === k).length;
+    expect([byKind('owned'), byKind('ordered'), byKind('wished')]).toEqual([1, 1, 1]);
+  });
+
+  it('keeps a removed copy\'s head, so undo restores it and a copy with no head is never counted', () => {
+    const removed = converge(
+      put({ family: 'occ/head', occId: O1 }, 0, DEVICE_A, { head_id: HEAD }),
+      put({ family: 'occ/status', occId: O1 }, 0, DEVICE_A, { status: 'owned' }),
+      put({ family: 'occ/status', occId: O1 }, 4, DEVICE_B),
+    );
+    expect(copies(removed, [O1], [HEAD])).toEqual([]);
+    expect(occ(O1).head(removed)).toBe(HEAD);
+    const undone = converge(...removed, put({ family: 'occ/status', occId: O1 }, 5, DEVICE_B, { status: 'owned' }));
+    expect(copies(undone, [O1], [HEAD])).toEqual([O1]);
+    const headless = converge(put({ family: 'occ/status', occId: O2 }, 0, DEVICE_A, { status: 'owned' }));
+    expect(copies(headless, [O2], [HEAD])).toEqual([]);
+  });
+
+  it('sums the copies of a merged card over requested_as, with no status tiebreak', () => {
+    const MERGED = '1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
+    const r = converge(
+      put({ family: 'occ/head', occId: O1 }, 0, DEVICE_A, { head_id: HEAD }),
+      put({ family: 'occ/status', occId: O1 }, 0, DEVICE_A, { status: 'owned' }),
+      put({ family: 'occ/head', occId: O2 }, 0, DEVICE_B, { head_id: MERGED }),
+      put({ family: 'occ/status', occId: O2 }, 3, DEVICE_B, { status: 'wished' }),
+    );
+    expect(copies(r, [O1, O2], [HEAD, MERGED])).toEqual([O1, O2]);
+    expect(copies(r, [O1, O2], [HEAD])).toEqual([O1]); // one call's card alone misses the other head
   });
 });

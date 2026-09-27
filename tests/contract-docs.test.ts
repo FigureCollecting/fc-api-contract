@@ -149,13 +149,14 @@ describe('sync.proto', () => {
   });
 
   it('bounds every version the server emits, since the Hlc folds tokens unclamped', () => {
-    const emitted = /every version the server emits, in Delta or as `current`, is at most server_now \+ 5 minutes when emitted: a pushed one by the check order, the import by min\(export_date, server_now\), and every other server write, server-owned facets included, at most server_now\. The Hlc folds tokens unclamped, so the bound depends on this\./i;
+    const emitted = /every version the server emits, in Delta or as `current`, is at most server_now \+ 5 minutes when emitted: a pushed one by the check order, and every server write, the import and server-owned facets included, at most server_now\. The Hlc folds tokens unclamped, so the bound depends on this\./i;
     const rule5 = prose(sync.slice(sync.indexOf(' 5. THE VERSION GRAMMAR'), sync.indexOf(' 6. USER-OWNED FACET KEYS')));
     expect(rule5).toMatch(emitted);
     const observeDoc = prose(hlcSource.slice(hlcSource.indexOf('Fold in a token seen from elsewhere'), hlcSource.indexOf('observe(version: string)')));
     expect(observeDoc).toMatch(emitted);
     expect(sync).not.toMatch(/bounds every token on the feed/);
     expect(hlcSource).not.toMatch(/bounds every token on the feed/);
+    for (const text of [sync, hlcSource, importProto]) expect(text).not.toMatch(/min\(export_date, server_now\)/);
   });
 
   it('pins server_now to one clock that never steps back, and the bound to client monotonic time keeping server rate', () => {
@@ -180,32 +181,90 @@ describe('sync.proto', () => {
     for (const code of ['version_malformed', 'version_future', 'facet_key_not_user_owned', 'device_mismatch', 'payload_invalid']) {
       expect(sync).toContain(code);
     }
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(/facet_key_not_user_owned the key is not one of rule 6's user-owned forms \(a retired holding\/\* key included\)/);
+    expect(sync).not.toMatch(/four forms|four user-owned/);
   });
 
-  it('documents the user-owned facet-key grammar for the per-product register', () => {
-    const text = prose(sync);
-    for (const key of ['holding/{head_id}/status', 'holding/{head_id}/count', 'uf/{head_id}/score', 'uf/{head_id}/note']) {
+  const rule6 = () => prose(sync.slice(sync.indexOf(' 6. USER-OWNED FACET KEYS'), sync.indexOf(' 7. DEFERRED, DELIBERATELY')));
+
+  it('documents the 0.3.0 user-owned key table and nothing of the holding grain but its retirement', () => {
+    const text = rule6();
+    for (const key of [
+      'occ/{occ}/head', 'occ/{occ}/status', 'occ/{occ}/collection', 'occ/{occ}/disposal', 'occ/{occ}/tag/{tag}',
+      'uf/{head_id}/score', 'uf/{head_id}/note', 'uf/{head_id}/wishability', 'uf/{head_id}/tag/{tag}',
+      'uf/{head_id}/ktag/{kind}/{tag}', 'coll/{kind}/{cid|default}/name', 'tag/{tag}/name',
+    ]) {
       expect(text).toContain(key);
     }
-    expect(text).toMatch(/written against the head_id at write time and never re-keyed/i);
+    expect(text).toMatch(/RETIRED: holding\/\{head_id\}\/status and holding\/\{head_id\}\/count \(0\.2\.x\) are no longer user-owned; a Push of either is REJECTED facet_key_not_user_owned/);
+    expect(text).toMatch(/`default` is legal only as a collection id/);
     expect(text).toMatch(/edited_at/);
+    expect(text).not.toMatch(/holding grain;|one status register per \(user, product\)/i);
   });
 
-  it('keys every facet of a holding by its status facet\'s head_id and says which status shows after a merge', () => {
-    const text = prose(sync);
-    expect(text).toMatch(/keyed by the head_id its status facet was first written under, never by the ProductCard\.head_id/i);
-    expect(text).toMatch(/the status with the higher version is displayed/i);
-    expect(text).toMatch(/a delete on a merged card tombstones every live status among requested_as/i);
+  it('names the server-owned keys a client reads and never pushes', () => {
+    const text = rule6();
+    for (const key of ['occ/{occ}/origin', 'imp/{site}/base/{key}', 'imp/{site}/conflict/{key}']) expect(text).toContain(key);
+    expect(text).toMatch(/SERVER-OWNED KEYS a client reads but never pushes/);
+  });
+
+  it('counts copies, keeps a removed copy\'s head, and never counts former as held', () => {
+    const text = rule6();
+    expect(text).toMatch(/one record per copy and no quantity field/i);
+    expect(text).toMatch(/a move can never create or lose a copy/i);
+    expect(text).toMatch(/An occurrence is live while its status facet is live and its head facet is present; one with a live status and no head \(a partial batch\) is hidden, flagged and never counted/);
+    expect(text).toMatch(/never tombstoned by an ordinary removal/);
+    expect(text).toMatch(/`former` is a live status \(no longer owned\) and is never counted as held/);
+    expect(text).toMatch(/A disposal describes a former copy; it is kept, and hidden, while the status is anything else/);
+  });
+
+  it('states the display rule, the kind-change rule and collection deletion', () => {
+    const text = rule6();
+    expect(text).toMatch(/A copy is shown in its filed collection if that collection exists and its kind equals the copy's status; otherwise in \{status\}\/default/);
+    expect(text).toMatch(/every live copy shows in exactly one collection/i);
+    expect(text).toMatch(/A device write that changes a copy's kind also writes or tombstones its filing in the same batch; the import never writes filing/);
+    expect(text).toMatch(/Deleting a collection tombstones its name only: its copies show in the default, and undo restores them/);
+  });
+
+  it('states the three tag scopes, read-time figure-by-kind membership and effective tags', () => {
+    const text = rule6();
+    expect(text).toMatch(/Membership is one facet per \(target, tag\): upsert = member, tombstone = not/);
+    expect(text).toMatch(/evaluated at read time, so a copy that arrives later picks it up and one that leaves drops it with no write/);
+    expect(text).toMatch(/The effective tags of a copy are its own, its figure's, and its figure's tags for its status/);
+  });
+
+  it('states library presence, the reader rule, deterministic picks and privacy', () => {
+    const text = rule6();
+    expect(text).toMatch(/A figure is in the library while any live user facet references it: a live occurrence's head or any live uf\/\{head_id\} facet/);
+    expect(text).toMatch(/A reader stores an unknown key form, kind, status or reason, hides it, never counts it and never pushes it, and re-parses its stored rows on every local-store upgrade/);
+    expect(text).toMatch(/picks by occurrence id alone: the lowest to receive or keep, the highest to remove/);
+    expect(text).toMatch(/Neither the coordinator nor a client logs a payload or a name facet/);
+  });
+
+  it('restates the ER-merge rules for occurrences: counts sum, no status tiebreak, tags union', () => {
+    const text = rule6();
+    expect(text).toMatch(/written against the ids of their time and never re-keyed/i);
+    expect(text).toMatch(/A card groups occurrences whose head is any of its requested_as, and their counts sum; there is no status tiebreak/);
+    expect(text).toMatch(/For each uf field the live facet with the higher version among requested_as is displayed, and new writes go to its head_id \(a card with none uses card\.head_id\); a delete tombstones that field on every requested_as head holding it live, each minted on its own facet's version/);
+    expect(text).toMatch(/Tag sets union across requested_as, and an untag tombstones the membership on every head that holds it/);
+    expect(text).not.toMatch(/the status with the higher version is displayed/i);
   });
 
   it('applies the merged-card rules to requested_as unioned across every GetProducts call', () => {
     expect(prose(sync)).toMatch(/groups cards by head_id across every call and page and unions their requested_as; the display, write-target and delete rules apply to that union/i);
   });
 
-  it('says the payload schemas check writes only, so an additive property cannot break an installed phone', () => {
+  it('closes every payload schema forever: a new attribute is a new key, never a property', () => {
     const text = prose(sync);
     expect(text).toMatch(/The schemas check writes only/);
+    expect(text).toMatch(/A published payload schema never gains a property; a new attribute is a new facet key/);
+    expect(text).not.toMatch(/a property added later cannot break an installed phone/i);
     expect(text).toMatch(/10,000 code points/);
+  });
+
+  it('carries the 0.3.0 SEMANTIC CHANGE note', () => {
+    expect(rule6()).toMatch(/SEMANTIC CHANGE, SAFE ONLY BECAUSE NO DEVICE HAS INSTALLED AND NO IMPORT HAS RUN\. 0\.3\.0 replaces 0\.2\.x's per-figure holding grain \(one status per user and product\) with per-copy occurrences\. buf cannot see a key change: the wire is unchanged, and this comment, golden\/key-vectors\.json and the vocabulary tests are the guard/);
   });
 
   it('caps a pushed payload at MAX_PAYLOAD_BYTES of UTF-8 and names the reject', () => {
@@ -280,9 +339,29 @@ describe('catalog.proto', () => {
     expect(text).toMatch(/survivor/i);
     expect(text).toMatch(/requested_as/);
     expect(text).toMatch(/never re-keyed/i);
-    expect(text).toMatch(/which status is shown/i);
+    expect(text).toMatch(/whose copies it counts/i);
     expect(text).toMatch(/what a delete clears/i);
+    expect(text).not.toMatch(/which status is shown|holding facets/i);
     expect(text).toMatch(/groups cards by head_id across every call and page and unions their requested_as; the display, write-target and delete rules of sync\.proto rule 6 apply to that union/i);
+  });
+
+  it('states the unit, rounding and presence of the physical dimensions', () => {
+    const card = prose(catalog.slice(catalog.indexOf('message ProductCard {'), catalog.indexOf('// GetProducts')));
+    expect(card).toMatch(/in whole millimetres, rounded half up from the spine's value\. Unset means unknown, never 0/);
+    expect(card).toMatch(/the figure with its base, never the box/);
+    expect(card).toMatch(/MFC's L is depth/);
+  });
+
+  it('describes the mask as a separate, non-destructive overlay and the grounding fields by how they are measured', () => {
+    const image = prose(catalog.slice(catalog.indexOf('// One derivative the client may show.'), catalog.indexOf('// SearchProducts')));
+    expect(image).toMatch(/non-destructive, display-time overlay; the derivative is never cut out/);
+    expect(image).toMatch(/Unset when there is none or when a display restriction withholds it from this caller/);
+    expect(image).toMatch(/0 is a measurement/);
+    expect(image).toMatch(/opaque means alpha above 10 of 255/);
+    expect(image).toMatch(/the lowest 8 % of the image's height/);
+    expect(image).toMatch(/ThumbHash/);
+    expect(image).toMatch(/"#rrggbb", lowercase/);
+    expect(image).toMatch(/Same pixel dimensions as its derivative/);
   });
 
   it('marks SearchProducts UNIMPLEMENTED until served', () => {
@@ -291,25 +370,56 @@ describe('catalog.proto', () => {
 });
 
 describe('import.proto', () => {
-  it('versions import writes under the reserved server device with a per-user counter', () => {
-    const text = prose(importProto);
+  const header = () => prose(importProto.slice(0, importProto.indexOf('syntax = "proto3";')));
+
+  it('versions import writes under the reserved server device with a per-user counter, at the server clock', () => {
+    const text = header();
     expect(text).toMatch(/reserved server device/i);
     expect(text).toMatch(/per-user import counter/i);
-    expect(text).toMatch(/never removes a holding a device wrote/i);
+    expect(text).toMatch(/<instant> is the server's clock when the import starts \(at most server_now\)/);
+    expect(text).not.toMatch(/whichever is earlier|Any device edit made after that instant outranks the import/);
+    expect(text).toMatch(/A facet whose stored version is not below the import's \(a device edit minted within the clock skew of the import\) is left, base included, for the next import/);
   });
 
-  it('keys import writes the way rule 6 keys device writes', () => {
-    expect(prose(importProto)).toMatch(/already holds under a merged head_id writes under that head_id/i);
+  it('maps rows to occurrences with published uuidv5 ids found again through origin facets', () => {
+    const text = header();
+    expect(text).toMatch(/occ_id = uuidv5\(MFC_IMPORT_OCC_NAMESPACE, "\{user_id\}:mfc:\{mfc_id\}:\{k\}"\)/);
+    expect(text).toMatch(/finds its occurrences later through those origin facets, never by guessing ids/);
+    expect(text).toMatch(/The import never writes a filing, a tag, a collection or a tag name/);
+    expect(text).toMatch(/A Count over 99 returns the row in `unresolved` and nothing is written for it/);
+    expect(text).toMatch(/the uf values come from the lowest MFC id among them/);
   });
 
-  it('never versions an import in the future', () => {
-    const text = prose(importProto);
-    expect(text).toMatch(/whichever is earlier/i);
-    expect(text).toMatch(/export_date later than the server's current UTC date plus one day -> INVALID_ARGUMENT/i);
+  it('states the three-way rule Ross decided and the four cases', () => {
+    const text = header();
+    expect(text).toMatch(/THE THREE-WAY RULE \(Ross, 2026-09-27: a field changed both in the app and on MFC is presented to the user and not written until resolved\)/);
+    expect(text).toMatch(/M == B: MFC did not change it\. Nothing is written\./);
+    expect(text).toMatch(/M != B and A == B: only MFC changed it\. K and the base are set to M\./);
+    expect(text).toMatch(/M != B and A == M: both changed it alike\. Only the base moves to M\./);
+    expect(text).toMatch(/M != B, A != B and A != M: both changed it differently, a CONFLICT\. K is not written\./);
+    expect(text).toMatch(/imp\/mfc\/conflict\/\{K\} is upserted \{against: K's version, export_date\}/);
   });
 
-  it('counts a resolved row whose write lost to a newer device edit', () => {
+  it('makes a resolution an ordinary write and a re-import idempotent', () => {
+    const text = header();
+    expect(text).toMatch(/A conflict is PENDING while its facet is live and K's version is still `against`/);
+    expect(text).toMatch(/The user resolves it with an ordinary write to K through Push/);
+    expect(text).toMatch(/each import tombstones every conflict facet that is no longer pending/);
+    expect(text).toMatch(/A re-import of the same export writes nothing beyond those tombstones/);
+  });
+
+  it('keeps the row counters partitioning resolved rows', () => {
     expect(prose(importProto)).toMatch(/added \+ moved \+ unchanged \+ kept_newer == resolved/);
+  });
+
+  it('names the reason a row is unresolved', () => {
+    const row = prose(importProto.slice(importProto.indexOf('message UnresolvedMfcRow {'), importProto.indexOf('// ImportService')));
+    expect(row).toMatch(/"no_product"/);
+    expect(row).toMatch(/"count_over_99"/);
+  });
+
+  it('never versions an import in the future and still refuses a future export_date', () => {
+    expect(prose(importProto)).toMatch(/export_date later than the server's current UTC date plus one day -> INVALID_ARGUMENT/);
   });
 });
 
@@ -318,11 +428,19 @@ describe('README', () => {
     expect(readme).not.toMatch(/which ignores `#`/);
     expect(readme).toMatch(/out-of-grammar token/);
   });
+
+  it('names the key helpers and the key vectors, and records the 0.3.0 semantic change', () => {
+    expect(readme).toMatch(/golden\/key-vectors\.json/);
+    expect(readme).toMatch(/parseUserFacetKey/);
+    expect(readme).toMatch(/buildFacetKey/);
+    expect(readme).not.toMatch(/userFacetKey`|holding states/);
+    expect(readme).toMatch(/0\.3\.0 made one/);
+  });
 });
 
 describe('package', () => {
-  it('is 0.2.1', () => {
-    expect(pkg.version).toBe('0.2.1');
+  it('is 0.3.0', () => {
+    expect(pkg.version).toBe('0.3.0');
   });
 
   it('ships and exports the new protos, the golden vectors and the payload schemas', () => {
@@ -331,6 +449,7 @@ describe('package', () => {
       './proto/coordinator/v1/catalog.proto',
       './proto/coordinator/v1/import.proto',
       './golden/version-vectors.json',
+      './golden/key-vectors.json',
       './schemas/*',
     ]) {
       expect(pkg.exports, key).toHaveProperty([key]);
