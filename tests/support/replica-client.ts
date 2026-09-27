@@ -1,7 +1,8 @@
 // A plain client for the server model (sync.proto rule 6, THE IMPORT, ON A CLIENT): a replica kept by LWW
-// that applies a server transaction only once it has all of it (rule 7, F2), an outbox whose every entry
-// carries the basis it was minted on, a display that lays the outbox over the replica, and a push that adopts
-// `current`. It decides nothing about imports.
+// that applies a server transaction only once it has all of it (rule 7, F2) and resumes after a restart from the
+// commit cursor of the last transaction it applied, an outbox whose every entry carries the basis it was minted on,
+// a display that lays the outbox over the replica, and a push that adopts `current`. It decides nothing about
+// imports; after its own import it pulls the import's transaction before it shows the review set (THE REVIEW SET).
 import { CARD, cmpVersion, type Choice, type FeedEvent, type Field, type ItemKind, type Json, type Pushable, type PushResult, type Server, type Version } from './server-model.js';
 
 export class Device {
@@ -13,7 +14,13 @@ export class Device {
   constructor(
     readonly s: Server,
     readonly dev: string,
-    readonly opts: { staging?: boolean } = {},
+    readonly opts: {
+      staging?: boolean;
+      /** Mutant: after its own import the client reacts to the response without pulling the import's transaction. */
+      pullAfterImport?: boolean;
+      /** Mutant: after a restart the client resumes from the parked next_cursor, dropping what it had staged. */
+      resumeFromNext?: boolean;
+    } = {},
   ) {}
 
   private localVer(key: string): Version | undefined {
@@ -43,8 +50,9 @@ export class Device {
     copies: Record<string, string> = {},
     fields: Partial<Record<Field, 'app' | 'mfc'>> = {},
     item: ItemKind = 'figure',
+    revOf: ItemKind = item,
   ): void {
-    const card = this.replica.get(`imp/mfc/${item}/${fig}`)?.[0];
+    const card = this.replica.get(`imp/mfc/${revOf}/${fig}`)?.[0];
     const rev = card !== null && card !== undefined && typeof card === 'object' && !Array.isArray(card) ? (card.rev as string) : null;
     const key = `res/mfc/${fig}`;
     this.outbox.push({
@@ -83,6 +91,12 @@ export class Device {
     this.staged = this.staged.slice(upto + 1);
   }
 
+  /** A restart: what was staged in memory is gone; the client resumes from the commit cursor of the last transaction it applied. */
+  restart(): void {
+    this.staged = [];
+    if (this.opts.resumeFromNext !== true) this.fetched = this.cursor;
+  }
+
   replayFromEmpty(): void {
     this.replica = new Map();
     this.cursor = 0;
@@ -91,16 +105,18 @@ export class Device {
     this.pull();
   }
 
-  push(t: number): PushResult[] {
+  /** Push the outbox, or only its first `n` entries (a batch). */
+  push(t: number, n?: number): PushResult[] {
     if (this.outbox.length === 0) return [];
-    const res = this.s.push(this.outbox, t);
+    const batch = n === undefined ? this.outbox : this.outbox.slice(0, n);
+    const res = this.s.push(batch, t);
     res.forEach((r, i) => {
-      const it = this.outbox[i]!;
+      const it = batch[i]!;
       const key = it.type === 'edit' ? it.key : CARD + it.fig;
       const local = this.replica.get(key);
       if (r.current !== undefined && (local === undefined || cmpVersion(r.current[1], local[1]) > 0)) this.replica.set(key, r.current);
     });
-    this.outbox = [];
+    this.outbox = this.outbox.slice(batch.length);
     return res;
   }
 

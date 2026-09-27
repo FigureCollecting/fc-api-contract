@@ -58,6 +58,7 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
   'coll/name': { name: '\u0001'.repeat(100), ...WIDEST },
   'tag/name': { name: '\u0001'.repeat(100), ...WIDEST },
   'res/answer': {
+    item: 'figure',
     rev: 'A'.repeat(128),
     choice: 'per_copy',
     copies: Array.from({ length: 500 }, () => ({ occ: UUID, status: 'ordered' })),
@@ -83,6 +84,7 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
   'imp/held': {
     rev: 'A'.repeat(128),
     held: Array.from({ length: 16 }, () => ({ key: 'a'.repeat(128), payload: '\u0001'.repeat(65_536), version: VERSION, reason: 'made_on_revised_result' })),
+    more: 2_147_483_647,
   },
   'imp/change': { rev: 'A'.repeat(128), kind: 'favor_app', import: 2_147_483_647, writes: WRITES, undo: WRITES },
   'imp/align': {

@@ -214,3 +214,117 @@ export function twoDevices(opts: { sw?: Switches; staging?: boolean } = {}): Tal
   return t;
 }
 
+// ------------------------------------------------------------------ world 4: late units and a knowing reaction (HELD)
+type LateUnit = ['sell' | 'sell+disposal' | 'cancel' | 'tag', string] | ['add' | 'score', ''];
+type Reaction = 'none' | 'readd' | 'tag-o1' | 'tag-o2' | 'sell-o2' | 'file-new' | 'score';
+type RPath = 'REF' | 'OFF1' | 'OFF2';
+
+function lateUnit(d: Device, u: LateUnit, t: number): void {
+  const [op, x] = u;
+  if (op === 'sell' || op === 'sell+disposal') d.edit(`occ/${x}/status`, 'former', t);
+  if (op === 'sell+disposal') d.edit(`occ/${x}/disposal`, { reason: 'sold' }, t);
+  if (op === 'cancel') d.edit(`occ/${x}/status`, null, t);
+  if (op === 'tag') d.edit(`occ/${x}/tag/t1`, {}, t);
+  if (op === 'add') {
+    d.edit('occ/a1/head', 'H1', t);
+    d.edit('occ/a1/status', 'owned', t);
+  }
+  if (op === 'score') d.edit('uf/H1/score', 9, t);
+}
+
+function react(d: Device, r: Reaction, n: number, t: number): void {
+  if (r === 'readd') {
+    d.edit('occ/a3/head', 'H1', t);
+    d.edit('occ/a3/status', 'owned', t);
+  } else if (r === 'tag-o1' || r === 'tag-o2') d.edit(`occ/${r.slice(4)}/tag/t9`, {}, t);
+  else if (r === 'sell-o2') d.edit('occ/o2/status', 'former', t);
+  else if (r === 'file-new') d.edit(`occ/o${n + 1}/collection`, 'owned/shelf-b', t);
+  else if (r === 'score') d.edit('uf/H1/score', 7, t);
+}
+
+/** Live copies per (head, kind), the pending figure items, and the held edits. */
+function reactionOutcome(s: Server): { counts: string; items: string; held: string[] } {
+  const [counts, items] = JSON.parse(outcome(s)) as [unknown, unknown];
+  return { counts: JSON.stringify(counts), items: JSON.stringify(items), held: Object.values(s.heldCards()).flat().sort() };
+}
+
+function runReaction(n: number, units: readonly LateUnit[], d: number, r: Reaction, path: RPath, sw: Switches) {
+  const s = new Server({ namer: namer2, switches: sw });
+  const P = new Device(s, 'P');
+  const Tb = new Device(s, 'T');
+  s.runImport([row('1144', 'H1', 'owned', n)], T('09:00'));
+  P.pull();
+  Tb.pull();
+  units.forEach((u, j) => lateUnit(P, u, T('10:00') + j));
+  const firstUnit = P.outbox.filter((e) => e.type === 'edit' && e.key.startsWith(units[0]![0] === 'add' ? 'occ/a1/' : units[0]![0] === 'score' ? 'uf/' : `occ/${units[0]![1]}/`)).length;
+  if (path === 'REF') P.push(T('10:30'));
+  s.runImport([row('1144', 'H1', 'owned', n + d)], T('11:00'));
+  Tb.pull();
+  react(Tb, r, n, T('11:10'));
+  Tb.push(T('11:11'));
+  if (path === 'OFF1') P.push(T('12:00'));
+  if (path === 'OFF2') {
+    // the two late units in two pushes: the second's relevance test must not undo the first's hold
+    const rest = P.outbox.splice(firstUnit);
+    P.push(T('12:00'));
+    P.outbox.push(...rest);
+    P.push(T('12:05'));
+  }
+  P.pull();
+  Tb.pull();
+  return reactionOutcome(s);
+}
+
+export interface ReactionTally {
+  runs: number;
+  same: number;
+  sameCountsShown: number;
+  differsShown: number;
+  silent: number;
+  /** With no reaction, anything but the pushed-first result (a hold with no reaction to justify it). */
+  noReactionDiffers: number;
+  first: string[];
+}
+
+/**
+ * The phone makes one or two late units offline (a sale, a sale with its disposal, a cancel, a tag, an added copy, a
+ * score), MFC changes the Count, the tablet pulls the import and reacts knowingly (or not), and the phone pushes its
+ * units in one push or in two. REF: the phone pushed first. No path may differ from REF silently.
+ */
+export function reactionWorld(opts: { sw?: Switches } = {}): ReactionTally {
+  const sw = opts.sw ?? {};
+  const t: ReactionTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, silent: 0, noReactionDiffers: 0, first: [] };
+  for (const n of [1, 2, 3]) {
+    const copies = Array.from({ length: n }, (_, i) => `o${i + 1}`);
+    const ops: LateUnit[] = [...copies.flatMap((x) => (['sell', 'sell+disposal', 'cancel', 'tag'] as const).map((op): LateUnit => [op, x])), ['add', ''], ['score', '']];
+    const combos: LateUnit[][] = [...ops.map((u) => [u]), ...combinations(ops, 2).filter(([a, b]) => a![1] !== b![1] || a![1] === '')];
+    for (const units of combos)
+      for (const d of [-2, -1, 1]) {
+        if (n + d < 0) continue;
+        for (const r of ['none', 'readd', 'tag-o1', 'tag-o2', 'sell-o2', 'file-new', 'score'] as Reaction[]) {
+          if ((r === 'tag-o2' || r === 'sell-o2') && n < 2) continue;
+          if (r === 'file-new' && d < 1) continue;
+          const ref = runReaction(n, units, d, r, 'REF', sw);
+          for (const path of (units.length === 2 ? ['OFF1', 'OFF2'] : ['OFF1']) as RPath[]) {
+            const got = runReaction(n, units, d, r, path, sw);
+            t.runs++;
+            const shown = got.held.length > 0 || got.items !== '{}';
+            const what = `n=${n} ${JSON.stringify(units)} d=${d} T:${r} ${path} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`;
+            if (got.counts === ref.counts && got.items === ref.items && got.held.length === 0) t.same++;
+            else if (got.counts === ref.counts && shown) t.sameCountsShown++;
+            else if (shown) t.differsShown++;
+            else {
+              t.silent++;
+              if (t.first.length < 5) t.first.push(what);
+            }
+            if (r === 'none' && (got.counts !== ref.counts || got.items !== ref.items || got.held.length > 0)) {
+              t.noReactionDiffers++;
+              if (t.first.length < 10) t.first.push(`no reaction: ${what}`);
+            }
+          }
+        }
+      }
+  }
+  return t;
+}
+

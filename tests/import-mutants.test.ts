@@ -5,18 +5,19 @@ import { describe, expect, it } from 'vitest';
 import { stable, type Switches } from './support/server-model.js';
 import { runScenario } from './support/trace-runner.js';
 import { vectors } from './support/vectors.js';
-import { twoDevices, world } from './support/worlds.js';
+import { reactionWorld, twoDevices, world } from './support/worlds.js';
 
+type Client = { staging?: boolean; pullAfterImport?: boolean; resumeFromNext?: boolean };
 const eq = (a: unknown, b: unknown) => stable(a) === stable(b);
-function scenarioFailures(sw: Switches, staging = true): string[] {
+function scenarioFailures(sw: Switches, client: Client = {}): string[] {
   return vectors.serverScenarios.filter((c) => {
-    const r = runScenario(c, sw, { staging });
+    const r = runScenario(c, sw, client);
     return !eq(r.actual, r.wanted) || !eq(r.end, c.expect);
   }).map((c) => c.id);
 }
-function reviewFailures(sw: Switches): string[] {
+function reviewFailures(sw: Switches, client: Client = {}): string[] {
   return vectors.review.filter((c) => {
-    const r = runScenario(c, sw);
+    const r = runScenario(c, sw, client);
     return !eq(r.actual, r.wanted) || !eq(r.review, c.expect);
   }).map((c) => c.name.split(':')[0]!);
 }
@@ -24,11 +25,33 @@ const worldBreaches = (sw: Switches, staging = true) => {
   const t = world(1, { sw, staging });
   return t.silentCounts + t.silentItem + t.differsShown;
 };
+const reactionBreaches = (sw: Switches) => {
+  const t = reactionWorld({ sw });
+  return t.silent + t.noReactionDiffers;
+};
 
 type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices';
-const MUTANTS: { name: string; sw?: Switches; staging?: false; detector: Detector; mustInclude?: string }[] = [
+const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detector; mustInclude?: string }[] = [
   { name: 'F1: no marker frame (a figure the import decided without writing gets no frame)', sw: { noMarker: true }, detector: 'world' },
-  { name: 'F2: no client staging (a page ending inside an import is shown half applied)', staging: false, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
+  { name: 'F2: no client staging (a page ending inside an import is shown half applied)', client: { staging: false }, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
+  { name: 'F2 across a restart: the client resumes from the parked next_cursor and loses what it had staged', client: { resumeFromNext: true }, detector: 'scenarios', mustInclude: 'J-A1-staged (restart)' },
+  { name: 'R7: the requester reacts to the review set without pulling the import\'s transaction (its reaction is replayed as a late edit)', client: { pullAfterImport: false }, detector: 'review', mustInclude: 'The requester reacts right after its import' },
+  { name: 'HELD not sticky: the relevance replay resets every other edit\'s hold (round 5)', sw: { heldNotSticky: true }, detector: 'scenarios', mustInclude: 'X-07 (a second late push)' },
+  { name: 'HELD per edit, not per unit: a copy\'s head, status and disposal of one push decided apart', sw: { heldPerEdit: true }, detector: 'scenarios', mustInclude: 'X-07 (sale and disposal)' },
+  { name: 'F3 (i) broad: any knowing edit to a copy of the figure is a reaction', sw: { broadReaction: true }, detector: 'scenarios', mustInclude: 'X-07 (a harmless reaction)' },
+  { name: 'HELD (iii) counts only answers to a figure item', sw: { answerHoldFigureOnly: true }, detector: 'review', mustInclude: 'HELD (iii) counts every answer on the figure' },
+  { name: 'HELD (iii) without its relevance test (a harmless late tag after an answer is held)', sw: { answerHoldWithoutRelevance: true }, detector: 'scenarios', mustInclude: 'X-10 (after an answer, harmless)' },
+  { name: 'a held-edit card lists every held edit, past the schema\'s 16', sw: { heldNoOverflow: true }, detector: 'review', mustInclude: 'A held-edit card lists whole units, oldest first, at most 16 edits' },
+  { name: 'an answer routed by its rev alone, whatever item it names', sw: { ignoreItem: true }, detector: 'review', mustInclude: 'An answer names its item' },
+  { name: 'a spine merge leaves the merged heads\' items in place', sw: { mergeKeepsItems: true }, detector: 'review', mustInclude: 'A spine merge ends the items of both heads; the next import raises one divergence for the merged figure, once, and keep yields one align-MFC entry that keeps the row whose copy is still owned and adds both sold rows to the list; following it by hand clears it and keeps that copy' },
+  { name: 'a take on an mfc_change hides what the app is ahead on until the next import', sw: { mfcChangeHidesDivergence: true }, detector: 'review', mustInclude: 'mfc_only HOLD over a figure the app is ahead on' },
+  { name: 'an align-MFC entry built from the acknowledged snapshot, not the app\'s current side', sw: { alignFromAck: true }, detector: 'review', mustInclude: 'An align-MFC entry follows the app\'s current side' },
+  { name: 'an acknowledgement compared whole, not per part (a partial catch-up re-opens it)', sw: { wholeAck: true }, detector: 'review', mustInclude: 'An acknowledgement is kept per part' },
+  { name: 'add_to_list for any sold copy, not only one of a row the entry lowers', sw: { listAnySale: true }, detector: 'review', mustInclude: 'add_to_list only for a row the entry lowers' },
+  { name: 'the align plan gives up Counts by row number alone, ignoring copy origins', sw: { alignIgnoresOrigin: true }, detector: 'review' },
+  { name: 'X5: an applied decision leaves a stale conflict item', sw: { keepStaleItem: true }, detector: 'review', mustInclude: 'A pending conflict ends when a later import finds the two sides agreeing' },
+  { name: 'X6: an absent row counts its base Count on MFC\'s side', sw: { absentRowCountsBase: true }, detector: 'review', mustInclude: 'A row gone from the export states Count 0 on MFC\'s side' },
+  { name: 'X9: undo restores even when a written value has moved on', sw: { undoIgnoresLaterEdits: true }, detector: 'review', mustInclude: 'undo restores a write only while it still holds the value the import wrote' },
   { name: 'F3: no hold on reaction', sw: { noHold: true }, detector: 'scenarios', mustInclude: 'X-07' },
   { name: 'F3 (i) without its "would change the import\'s result" test', sw: { holdWithoutRelevance: true }, detector: 'scenarios', mustInclude: 'J-F3-false-hold' },
   { name: 'F3 (i) without its "arrived before the late edit" test', sw: { holdWithoutArrivedBefore: true }, detector: 'scenarios', mustInclude: 'J-X07-order2' },
@@ -55,18 +78,19 @@ describe('mutants: every rule is load-bearing', () => {
     expect(scenarioFailures({})).toEqual([]);
     expect(reviewFailures({})).toEqual([]);
     expect(worldBreaches({})).toBe(0);
+    expect(reactionBreaches({})).toBe(0);
     const t = twoDevices();
     expect(t.silentCounts + t.differsShown).toBe(0);
   }, 120_000);
 
   it.each(MUTANTS.map((m) => [m.name, m] as const))('%s is caught', (_name, m) => {
     const sw = m.sw ?? {};
-    if (m.detector === 'world') expect(worldBreaches(sw, m.staging ?? true)).toBeGreaterThan(0);
+    if (m.detector === 'world') expect(worldBreaches(sw, m.client?.staging ?? true)).toBeGreaterThan(0);
     else if (m.detector === 'twoDevices') {
       const t = twoDevices({ sw });
       expect(t.silentCounts + t.differsShown).toBeGreaterThan(0);
     } else {
-      const failed = m.detector === 'scenarios' ? scenarioFailures(sw, m.staging ?? true) : reviewFailures(sw);
+      const failed = m.detector === 'scenarios' ? scenarioFailures(sw, m.client) : reviewFailures(sw, m.client);
       expect(failed.length).toBeGreaterThan(0);
       if (m.mustInclude !== undefined) expect(failed).toContain(m.mustInclude);
     }
@@ -76,5 +100,6 @@ describe('mutants: every rule is load-bearing', () => {
     expect(scenarioFailures({ M8: true })).toEqual([]);
     expect(reviewFailures({ M8: true })).toEqual([]);
     expect(worldBreaches({ M8: true })).toBe(0);
+    expect(reactionBreaches({ M8: true })).toBe(0);
   }, 120_000);
 });

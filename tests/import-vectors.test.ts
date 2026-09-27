@@ -15,10 +15,10 @@ const CORPUS = [
 const base = (id: string) => id.split(' (')[0]!;
 
 describe('golden import vectors: server scenarios (import.proto THE SERVER DECIDES)', () => {
-  it('cover all 49 import scenarios of the 58-case corpus, the probes X-01..X-07 and the judge\'s probes', () => {
+  it('cover all 49 import scenarios of the 58-case corpus, the probes X-01..X-11 and the judge\'s probes', () => {
     expect(CORPUS.length + STATIC.length).toBe(58);
     const ids = new Set(vectors.serverScenarios.map((c) => base(c.id)));
-    for (const id of [...CORPUS, 'X-01', 'X-02', 'X-03', 'X-04', 'X-05', 'X-06', 'X-07', 'J-A', 'J-X07-order2', 'J-F3-false-hold', 'J-A1-staged', 'J-4.5-row'])
+    for (const id of [...CORPUS, 'X-01', 'X-02', 'X-03', 'X-04', 'X-05', 'X-06', 'X-07', 'X-08', 'X-09', 'X-10', 'X-11', 'J-A', 'J-X07-order2', 'J-F3-false-hold', 'J-A1-staged', 'J-4.5-row'])
       expect(ids, id).toContain(id);
     for (const id of STATIC) expect(ids).not.toContain(id);
     const judge = vectors.serverScenarios.filter((c) => c.id.startsWith('J-A (')).map((c) => c.id);
@@ -30,9 +30,25 @@ describe('golden import vectors: server scenarios (import.proto THE SERVER DECID
     expect(held('X-07')).toEqual([['P', 'occ/o1/status']]);
     expect(held('J-A (A5)')).toEqual([['P', 'occ/o1/status']]);
     expect(held('J-X07-order2')).toEqual([['T', 'occ/a3/head'], ['T', 'occ/a3/status']]);
-    expect(held('J-A (A2 sale)')).toEqual([['P', 'occ/a1/status']]);
-    expect(held('J-A (A2 filing)')).toEqual([['P', 'occ/a1/status']]);
     expect(held('J-F3-false-hold')).toEqual([]);
+  });
+
+  it('pin HELD per unit and sticky: a copy\'s head, status, filing and disposal of one push held together, and never undone by a later push or import', () => {
+    const held = (id: string) => vectors.serverScenarios.find((c) => c.id === id)!.expect.held;
+    // one unit: never a half-held new copy (A2) or a sale applied without its disposal
+    expect(held('J-A (A2 sale)')).toEqual([['P', 'occ/a1/head'], ['P', 'occ/a1/status']]);
+    expect(held('J-A (A2 filing)')).toEqual([['P', 'occ/a1/head'], ['P', 'occ/a1/status']]);
+    expect(held('X-07 (sale and disposal)')).toEqual([['P', 'occ/o1/disposal'], ['P', 'occ/o1/status']]);
+    expect(held('X-09 (a reaction on the copy the import created)')).toEqual([['P', 'occ/a1/collection'], ['P', 'occ/a1/head'], ['P', 'occ/a1/status']]);
+    // sticky: through another late push, a later late edit and a later import
+    expect(held('X-07 (a second late push)')).toEqual([['P', 'occ/o1/status']]);
+    expect(held('J-X07-order2 (a later late edit)')).toEqual([['T', 'occ/a3/head'], ['T', 'occ/a3/status']]);
+    expect(held('J-A (A4)')).toEqual([['P', 'occ/a1/head'], ['P', 'occ/a1/status']]);
+    // only a reaction, and (iii) only when the replay would change the answer
+    expect(held('X-07 (a harmless reaction)')).toEqual([]);
+    expect(held('X-10 (after an answer, harmless)')).toEqual([]);
+    expect(held('X-10 (after an answer, relevant)')).toEqual([['P', 'occ/o1/status']]);
+    expect(held('X-08 (two late units)')).toEqual([['P', 'occ/o1/status']]);
   });
 
   it.each(vectors.serverScenarios.map((c) => [c.id, c] as const))('%s', (_id, c) => {
@@ -96,10 +112,24 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       }
     }
     const rules = new Set(vectors.review.flatMap((c) => c.rule.split(' ')));
-    for (const r of ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']) expect(rules, r).toContain(r);
+    for (const r of ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'F3']) expect(rules, r).toContain(r);
     expect(names.join('\n')).toMatch(/stays dismissed across identical re-imports/);
     expect(names.join('\n')).toMatch(/only where the MFC id is known/);
     expect(names.join('\n')).toMatch(/clears itself when MFC catches up/);
+    for (const topic of [/reacts right after its import/, /A spine merge ends the items of both heads/, /counts every answer on the figure/, /An answer names its item/,
+      /at most 16 edits/, /mfc_change item shows the app's score beside MFC's; take/, /follows the app's current side/, /add_to_list only for a row the entry lowers/,
+      /kept per part/, /Richness on a merged figure/, /MFC takes the app's score/, /MFC back at the base/, /undo restores a write only while/, /can be dismissed/,
+      /A row gone from the export/, /take on an mfc_change after the app changed/, /per_copy with a field side/, /a kind no row holds/, /Merged rows that change a field/])
+      expect(names.join('\n')).toMatch(topic);
+  });
+
+  it('pin ImportMfcExportResponse\'s counters (fields 3 to 17) on every import of the review cases', () => {
+    const KEYS = ['added', 'moved', 'unchanged', 'removed', 'facets_written', 'kept_newer', 'occurrences_added', 'occurrences_status_changed', 'occurrences_removed',
+      'conflicts_raised', 'conflicts_pending', 'divergences_pending', 'changes_held', 'align_pending', 'import_number'];
+    const imports = vectors.review.flatMap((c) => c.steps.filter((s): s is Extract<Step, { op: 'import' }> => s.op === 'import'));
+    for (const s of imports) expect(Object.keys(s.expect?.counters ?? {}).sort()).toEqual([...KEYS].sort());
+    // every counter is non-zero somewhere, so none is pinned only at 0
+    for (const k of KEYS) expect(imports.some((s) => (s.expect!.counters as unknown as Record<string, number>)[k]! > 0), k).toBe(true);
   });
 
   it('pin the review set\'s order and every item kind with the answers it allows', () => {

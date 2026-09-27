@@ -1,9 +1,10 @@
 // THE SERVER DECIDES, as a property: however an offline phone's edits meet an import (pushed after it, pulled first,
-// or across two imports), the end state equals the path where the phone pushed first. FC_PROPERTY_FULL=1 runs the
+// or across two imports), the end state equals the path where the phone pushed first; and when another device reacted
+// to the import first, the phone's late units are held and shown, never lost silently. FC_PROPERTY_FULL=1 runs the
 // two-import world in full (554,286 path runs); CI runs every 16th case of it.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { twoDevices, world, type Tally } from './support/worlds.js';
+import { reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
 
 // The tallies go to the console, and to the file FC_PROPERTY_REPORT names when it is set.
 const report = (name: string, t: Tally) => {
@@ -29,6 +30,17 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     expect(t.runs).toBe(full ? 554_286 : 34_644);
     expect({ silentCounts: t.silentCounts, silentItem: t.silentItem, differsShown: t.differsShown }, t.first.join('\n')).toEqual({ silentCounts: 0, silentItem: 0, differsShown: 0 });
   }, 3_600_000);
+
+  it('late units and a knowing reaction: one or two late units, in one push or two, after the tablet reacted (HELD)', () => {
+    const t = reactionWorld();
+    const line =
+      `late units and a reaction: ${t.runs} path runs; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
+      `differs but shown ${t.differsShown}; silent ${t.silent}; differs with no reaction ${t.noReactionDiffers}`;
+    console.log(line);
+    if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+    expect(t.runs).toBe(4_700);
+    expect({ silent: t.silent, noReactionDiffers: t.noReactionDiffers }, t.first.join('\n')).toEqual({ silent: 0, noReactionDiffers: 0 });
+  }, 600_000);
 
   it('two devices, one edit each, both pull the import first (fuzz2_a.py)', () => {
     const t = twoDevices();

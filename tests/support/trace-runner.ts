@@ -1,10 +1,10 @@
 // Runs one golden/import-vectors.json scenario (serverScenarios or review) on the server model with a phone (P)
 // and a tablet (T), and reports every step's observable result and the end state, for the test to compare.
 import { Device } from './replica-client.js';
-import { Server, type AlignAction, type Choice, type Field, type ImportResult, type ItemKind, type Json, type Row, type Switches } from './server-model.js';
+import { Server, type AlignAction, type Choice, type Field, type ImportCounters, type ImportResult, type ItemKind, type Json, type Row, type Switches } from './server-model.js';
 
 export type Step =
-  | { op: 'import'; t: number; rows: Row[]; by?: string; expect?: { review: unknown[]; applied: unknown[]; events?: number } }
+  | { op: 'import'; t: number; rows: Row[]; by?: string; expect?: { review: unknown[]; applied: unknown[]; counters?: ImportCounters } }
   | { op: 'redirect'; head: string; survivor: string; t: number }
   | { op: 'edit'; dev: string; key: string; value: Json; t: number }
   | {
@@ -14,12 +14,15 @@ export type Step =
       choice: Choice;
       t: number;
       item?: ItemKind;
+      /** Name the rev of another item of the figure (a client bug the server must answer STALE). */
+      revOf?: ItemKind;
       copies?: Record<string, string>;
       fields?: Partial<Record<Field, 'app' | 'mfc'>>;
     }
-  | { op: 'push'; dev: string; t: number; expect?: { key: string; outcome: string }[] }
+  | { op: 'push'; dev: string; t: number; n?: number; expect?: { key: string; outcome: string }[] }
   | { op: 'pull'; dev: string; n?: number; expect?: { shows: Record<string, Json> } }
-  | { op: 'replay'; dev: string };
+  | { op: 'replay'; dev: string }
+  | { op: 'restart'; dev: string };
 
 export interface ScenarioEnd {
   facets: Record<string, Json>;
@@ -45,7 +48,7 @@ const NAMES: Record<string, string> = { '1144#1': 'o1', '1144#2': 'o2', '900#1':
 export const scenarioNamer = (r: string, k: number) => NAMES[`${r}#${k}`] ?? (r === '1144' ? `new:${k}` : `new${r}:${k}`);
 
 /** The import's result as the golden pins it: revs and keys are opaque, so each item is its head, answers and actions. */
-export function pinned(r: ImportResult, events: number): { review: unknown[]; applied: unknown[]; events: number } {
+export function pinned(r: ImportResult): { review: unknown[]; applied: unknown[]; counters: ImportCounters } {
   return {
     review: r.review.map((g) => ({
       kind: g.kind,
@@ -53,11 +56,11 @@ export function pinned(r: ImportResult, events: number): { review: unknown[]; ap
       bulk: g.bulk,
     })),
     applied: r.applied.map((a) => ({ head: a.head, kind: a.kind, writes: a.writes, answers: a.answers })),
-    events,
+    counters: r.counters,
   };
 }
 
-export function runScenario(c: Scenario, switches: Switches = {}, client: { staging?: boolean } = {}) {
+export function runScenario(c: Scenario, switches: Switches = {}, client: { staging?: boolean; pullAfterImport?: boolean; resumeFromNext?: boolean } = {}) {
   const rank = c.rank !== undefined && Object.keys(c.rank).length > 0 ? (x: string) => c.rank![x] ?? x : undefined;
   const s = new Server({ namer: scenarioNamer, ...(rank === undefined ? {} : { rank }), switches });
   const devs: Record<string, Device> = { P: new Device(s, 'P', client), T: new Device(s, 'T', client) };
@@ -66,28 +69,29 @@ export function runScenario(c: Scenario, switches: Switches = {}, client: { stag
   const actual: unknown[] = [];
   for (const st of c.steps) {
     if (st.op === 'import') {
+      // R1: the requester pushes its outbox first; R7: it pulls the import's transaction before it shows the review set
       if (st.by !== undefined) devs[st.by]!.push(st.t);
-      const n0 = s.feed.length;
       const I = s.runImport(st.rows, st.t);
-      if (st.expect !== undefined) actual.push(pinned(s.importResult(I), s.feed.length - n0));
+      if (st.expect !== undefined) actual.push(pinned(s.importResult(I)));
+      if (st.by !== undefined && client.pullAfterImport !== false) devs[st.by]!.pull();
     } else if (st.op === 'redirect') s.redirect(st.head, st.survivor, st.t);
     else if (st.op === 'edit') devs[st.dev]!.edit(st.key, st.value, st.t);
-    else if (st.op === 'resolve') devs[st.dev]!.answer(st.fig, st.choice, st.t, st.copies, st.fields, st.item);
+    else if (st.op === 'resolve') devs[st.dev]!.answer(st.fig, st.choice, st.t, st.copies, st.fields, st.item, st.revOf ?? st.item);
     else if (st.op === 'push') {
       const keys = devs[st.dev]!.outbox.map((e) => e.key);
-      const res = devs[st.dev]!.push(st.t).map((r, i) => ({ key: keys[i]!, outcome: r.outcome }));
+      const res = devs[st.dev]!.push(st.t, st.n).map((r, i) => ({ key: keys[i]!, outcome: r.outcome }));
       if (st.expect !== undefined) actual.push(res);
     } else if (st.op === 'pull') {
       devs[st.dev]!.pull(st.n);
       if (st.expect !== undefined) actual.push({ shows: shows(devs[st.dev]!, Object.keys(st.expect.shows)) });
-    } else devs[st.dev]!.replayFromEmpty();
+    } else if (st.op === 'restart') devs[st.dev]!.restart();
+    else devs[st.dev]!.replayFromEmpty();
   }
-  const wanted = c.steps.flatMap((st) => ('expect' in st && st.expect !== undefined ? [st.op === 'import' ? { events: undefined, ...st.expect } : st.expect] : []));
-  // an import step that pins no event count is compared without one
+  const wanted = c.steps.flatMap((st) => ('expect' in st && st.expect !== undefined ? [st.expect] : []));
+  // an import step that pins no counters is compared without them
   wanted.forEach((w, i) => {
-    const a = actual[i] as { events?: number } | undefined;
-    if (a !== undefined && typeof w === 'object' && w !== null && 'events' in w && (w as { events?: number }).events === undefined) delete a.events;
-    if (typeof w === 'object' && w !== null && 'events' in w && (w as { events?: number }).events === undefined) delete (w as { events?: number }).events;
+    const a = actual[i] as { counters?: ImportCounters } | undefined;
+    if (a !== undefined && typeof w === 'object' && w !== null && 'review' in w && !('counters' in w)) delete a.counters;
   });
   const facets = Object.fromEntries(
     [...s.emitted]
