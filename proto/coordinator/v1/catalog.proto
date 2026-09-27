@@ -26,15 +26,16 @@
 // ER REDIRECTS. A merged product id stays valid forever: the spine resolves
 // it through the redirect chain to the survivor. A ProductCard therefore
 // names the survivor in head_id and echoes, in requested_as, every ref from
-// this request that resolved to it. The client's holding facets stay keyed
-// on the head_id they were written against (never re-keyed, sync.proto rule
-// 6) and are displayed through requested_as. Two held ids in one request
-// that merge into one survivor come back as ONE card naming both; sync.proto
-// rule 6 says which of them a new write uses, which status is shown and what
-// a delete clears. A client that hydrates over several GetProducts calls
-// groups cards by head_id across every call and page and unions their
-// requested_as; the display, write-target and delete rules of sync.proto
-// rule 6 apply to that union.
+// this request that resolved to it. The client's facets stay keyed on the
+// ids they were written against (never re-keyed, sync.proto rule 6): a copy
+// names its figure in occ/{occ}/head, and uf facets sit under the head_id
+// they were written for. Both are displayed through requested_as. Two held
+// ids in one request that merge into one survivor come back as ONE card
+// naming both; sync.proto rule 6 says whose copies it counts, which head a
+// new write uses and what a delete clears. A client that hydrates over
+// several GetProducts calls groups cards by head_id across every call and
+// page and unions their requested_as; the display, write-target and delete
+// rules of sync.proto rule 6 apply to that union.
 // ============================================================================
 
 syntax = "proto3";
@@ -117,6 +118,16 @@ message ProductCard {
   // Never an original, never a URL; fetch refs come from GetProductImages.
   // Empty until derivatives exist.
   repeated string derivative_ids = 11;
+
+  // The physical size of the product itself, the figure with its base, never
+  // the box, in whole millimetres, rounded half up from the spine's value.
+  // Unset means unknown, never 0. Height is the total height, base included;
+  // width runs left to right and depth front to back as the figure faces the
+  // viewer (MFC's L is depth). Whole millimetres are finer than any source
+  // states a figure's size, and the client sizes and fits figures in them.
+  optional uint32 height_mm = 12;
+  optional uint32 width_mm = 13;
+  optional uint32 depth_mm = 14;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +216,57 @@ message ProductImage {
   // Content-addressed and immutable, so it may be cached forever. Empty when
   // no public media base is configured; the client shows a placeholder.
   string url = 7;
+
+  // The separate alpha mask for this derivative (Ross, 2026-09-26: masking
+  // is a non-destructive, display-time overlay; the derivative is never cut
+  // out). Unset when there is none or when a display restriction withholds
+  // it from this caller.
+  ImageMask mask = 8;
+
+  // GROUNDING, measured on the mask's alpha, or on the derivative's own
+  // alpha when it has one, where opaque means alpha above 10 of 255.
+  //
+  // The fraction of the image's height that is transparent below its lowest
+  // opaque row, 0 to 1: how far to lower the image so the figure stands on
+  // the shelf. Unset when not measured; 0 is a measurement (the figure
+  // touches the bottom edge).
+  optional double bottom_margin_frac = 9;
+
+  // Where the figure's base meets the shelf. Unset when not measured or when
+  // no opaque row was found.
+  ContactBand contact_band = 10;
+
+  // A ThumbHash (github.com/evanw/thumbhash) of the image as displayed, the
+  // mask applied when there is one: the placeholder while it loads. Empty
+  // when unknown.
+  bytes thumbhash = 11;
+
+  // The image's dominant color as "#rrggbb", lowercase. Empty when unknown.
+  string dominant_color = 12;
+}
+
+// An alpha mask the client composites over its derivative at display time.
+// Same pixel dimensions as its derivative.
+message ImageMask {
+  // Hex SHA-256 of the mask bytes.
+  string mask_id = 1;
+
+  // e.g. "image/png"; its alpha channel is the mask. Empty when unknown.
+  string content_type = 2;
+
+  // Content-addressed and immutable, cached like ProductImage.url. Empty
+  // when no public media base is configured.
+  string url = 3;
+}
+
+// The opaque pixels in the bottom contact band, the lowest 8 % of the image's
+// height ending at its lowest opaque row, as fractions of the image width.
+message ContactBand {
+  // Horizontal centre of the band's opaque pixels, 0 to 1 from the left.
+  double center_x_frac = 1;
+
+  // Width of the band's opaque pixels, 0 to 1.
+  double width_frac = 2;
 }
 
 // ---------------------------------------------------------------------------

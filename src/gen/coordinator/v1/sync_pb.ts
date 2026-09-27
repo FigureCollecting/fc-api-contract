@@ -12,7 +12,7 @@
 // THE WIRE EVENT is {facet_key, version, op, payload} and nothing else. The
 // merge rule it serves is LWW-per-facet: the client applies an event when
 // `version > local[facet_key]`, and drops it otherwise. Per-facet, not
-// per-record — two devices editing different facets of the same holding both
+// per-record — two devices editing different facets of the same record both
 // win, which is the property bare record-level LWW throws away.
 //
 // SEVEN RULES THIS SHAPE ENCODES:
@@ -134,10 +134,9 @@
 //     earlier-listed check fails, whatever the field's policy and whatever
 //     the stored version. Every version the server emits, in Delta or as
 //     `current`, is at most server_now + 5 minutes when emitted: a pushed
-//     one by the check order, the import by min(export_date, server_now),
-//     and every other server write, server-owned facets included, at most
-//     server_now. The Hlc folds tokens unclamped, so the bound depends on
-//     this. server_now is one clock that never steps back: the one Status
+//     one by the check order, and every server write, the import and
+//     server-owned facets included, at most server_now. The Hlc folds tokens
+//     unclamped, so the bound depends on this. server_now is one clock that never steps back: the one Status
 //     samples and the one version_future checks against.
 //
 //     A larger forward gap is a sleep (monotonic time stalls) or a wall-clock
@@ -186,41 +185,122 @@
 //     are the guard. From 0.2.0 on the grammar is frozen: extend it only by a
 //     further fixed-width suffix, never by a separate field.
 //
-//  6. USER-OWNED FACET KEYS. The client may write only these four keys;
-//     every other key is server-owned and a Push of one is REJECTED:
+//  6. USER-OWNED FACET KEYS (0.3.0). The client may write only the keys in
+//     this table; every other key is server-owned and a Push of one is
+//     REJECTED facet_key_not_user_owned. {occ}, {cid} and {tag} are
+//     device-minted uuids and {head_id} is the spine product id, all spelled
+//     as PostgreSQL renders a uuid: lowercase, dashed. {kind} is owned,
+//     ordered, wished or former. `default` is legal only as a collection id.
 //
-//         holding/{head_id}/status   {"status": "owned"|"ordered"|"wished", ...}
-//         holding/{head_id}/count    {"count": 1..9999, ...}
-//         uf/{head_id}/score         {"score": 1..10, ...}
-//         uf/{head_id}/note          {"note": "<= 10,000 code points", ...}
+//         occ/{occ}/head                    {"head_id": uuid}
+//         occ/{occ}/status                  {"status": "owned"|"ordered"|"wished"|"former"}
+//         occ/{occ}/collection              {"collection": "{kind}/{cid|default}"}
+//         occ/{occ}/disposal                {"reason": "sold"|"traded"|"gifted"|"damaged"|
+//                                            "lost"|"stolen"|"other", "on"?, "note"?,
+//                                            "counterparty"?, "price"?: {"amount", "currency"}}
+//         occ/{occ}/tag/{tag}               {}
+//         uf/{head_id}/score                {"score": 1..10}
+//         uf/{head_id}/note                 {"note": "<= 10,000 code points"}
+//         uf/{head_id}/wishability          {"wishability": 1..5}
+//         uf/{head_id}/tag/{tag}            {}
+//         uf/{head_id}/ktag/{kind}/{tag}    {}
+//         coll/{kind}/{cid|default}/name    {"name": "1..100 code points"}
+//         tag/{tag}/name                    {"name": "1..100 code points"}
 //
-//     head_id is the spine product id as PostgreSQL renders a uuid:
-//     lowercase, dashed. One status register per (user, product) is the
-//     holding grain; moving Owned to Wished rewrites one facet. A holding
-//     exists while its status facet is live; count, score and note are
-//     shown only alongside a live status. Every payload also carries
-//     edited_at (ISO-8601 with the device's local offset) and tz (IANA
-//     name), for display only. JSON Schemas ship in schemas/. The schemas
-//     check writes only: the client before it mints, the server on Push. A
-//     reader never validates an inbound payload against them, so a property
-//     added later cannot break an installed phone.
+//     Every payload in this table also carries edited_at (ISO-8601 with the
+//     device's local offset) and tz (IANA name), for display only; {} carries
+//     nothing else.
 //
-//     Keys are written against the head_id at write time and never re-keyed.
-//     Every facet of a holding is keyed by the head_id its status facet was
-//     first written under, never by the ProductCard.head_id on screen. After
-//     an ER merge the card names the survivor, and a score keyed on the
-//     survivor would sit beside no live status and stay hidden. So a write
-//     for a card uses the requested_as ref that holds a live status; only a
-//     card with none uses card.head_id. When two held ids merge into one
-//     card, the status with the higher version is displayed (a tombstone
-//     counts as no status), with the count, score and note keyed beside it,
-//     and new writes go to its head_id. A delete on a merged card tombstones
-//     every live status among requested_as, each minted on its own facet's
-//     version, so one delete clears the card and an older status does not
-//     resurface. A client that hydrates over several GetProducts calls
-//     groups cards by head_id across every call and page and unions their
+//     SERVER-OWNED KEYS a client reads but never pushes:
+//
+//         occ/{occ}/origin                  {"site", "native_id", "ordinal"}: the
+//                                           import row the copy came from
+//         imp/{site}/base/{key}             the import's base for {key}
+//         imp/{site}/conflict/{key}         a re-import conflict on {key}
+//
+//     ({key} is a key the import writes; import.proto has the rule.)
+//
+//     RETIRED: holding/{head_id}/status and holding/{head_id}/count (0.2.x)
+//     are no longer user-owned; a Push of either is REJECTED
+//     facet_key_not_user_owned. Rows already stored stay inert.
+//
+//     OCCURRENCES. An occurrence is one copy, physical or intended (wished
+//     or ordered): one record per copy and no quantity field. A quantity, per
+//     figure and kind or per collection, is the count of live occurrences, so
+//     a move can never create or lose a copy. An occurrence is live while its
+//     status facet is live and its head facet is present; one with a live
+//     status and no head (a partial batch) is hidden, flagged and never
+//     counted. The head is written with the first status and never tombstoned
+//     by an ordinary removal, so a removed copy keeps its figure and undo
+//     (re-upserting the status) restores it whole. A wrong-variant fix or an
+//     ER un-merge re-points a copy with one write of its head. Removing a copy
+//     tombstones its status (soft delete). `former` is a live status (no
+//     longer owned) and is never counted as held. A disposal describes a
+//     former copy; it is kept, and hidden, while the status is anything else.
+//
+//     COLLECTIONS AND THE DISPLAY RULE. A collection's kind is part of its
+//     key. Every user has the four {kind}/default collections implicitly:
+//     they need no create and cannot be deleted, and a name facet only
+//     renames one. A user collection exists while its name facet is live. A
+//     copy is shown in its filed collection if that collection exists and its
+//     kind equals the copy's status; otherwise in {status}/default, flagged
+//     when the filing is dangling or of another kind. So every live copy
+//     shows in exactly one collection, and a stale filing can lose a move but
+//     never an arrival. A device write that changes a copy's kind also writes
+//     or tombstones its filing in the same batch; the import never writes
+//     filing. Deleting a collection tombstones its name only: its copies show
+//     in the default, and undo restores them.
+//
+//     TAGS. A tag exists while tag/{tag}/name is live. Membership is one facet
+//     per (target, tag): upsert = member, tombstone = not. Three scopes:
+//     occ/{occ}/tag/{tag} is one copy; uf/{head_id}/tag/{tag} is the figure as
+//     a whole, with or without copies; uf/{head_id}/ktag/{kind}/{tag} is every
+//     copy of the figure whose status is {kind}, evaluated at read time, so a
+//     copy that arrives later picks it up and one that leaves drops it with no
+//     write. The effective tags of a copy are its own, its figure's, and its
+//     figure's tags for its status. Tags never change a status or a filing.
+//
+//     LIBRARY. A figure is in the library while any live user facet
+//     references it: a live occurrence's head or any live uf/{head_id} facet.
+//
+//     READERS. A reader stores an unknown key form, kind, status or reason,
+//     hides it, never counts it and never pushes it, and re-parses its stored
+//     rows on every local-store upgrade, so a later release's keys need no
+//     device migration.
+//
+//     PICKS. An action on one of N identical copies picks by occurrence id
+//     alone: the lowest to receive or keep, the highest to remove. Two
+//     devices acting on the same intent then converge on the same copy.
+//
+//     PAYLOADS. JSON Schemas ship in schemas/, every one closed
+//     (additionalProperties false). The schemas check writes only: the client
+//     before it mints, the server on Push. A published payload schema never
+//     gains a property; a new attribute is a new facet key. Every write
+//     replaces the whole payload, so an older writer would silently drop a
+//     property it does not know.
+//
+//     ER MERGES. Keys are written against the ids of their time and never
+//     re-keyed, and occurrence, collection and tag ids are never reused. A
+//     card groups occurrences whose head is any of its requested_as, and
+//     their counts sum; there is no status tiebreak. For each uf field the
+//     live facet with the higher version among requested_as is displayed, and
+//     new writes go to its head_id (a card with none uses card.head_id); a
+//     delete tombstones that field on every requested_as head holding it
+//     live, each minted on its own facet's version. Tag sets union across
+//     requested_as, and an untag tombstones the membership on every head that
+//     holds it. A client that hydrates over several GetProducts calls groups
+//     cards by head_id across every call and page and unions their
 //     requested_as; the display, write-target and delete rules apply to that
-//     union. Re-keying or merging holdings is a later change.
+//     union.
+//
+//     PRIVACY. Every user-owned facet is private to its user. Neither the
+//     coordinator nor a client logs a payload or a name facet.
+//
+//     SEMANTIC CHANGE, SAFE ONLY BECAUSE NO DEVICE HAS INSTALLED AND NO IMPORT
+//     HAS RUN. 0.3.0 replaces 0.2.x's per-figure holding grain (one status per
+//     user and product) with per-copy occurrences. buf cannot see a key
+//     change: the wire is unchanged, and this comment, golden/key-vectors.json
+//     and the vocabulary tests are the guard. 0.2.x is deprecated.
 //
 //  7. DEFERRED, DELIBERATELY. There is no Resync or prune signal and no Ack
 //     RPC in 0.2.0: the feed never prunes yet. The recovery for an unreadable
@@ -659,7 +739,8 @@ export enum PushOutcome {
    *   version_malformed         not the grammar of rule 5 (a user-owned key
    *                             needs the full <instant>#<counter>#<device>)
    *   version_future            instant later than server_now + 5 minutes
-   *   facet_key_not_user_owned  the key is not one of rule 6's four forms
+   *   facet_key_not_user_owned  the key is not one of rule 6's user-owned forms
+   *                             (a retired holding/* key included)
    *   device_mismatch           the version's device id is not the caller's
    *                             DPoP-bound device
    *   payload_invalid           the payload is over MAX_PAYLOAD_BYTES (rule 3),

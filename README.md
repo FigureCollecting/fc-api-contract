@@ -14,10 +14,11 @@ published to GitHub Packages as `@figurecollecting/fc-api-contract`.
 
 The package ships a few **hand-written helpers**, and only for grammars that are part of the wire
 contract: the `version` token (`parseVersion`, `compareVersion`, `canonicalInstant`,
-`canonicalVersion`, and the `Hlc` that mints tokens) and the user-owned facet keys
-(`parseUserFacetKey`, `userFacetKey`). The coordinator and every client must order and validate
-these identically, so they live next to the protos with a shared test file,
-`golden/version-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
+`canonicalVersion`, and the `Hlc` that mints tokens) and the facet keys (`parseUserFacetKey`,
+`parseServerFacetKey`, `buildFacetKey` and one builder per family, `parseCollectionRef`,
+`mfcImportOccName`). The coordinator and every client must order and validate these identically,
+so they live next to the protos with shared test files, `golden/version-vectors.json` and
+`golden/key-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
 
 ## The compatibility rule
 
@@ -69,9 +70,10 @@ proto/coordinator/v1/import.proto    ImportMfcExport
 src/gen/                             generated TypeScript — COMMITTED, never hand-edited
 src/index.ts                         re-export barrel
 src/version.ts, src/hlc.ts           version grammar, comparator, HLC
-src/sync-vocabulary.ts               user-owned facet keys, holding states, REJECTED reason codes
+src/sync-vocabulary.ts               facet-key grammar and builders, occurrence statuses, REJECTED reason codes
 golden/version-vectors.json          version cases every implementation tests against
-schemas/                             JSON Schemas for the four user-owned facet payloads
+golden/key-vectors.json              facet-key cases every implementation tests against
+schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
 tests/                               codec round-trips and the invariants the comments claim
 ```
 
@@ -120,6 +122,23 @@ A grammar change passes `buf breaking`, so it is a semantic break buf cannot see
 (0.1.0 sketched `<instant>#<counter>` with no device id) and it is safe only because no 0.1.0
 `SyncService` consumer exists. The grammar is frozen from here: extend it only by a further
 fixed-width suffix, never by a separate field.
+
+## Facet keys and payloads
+
+`sync.proto` rule 6 is the key table. A user's collection is **per copy**: each copy is an
+occurrence (`occ/{occ}/head`, `/status`, `/collection`, `/disposal`, `/tag/{tag}`), a quantity is
+the count of live copies, figure-level fields and tags live under `uf/{head_id}/…`, and
+collections and tags have name facets (`coll/{kind}/{cid|default}/name`, `tag/{tag}/name`). The
+server owns `occ/{occ}/origin` and the import's `imp/{site}/base|conflict/{key}` facets
+(`import.proto` has the three-way re-import rule). Every payload schema is closed and stays closed:
+a new attribute is a new facet key, never a new property, because every write replaces the whole
+payload and an older writer would drop a property it does not know.
+
+A key change passes `buf breaking` too. **0.3.0 made one**: it retired 0.2.x's per-figure
+`holding/{head_id}/status|count` grain for per-copy occurrences (a Push of a `holding/*` key is now
+REJECTED `facet_key_not_user_owned`). It is safe only because no device had installed 0.2.x and no
+import had run; 0.2.x is deprecated. `golden/key-vectors.json` and the vocabulary tests guard the
+grammar: every valid key parses to exactly one family and builds back to itself.
 
 ## Two doctrines the messages encode
 

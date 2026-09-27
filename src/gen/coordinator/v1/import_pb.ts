@@ -2,28 +2,75 @@
 // coordinator.v1 — importing a user's MyFigureCollection export.
 //
 // ONLINE ONLY. The phone uploads the CSV text; the coordinator resolves each
-// MFC id to a spine product and writes the user's holding facets through the
-// same apply path as SyncService.Push, so the import reaches every device as
-// ordinary Delta events.
+// MFC id to a spine product and writes the user's facets (sync.proto rule 6)
+// through the same apply path as SyncService.Push, under the per-user lock,
+// so the import reaches every device as ordinary Delta events.
 //
-// VERSIONING. Every write is versioned
+// VERSIONING (0.3.0). Every write of one import is versioned
 //
 //     <instant>#<per-user import counter>#<reserved server device>
 //
-// where <instant> is midnight UTC of export_date or the server's clock at
-// import, whichever is earlier, so an import never carries a future version.
-// The reserved server device is the all-zero id (sync.proto rule 5). The
-// per-user import counter increases with every import, so a second export
-// stamped with the same date still orders above the first. Any device edit
-// made after that instant outranks the import.
+// where <instant> is the server's clock when the import starts (at most
+// server_now) and the reserved server device is the all-zero id (sync.proto
+// rule 5). The per-user import counter increases with every import. Which
+// side's change stands is no longer decided by version: THE THREE-WAY RULE
+// below decides. A facet whose stored version is not below the import's (a
+// device edit minted within the clock skew of the import) is left, base
+// included, for the next import. The import stamps edited_at as midnight
+// UTC of export_date ("YYYY-MM-DDT00:00:00Z") and tz as "UTC".
 //
-// SNAPSHOT DIFF. A row in the export sets holding/{head_id}/status and, where
-// the columns exist, count, score and note. Keys follow sync.proto rule 6: a
-// row for a product the user already holds under a merged head_id writes
-// under that head_id. A holding absent from the export is removed (a status
-// tombstone) only when the import itself wrote its current status, which the
-// version's device id records. The import never removes a holding a device
-// wrote.
+// ROWS TO OCCURRENCES. A resolved row with Count n (blank means 1) is n
+// occurrences, ordinals k = 1..n, with
+//
+//     occ_id = uuidv5(MFC_IMPORT_OCC_NAMESPACE, "{user_id}:mfc:{mfc_id}:{k}")
+//
+// (user_id the coordinator's user uuid, lowercase and dashed; mfc_id as
+// exported; mfcImportOccName builds the name), so a re-import addresses the
+// same keys. With a copy it creates the import writes occ/{occ}/origin
+// {site "mfc", native_id, ordinal}, server-owned, and finds its occurrences
+// later through those origin facets, never by guessing ids. Per occurrence it
+// writes occ/{occ}/head (the resolved head_id) and occ/{occ}/status (Owned,
+// Ordered and Wished map to owned, ordered and wished); per head,
+// uf/{head_id}/score ("N/10"), note and wishability (1..5; 0 or blank is no
+// value). Rows that resolve to one head_id each add their occurrences, and
+// the uf values come from the lowest MFC id among them. The import never
+// writes a filing, a tag, a collection or a tag name, and 0.3.0 maps no
+// column to `former` or a disposal. A Count over 99 returns the row in
+// `unresolved` and nothing is written for it.
+//
+// THE THREE-WAY RULE (Ross, 2026-09-27: a field changed both in the app and
+// on MFC is presented to the user and not written until resolved). For each
+// facet K the import writes, the server keeps K's BASE, the value the last
+// import took from MFC, in imp/mfc/base/{K} (K's own payload schema; a
+// tombstone means MFC had no value). An import compares, over K's own fields
+// and never edited_at or tz: M, what this export states; B, the base; and A,
+// K as the server holds it (a tombstone or no facet is no value). An ordinal
+// absent from this export (its row gone, or its Count lowered) states no
+// status, and its head and origin are left alone; a head no row resolves to
+// states no score, note or wishability.
+//
+//   * M == B: MFC did not change it. Nothing is written.
+//   * M != B and A == B: only MFC changed it. K and the base are set to M.
+//   * M != B and A == M: both changed it alike. Only the base moves to M.
+//   * M != B, A != B and A != M: both changed it differently, a CONFLICT.
+//     K is not written. The base moves to M, so it holds MFC's side, and
+//     imp/mfc/conflict/{K} is upserted {against: K's version, export_date}.
+//
+// A conflict is PENDING while its facet is live and K's version is still
+// `against`. The user resolves it with an ordinary write to K through Push:
+// keep the app's value (write it again) or take MFC's (the base's value, or
+// a tombstone when the base is one). Any write to K after the conflict was
+// raised resolves it, so a client shows a pending conflict wherever K is
+// edited. Before its three-way, each import tombstones every conflict facet
+// that is no longer pending; the base already holds the value the user
+// decided against or took. A pending conflict is re-upserted, with the same
+// `against`, only when M changed again, and tombstoned when M now equals A.
+// A re-import of the same export writes nothing beyond those tombstones.
+//
+// SEMANTIC CHANGE (0.3.0), SAFE ONLY BECAUSE NO IMPORT HAS RUN. 0.2.x wrote
+// per-figure holding facets versioned at the export date, and any later
+// device edit won. The row counters keep their names; their 0.3.0 meanings
+// are on the fields below.
 // ============================================================================
 
 // @generated by protoc-gen-es v2.15.0 with parameter "target=ts,import_extension=js"
@@ -38,7 +85,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coordinator/v1/import.proto.
  */
 export const file_coordinator_v1_import: GenFile = /*@__PURE__*/
-  fileDesc("Chtjb29yZGluYXRvci92MS9pbXBvcnQucHJvdG8SDmNvb3JkaW5hdG9yLnYxIj8KFkltcG9ydE1mY0V4cG9ydFJlcXVlc3QSEAoIY3N2X3RleHQYASABKAkSEwoLZXhwb3J0X2RhdGUYAiABKAkizwEKF0ltcG9ydE1mY0V4cG9ydFJlc3BvbnNlEhAKCHJlc29sdmVkGAEgASgNEjQKCnVucmVzb2x2ZWQYAiADKAsyIC5jb29yZGluYXRvci52MS5VbnJlc29sdmVkTWZjUm93Eg0KBWFkZGVkGAMgASgNEg0KBW1vdmVkGAQgASgNEhEKCXVuY2hhbmdlZBgFIAEoDRIPCgdyZW1vdmVkGAYgASgNEhYKDmZhY2V0c193cml0dGVuGAcgASgNEhIKCmtlcHRfbmV3ZXIYCCABKA0iQAoQVW5yZXNvbHZlZE1mY1JvdxIOCgZtZmNfaWQYASABKAkSDgoGc3RhdHVzGAIgASgJEgwKBGxpbmUYAyABKA0ycwoNSW1wb3J0U2VydmljZRJiCg9JbXBvcnRNZmNFeHBvcnQSJi5jb29yZGluYXRvci52MS5JbXBvcnRNZmNFeHBvcnRSZXF1ZXN0GicuY29vcmRpbmF0b3IudjEuSW1wb3J0TWZjRXhwb3J0UmVzcG9uc2ViBnByb3RvMw");
+  fileDesc("Chtjb29yZGluYXRvci92MS9pbXBvcnQucHJvdG8SDmNvb3JkaW5hdG9yLnYxIj8KFkltcG9ydE1mY0V4cG9ydFJlcXVlc3QSEAoIY3N2X3RleHQYASABKAkSEwoLZXhwb3J0X2RhdGUYAiABKAki8gIKF0ltcG9ydE1mY0V4cG9ydFJlc3BvbnNlEhAKCHJlc29sdmVkGAEgASgNEjQKCnVucmVzb2x2ZWQYAiADKAsyIC5jb29yZGluYXRvci52MS5VbnJlc29sdmVkTWZjUm93Eg0KBWFkZGVkGAMgASgNEg0KBW1vdmVkGAQgASgNEhEKCXVuY2hhbmdlZBgFIAEoDRIPCgdyZW1vdmVkGAYgASgNEhYKDmZhY2V0c193cml0dGVuGAcgASgNEhIKCmtlcHRfbmV3ZXIYCCABKA0SGQoRb2NjdXJyZW5jZXNfYWRkZWQYCSABKA0SIgoab2NjdXJyZW5jZXNfc3RhdHVzX2NoYW5nZWQYCiABKA0SGwoTb2NjdXJyZW5jZXNfcmVtb3ZlZBgLIAEoDRIYChBjb25mbGljdHNfcmFpc2VkGAwgASgNEhkKEWNvbmZsaWN0c19wZW5kaW5nGA0gASgNEhAKCGtlcHRfYXBwGA4gASgNIlAKEFVucmVzb2x2ZWRNZmNSb3cSDgoGbWZjX2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCRIMCgRsaW5lGAMgASgNEg4KBnJlYXNvbhgEIAEoCTJzCg1JbXBvcnRTZXJ2aWNlEmIKD0ltcG9ydE1mY0V4cG9ydBImLmNvb3JkaW5hdG9yLnYxLkltcG9ydE1mY0V4cG9ydFJlcXVlc3QaJy5jb29yZGluYXRvci52MS5JbXBvcnRNZmNFeHBvcnRSZXNwb25zZWIGcHJvdG8z");
 
 /**
  * @generated from message coordinator.v1.ImportMfcExportRequest
@@ -75,7 +122,7 @@ export const ImportMfcExportRequestSchema: GenMessage<ImportMfcExportRequest> = 
  */
 export type ImportMfcExportResponse = Message<"coordinator.v1.ImportMfcExportResponse"> & {
   /**
-   * Rows whose MFC id resolved to a product.
+   * Rows whose MFC id resolved to a product and whose Count is at most 99.
    * added + moved + unchanged + kept_newer == resolved.
    *
    * @generated from field: uint32 resolved = 1;
@@ -83,55 +130,104 @@ export type ImportMfcExportResponse = Message<"coordinator.v1.ImportMfcExportRes
   resolved: number;
 
   /**
-   * Rows whose MFC id matched no product. Nothing is written for them.
+   * Rows whose MFC id matched no product, or whose Count is over 99.
+   * Nothing is written for them.
    *
    * @generated from field: repeated coordinator.v1.UnresolvedMfcRow unresolved = 2;
    */
   unresolved: UnresolvedMfcRow[];
 
   /**
-   * Resolved rows the user did not hold before.
+   * Resolved rows with no occurrence from an earlier import.
    *
    * @generated from field: uint32 added = 3;
    */
   added: number;
 
   /**
-   * Resolved rows whose status changed, e.g. Ordered to Owned.
+   * Resolved rows, not added, where this import wrote at least one
+   * occurrence status: a kind change, e.g. Ordered to Owned, or a Count
+   * change that added or removed copies.
    *
    * @generated from field: uint32 moved = 4;
    */
   moved: number;
 
   /**
-   * Resolved rows whose status was already as exported.
+   * Resolved rows neither added, moved nor kept_newer.
    *
    * @generated from field: uint32 unchanged = 5;
    */
   unchanged: number;
 
   /**
-   * Import-written holdings absent from this export, now tombstoned.
+   * MFC ids of earlier imports absent from this export for which this import
+   * tombstoned at least one occurrence status.
    *
    * @generated from field: uint32 removed = 6;
    */
   removed: number;
 
   /**
-   * Feed events this import produced across all four facet kinds. A
-   * re-import of the same export produces 0.
+   * Feed events this import produced, server-owned facets included. A
+   * re-import of the same export produces none beyond the tombstones of
+   * conflicts resolved since.
    *
    * @generated from field: uint32 facets_written = 7;
    */
   facetsWritten: number;
 
   /**
-   * Resolved rows whose status the import did not write, because a device
-   * edit to it is newer than the import's version.
+   * Resolved rows, not added or moved, where at least one occurrence status
+   * is held as a pending conflict: the app changed it too (0.3.0; see
+   * conflicts_pending).
    *
    * @generated from field: uint32 kept_newer = 8;
    */
   keptNewer: number;
+
+  /**
+   * Occurrences this import created.
+   *
+   * @generated from field: uint32 occurrences_added = 9;
+   */
+  occurrencesAdded: number;
+
+  /**
+   * Existing occurrences whose status this import changed to another kind.
+   *
+   * @generated from field: uint32 occurrences_status_changed = 10;
+   */
+  occurrencesStatusChanged: number;
+
+  /**
+   * Occurrences whose status this import tombstoned.
+   *
+   * @generated from field: uint32 occurrences_removed = 11;
+   */
+  occurrencesRemoved: number;
+
+  /**
+   * Facets this import held as a new conflict.
+   *
+   * @generated from field: uint32 conflicts_raised = 12;
+   */
+  conflictsRaised: number;
+
+  /**
+   * Conflicts pending after this import, earlier ones included.
+   *
+   * @generated from field: uint32 conflicts_pending = 13;
+   */
+  conflictsPending: number;
+
+  /**
+   * Facets the app changed and this export did not, kept as the app has
+   * them.
+   *
+   * @generated from field: uint32 kept_app = 14;
+   */
+  keptApp: number;
 };
 
 /**
@@ -165,6 +261,14 @@ export type UnresolvedMfcRow = Message<"coordinator.v1.UnresolvedMfcRow"> & {
    * @generated from field: uint32 line = 3;
    */
   line: number;
+
+  /**
+   * Why nothing was written: "no_product" (the MFC id matched no product)
+   * or "count_over_99". Empty from a 0.2.x server, meaning "no_product".
+   *
+   * @generated from field: string reason = 4;
+   */
+  reason: string;
 };
 
 /**

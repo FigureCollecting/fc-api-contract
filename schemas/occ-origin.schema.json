@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/occ-origin.schema.json",
+  "title": "occ/{occ}/origin payload",
+  "description": "UPSERT payload of occ/{occ}/origin, written by the import with a copy it creates: the export row the copy came from. The import finds its copies again through these. Serialized, at most 135 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site",
+    "native_id",
+    "ordinal"
+  ],
+  "properties": {
+    "site": {
+      "description": "The source's site key, e.g. mfc.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "native_id": {
+      "description": "The source's id for the row's item, verbatim.",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z._~:-]{1,64}$"
+    },
+    "ordinal": {
+      "description": "Which of the row's Count copies, 1 to 99.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 99
+    }
+  }
+}

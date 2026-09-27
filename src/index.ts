@@ -4,8 +4,8 @@
 // The hand-written helpers (version, hlc, sync-vocabulary) exist because the
 // merge token's grammar and the facet-key grammar are part of the contract:
 // the coordinator and every client must order and validate them identically,
-// and golden/version-vectors.json is the shared test. UI helpers stay in
-// fc-shared.
+// and golden/version-vectors.json and golden/key-vectors.json are the shared
+// tests. UI helpers stay in fc-shared.
 
 export {
   CompareRequestSchema,
@@ -58,6 +58,8 @@ export {
   GetProductImagesResponseSchema,
   ProductImagesSchema,
   ProductImageSchema,
+  ImageMaskSchema,
+  ContactBandSchema,
   SearchProductsRequestSchema,
   SearchProductsResponseSchema,
   CatalogService,
@@ -74,6 +76,8 @@ export type {
   GetProductImagesResponse,
   ProductImages,
   ProductImage,
+  ImageMask,
+  ContactBand,
   SearchProductsRequest,
   SearchProductsResponse,
 } from './gen/coordinator/v1/catalog_pb.js';
@@ -109,17 +113,54 @@ export { Hlc } from './hlc.js';
 export type { HlcClock, HlcOptions, HlcState } from './hlc.js';
 
 export {
-  HOLDING_STATUSES,
+  COLLECTION_KINDS,
+  DEFAULT_COLLECTION_ID,
+  DISPOSAL_REASONS,
+  FACET_KEY_GRAMMARS,
+  IMPORT_WRITTEN_FAMILIES,
   MAX_PAYLOAD_BYTES,
+  MFC_IMPORT_OCC_NAMESPACE,
+  OCCURRENCE_STATUSES,
+  OCC_FIELDS,
   PUSH_REJECT_REASONS,
-  USER_FACET_FIELDS,
+  SERVER_FACET_FAMILIES,
+  SERVER_FACET_PAYLOAD_SCHEMAS,
+  UF_FIELDS,
+  USER_FACET_FAMILIES,
   USER_FACET_PAYLOAD_SCHEMAS,
+  buildFacetKey,
+  collNameKey,
+  collectionRef,
+  importBaseKey,
+  importConflictKey,
+  mfcImportOccName,
+  occFacetKey,
+  occOriginKey,
+  occTagKey,
+  parseCollectionRef,
+  parseServerFacetKey,
   parseUserFacetKey,
-  userFacetKey,
+  payloadSchemaPath,
+  tagNameKey,
+  ufFacetKey,
+  ufKindTagKey,
+  ufTagKey,
 } from './sync-vocabulary.js';
 export type {
-  HoldingStatus,
+  CollectionKind,
+  CollectionRef,
+  DisposalReason,
+  FacetFamily,
+  FacetKey,
+  FacetKeyGrammar,
+  ImportTargetKey,
+  ImportWrittenFamily,
+  OccField,
+  OccurrenceStatus,
   PushRejectReason,
-  UserFacetField,
+  ServerFacetFamily,
+  ServerFacetKey,
+  UfField,
+  UserFacetFamily,
   UserFacetKey,
 } from './sync-vocabulary.js';

@@ -1,23 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://figurecollecting.com/schemas/coordinator/v1/holding-status.schema.json",
-  "title": "holding/{head_id}/status payload",
-  "description": "UPSERT payload of holding/{head_id}/status. Removing the holding is a DELETE with an empty payload. Serialized, at most 142 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/uf-wishability.schema.json",
+  "title": "uf/{head_id}/wishability payload",
+  "description": "UPSERT payload of uf/{head_id}/wishability: how much the user wants the figure, as MFC's Wishability rates it. Clearing it is a DELETE. Serialized, at most 139 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "status",
+    "wishability",
     "edited_at",
     "tz"
   ],
   "properties": {
-    "status": {
-      "description": "The one status register per (user, product).",
-      "enum": [
-        "owned",
-        "ordered",
-        "wished"
-      ]
+    "wishability": {
+      "description": "1 to 5. MFC's 0 (unrated) is no facet.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
     },
     "edited_at": {
       "description": "When the user made the edit, in the device's local time with its offset (at most ±18:00). Display only; never compared, never restamped.",
