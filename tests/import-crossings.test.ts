@@ -37,7 +37,7 @@ describe('golden import vectors: crossings over several keys (sync.proto rule 6,
   it('cover both GR-Q3 copies and both mint times, a raise, a no-net-change sale, a kind change, other rows and kinds, a replay, another device and conflicts', () => {
     const names = vectors.keyedCrossings.map((c) => c.name).join('\n');
     for (const topic of [/GR-Q3 offline \(S1\): the phone sold o1/, /sold o2/, /GR-Q3 \(S2\)/, /raise \(S1\)/, /raise \(S2\)/, /changes nothing/, /another copy's kind/, /another row/, /replay/, /another device/, /conflict raised .* before the import \(S1\)/, /conflict raised .* after the import \(S2\)/, /conflict the client had taken/,
-      /crosses the cancel and does not close it/, /removal of o2 arriving first/, /wrong-variant fix offline \(S1\)/, /after the import ran \(S2\), pushed and APPLIED: the older removal of o2/, /re-pointed onto the row's figure/, /re-pointed off the figure crosses no removal/, /shows another kind crosses no addition/, /two MFC rows for one figure: the phone sold/, /replay from an empty cursor after the user resolved/, /after the push, before the echoes/]) {
+      /crosses the cancel and does not close it/, /removal of o2 arriving first/, /wrong-variant fix offline \(S1\)/, /after the import ran \(S2\), pushed and APPLIED: the older removal of o2/, /re-pointed onto the row's figure/, /re-pointed off the figure crosses no removal/, /shows another kind crosses no addition/, /two MFC rows for one figure: the phone sold/, /replay from an empty cursor after the user resolved/, /after the push, before the echoes/, /another MFC row for the figure, set back offline to the kind MFC adds/]) {
       expect(names).toMatch(topic);
     }
     const steps = vectors.keyedCrossings.flatMap((c) => c.steps);

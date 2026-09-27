@@ -427,6 +427,18 @@
       {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
       {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
       {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {}, "outbox": []}}
+    ]},
+    {"name": "a copy of another MFC row for the figure, set back offline to the kind MFC adds, crosses MFC's new copy: it may be the same copy", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/p1/origin", "value": "900", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/p1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/p1/status", "value": null, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/p1/status", "value": "owned", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o2/status": null, "occ/p1/status": "owned"}, "crossings": {"occ/o2/status": "owned"}, "outbox": [["occ/p1/status", "owned"]]}}
     ]}
   ],
   "conflictPushes": [
