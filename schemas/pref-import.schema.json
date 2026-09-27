@@ -2,12 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/pref-import.schema.json",
   "title": "pref/{site}/import payload",
-  "description": "UPSERT payload of pref/{site}/import: the user's import preferences (import.proto WHAT AN IMPORT DOES WITH A DECISION), read when an import starts. Serialized, at most 221 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "description": "UPSERT payload of pref/{site}/import: the user's import preferences (import.proto WHAT AN IMPORT DOES WITH A DECISION), read when an import starts. Serialized, at most 193 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "import_policy",
-    "mfc_only",
     "edited_at",
     "tz"
   ],
@@ -18,13 +17,6 @@
         "ASK",
         "FAVOR_APP",
         "FAVOR_MFC"
-      ]
-    },
-    "mfc_only": {
-      "description": "A change only MFC made to a figure the import knew: APPLY_AND_LIST (written, and listed with an undo; the default) or HOLD (a figure item until confirmed).",
-      "enum": [
-        "APPLY_AND_LIST",
-        "HOLD"
       ]
     },
     "disposition_list": {

@@ -215,9 +215,7 @@
 //                                            "take"|"per_copy"|"undo"|"dismiss",
 //                                            "copies"?, "fields"?}
 //         pref/{site}/import                {"import_policy": "ASK"|"FAVOR_APP"|
-//                                            "FAVOR_MFC", "mfc_only":
-//                                            "APPLY_AND_LIST"|"HOLD",
-//                                            "disposition_list"?}
+//                                            "FAVOR_MFC", "disposition_list"?}
 //
 //     Every payload in this table also carries edited_at (ISO-8601 with the
 //     device's local offset) and tz (IANA name), for display only; {} carries
@@ -229,9 +227,9 @@
 //
 //         occ/{occ}/origin                  {"site", "native_id", "ordinal"}: the
 //                                           import row the copy came from
-//         imp/{site}/figure/{head_id}       a figure item: a conflict, a change
-//                                           held for confirmation, or a divergence
-//         imp/{site}/held/{head_id}         the late edits held on the figure
+//         imp/{site}/figure/{head_id}       a figure item: a conflict or a
+//                                           divergence
+//         imp/{site}/held/{head_id}         the edits held on the figure
 //         imp/{site}/change/{head_id}       a change an import made, with its undo
 //         imp/{site}/align/{head_id}        what to change on MFC, by hand, so it
 //                                           matches the app (align-MFC)
@@ -565,9 +563,10 @@ enum PushOutcome {
   // facets.
   PUSH_OUTCOME_REJECTED = 5;
 
-  // Kept on the server but not applied: a late edit the server holds for the
-  // user (import.proto HELD), because the device made it without seeing an
-  // import's result, or a decision on its figure, that it would change.
+  // Kept on the server but not applied: an edit the server holds for the user
+  // (import.proto HELD): a late edit that would change an import's result
+  // another device acted on, or a decision made on its figure without it; or an
+  // edit that acted on a result a replay has since revised.
   // `current` is the facet as the server holds it, adopted like any outcome;
   // the figure's held-edit card imp/{site}/held/{head_id} shows the held edits
   // for the user to keep or drop.

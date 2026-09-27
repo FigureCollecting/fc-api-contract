@@ -178,11 +178,10 @@
 //     user can undo it like an answer (R5). A preference applies to conflicts
 //     only, never to a change only one side made.
 //   * A decision that writes, because only MFC changed, on a figure the import
-//     had a row base for is written, and listed with its undo as a change entry
-//     of kind "applied", when mfc_only is APPLY_AND_LIST, the default. With HOLD
-//     nothing is written, no base moves, and it is a figure item of kind
-//     "mfc_change" (R3). A figure new to the import (no row base) is always
-//     added, counted in `added` and never listed.
+//     had a row base for is written to the copies the app left untouched, and
+//     listed with its undo as a change entry of kind "applied" (R3; Ross, CT4
+//     (a)). A figure new to the import (no row base) is added, counted in
+//     `added` and never listed.
 //   * Every other decision settles. Then, when a part of the projection
 //     differs and is not acknowledged at its present values (ACKNOWLEDGED), the
 //     difference is the app's: MFC has not caught up with it. It writes nothing
@@ -217,33 +216,48 @@
 // push in push order: the push's edits to one copy's head, status, collection
 // and disposal are one unit, held or replayed together; every other edit (a
 // tag, a figure value) is a unit by itself. A unit is late when an edit of it
-// is late. A unit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown in
-// its figure's held-edit card, when
-//   (i)   it is late, it passes the RELEVANCE TEST (placing its late edits
-//         before their import I would change S's copies, their status and
-//         head, or S's items: the server replays S both ways, every earlier
-//         input as decided and the push's later units as if not held, and
-//         compares), and a REACTION arrived before it or in the same push: a
-//         knowing edit, made after I without having seen the unit's replay,
-//         that writes a copy whose status or head the two placements leave
-//         different, or that adds a copy to S (writes the head or status of a
-//         copy that had no head when I ran). HOLD ON REACTION: another device
-//         acted on the result the late edit would withdraw;
-//   (ii)  a knowing edit of it has its basis before a replay's revision of S
-//         (a withdrawal the device had not seen): it was made on a result that
-//         has since changed;
-//   (iii) it is late, its basis is before an answer on S that the server
-//         accepted (to any of S's items), and it passes the relevance test: the
-//         user decided without it; or
+// is late. The RELEVANCE TEST of a late unit: the server replays S both ways,
+// the unit's late edits before their import I and at their arrival, every
+// earlier input as decided and the push's later units as if not held, and
+// compares S's LIVE COPIES (each copy's figure and kind, or out: a former or
+// removed copy is out whatever facets it keeps; the unit's own copies count
+// too) and S's ITEMS (its figure item, change entry and align-MFC entry, each
+// by its rev: an item changes when it appears, ends or takes a new rev, not
+// when it only shows the app's side anew); the unit passes when they differ. A
+// REACTION to a result is an edit, made after that result without having seen
+// what withdraws it, that writes a copy whose live state the two sides leave
+// different, that adds a copy to S (writes the head or status of a copy that
+// had no head when the import ran), or that writes the status or head of a copy
+// of S while S had an item, as its device saw it, that the two sides leave
+// different. A unit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown
+// in its figure's held-edit card, when
+//   (i)   it is late, it passes the relevance test, and a reaction to I's
+//         result arrived before it or in the same push: an edit made after I
+//         without having seen the unit's replay (knowing for I, whether or not
+//         it is late for a later import), the two sides being the two
+//         placements. HOLD ON REACTION: another device acted on the result the
+//         late edit would withdraw;
+//   (ii)  a knowing edit of it was made before a REVISION of S that its device
+//         had not seen, and is a reaction to the result the revision changed,
+//         the two sides being S before and after the revision. A revision is a
+//         push that replays a late edit and so changes S's live copies or
+//         items; an answer's writes are no revision. An edit that is no
+//         reaction (a tag on a copy the revision left alone, a figure value) is
+//         applied;
+//   (iii) it is late, its basis is before the commit of an answer on S that the
+//         server accepted (to any of S's items; a device that had applied the
+//         answer's transaction made its edit after the answer), and it passes
+//         the relevance test: the user decided without it; or
 //   (iv)  it is late for a frame the server no longer keeps. Frames are kept at
 //         least 180 days and while any enrolled device's cursor is before them.
 // The decision is final: a held unit stays held, whatever arrives later, until
-// its card is answered, and a unit replayed is never held later. A knowing edit
-// made before an answer reached its device is applied, never held. The card
-// lists the held units of S whole, oldest first, as many as fit in 16 edits,
-// and `more` counts the held edits it does not list. Its keep applies the
-// listed edits now, as knowing edits; its take drops them; the card then lists
-// the next.
+// its card is answered, and a unit replayed is never held later. An answer
+// holds no knowing edit: (iii) is for late units, and an answer's writes are no
+// revision. The card lists the held units of S whole, oldest first, as many as
+// fit in 16 edits, and `more` counts the held edits it does not list. Its keep
+// writes the listed edits now, as an answer's writes (above each facet's
+// current version, so over any edit made before the keep), each then a knowing
+// edit; its take drops them; the card then lists the next.
 //
 // ITEMS AND ANSWERS. The user answers an item by writing res/{site}/{S} through
 // Push, naming the item (figure, held, change or align), its rev and a choice.
@@ -264,12 +278,6 @@
 //     values, and per kind the live copies with the lowest occ ids, up to MFC's
 //     Count, get that base; other copies get base OUT, and MFC's Counts beyond
 //     the app's copies become placeholders.
-//   * An mfc_change. take: the change is applied now, as the import would have
-//     applied it, and in the same transaction what the app is ahead on (the
-//     parts of the projection that still differ, which the item shows beside
-//     MFC's) is raised as a divergence (R4); if the app has changed S since, the
-//     item becomes a conflict and the answer is STALE. keep: the bases realign
-//     and the app's side stays.
 //   * A divergence. keep ("MFC is behind") acknowledges it; take makes MFC's
 //     side true as for a conflict.
 //   * A held-edit card: keep or take, as HELD says.
@@ -277,33 +285,50 @@
 //     write restored while it still holds the value the import wrote (else
 //     STALE), and a favor_app settlement is taken now. dismiss: it goes.
 //   * An align-MFC entry: dismiss.
-// A figure item's rev states what the import that raised it found on both
-// sides (MFC's rows and the disputed parts): an import that finds MFC's side
-// unchanged keeps it, a knowing edit never changes it, and a late edit changes
-// it only when its replay changes what the raising import found. An item ends
-// by an answer naming it and its rev, when a later import finds MFC back at the
-// base or the two sides agreeing, when a knowing edit makes the sides of a
-// conflict agree, or at a spine merge (WHAT AN IMPORT DOES). A replay
-// re-derives items like the rest of S: a late edit replayed before the import
-// that raised an item can withdraw the item or change its rev, and every
-// device sees that as ordinary events (the item's tombstone, or its new rev).
-// An answer to an item a replay withdrew or re-revved is void: its writes go
-// with it, its recorded PushResult stands, and the client shows the item and
-// the facets as they now are. A replay voids an accepted answer only when S's
-// copies and items end the same either way; otherwise HELD (iii) holds the late
-// edit.
+// REVS. An answer names an item's rev, which is:
+//   * A conflict: the raising import with MFC's side and the disputed parts it
+//     found. An import that finds MFC's side unchanged keeps it, whatever the
+//     app did meanwhile.
+//   * A divergence: the raising import with both sides' values of the parts
+//     that differ. An import that finds the same values keeps it; other values,
+//     on either side, give a new rev.
+//   * A change entry: the import that made it, its kind and its writes.
+//   * A held-edit card: the edits it lists.
+//   * An align-MFC entry: its actions, so a dismissed entry returns only when
+//     they change.
+// So a figure item or change entry raised again after it ended has a new rev,
+// even when it is identical, and an answer to the old one is STALE. A knowing
+// edit never changes a figure item's rev, and a late edit changes it only when
+// its replay changes what the raising import found. An item ends by an answer
+// naming it and its rev, when a later import finds MFC back at the base or the
+// two sides agreeing, when a knowing edit makes the sides of a conflict agree,
+// or at a spine merge (WHAT AN IMPORT DOES). The sides of a conflict agree
+// when, decided again against the export that raised it, every part of the
+// figure is one MFC did not change or one the app now holds at MFC's value (for
+// the counts, as many live copies of each kind as MFC's Counts). The item then
+// ends and nothing else happens: nothing is written, no base moves, and the
+// next import decides the figure. A knowing edit that leaves the sides
+// differing leaves the conflict standing, and a late edit leaves it to the
+// import it is replayed before. A replay re-derives items like the rest of S: a
+// late edit replayed before the import that raised an item can withdraw the
+// item or change its rev, and every device sees that as ordinary events (the
+// item's tombstone, or its new rev). An answer to an item a replay withdrew or
+// re-revved is void: its writes go with it, its recorded PushResult stands, and
+// the client shows the item and the facets as they now are. A replay voids an
+// accepted answer only when S's live copies and items end the same either way;
+// otherwise HELD (iii) holds the late edit.
 //
-// ACKNOWLEDGED (R4, R7). A keep on a conflict, an mfc_change or a divergence,
-// a per_copy answer, an undo that restores the app's side, and a FAVOR_APP
-// settlement ACKNOWLEDGE the figure: the server records MFC's rows and, for
-// each part of the projection that differs, both sides' values, as they stand.
-// A take on a conflict or a divergence and a FAVOR_MFC settlement record them
-// too, with no align-MFC entry, since the user took MFC's side. An import
-// raises nothing for a part acknowledged at its present values, and records
-// MFC's rows as it found them, so a partial catch-up on MFC leaves the rest
-// acknowledged. A part that comes to differ at other values, by a new MFC
-// change or a new app change, re-opens the figure (a new item, with a new
-// rev); an import that finds every part equal ends the acknowledgement.
+// ACKNOWLEDGED (R4, R7). A keep on a conflict or a divergence, a per_copy
+// answer, an undo that restores the app's side, and a FAVOR_APP settlement
+// ACKNOWLEDGE the figure: the server records MFC's rows and, for each part of
+// the projection that differs, both sides' values, as they stand. A take on a
+// conflict or a divergence and a FAVOR_MFC settlement record them too, with no
+// align-MFC entry, since the user took MFC's side. An import raises nothing for
+// a part acknowledged at its present values, and records MFC's rows as it found
+// them, so a partial catch-up on MFC leaves the rest acknowledged. A part that
+// comes to differ at other values, by a new MFC change or a new app change,
+// re-opens the figure (a new item, with a new rev); an import that finds every
+// part equal ends the acknowledgement.
 //
 // ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
 // truth"). For an acknowledged figure that has an MFC id, the server keeps an
@@ -328,11 +353,11 @@
 // matching, and a dismissed entry is not shown again until its actions change.
 //
 // THE REVIEW SET (R7). The response carries, in this order, the pending figure
-// items of kind conflict, then mfc_change, then divergence, then the held-edit
-// cards, then the align-MFC entries as a separate, dismissable group; each
-// group in head_id order, each item with the answers it allows, and a bulk
-// answer per group (conflict: keep or take; mfc_change: take or keep;
-// divergence: keep or take; held edits: keep or take; align-MFC: dismiss).
+// items of kind conflict, then divergence, then the held-edit cards, then the
+// align-MFC entries as a separate, dismissable group; each group in head_id
+// order, each item with the answers it allows, and a bulk answer per group
+// (conflict: keep or take; divergence: keep or take; held edits: keep or take;
+// align-MFC: dismiss).
 // Then the change entries this import made, each with undo. Before it presents
 // the review set, or mints any edit or answer, the client that asked for the
 // import pulls until it has applied the import's transaction: until its
@@ -376,7 +401,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coordinator/v1/import.proto.
  */
 export const file_coordinator_v1_import: GenFile = /*@__PURE__*/
-  fileDesc("Chtjb29yZGluYXRvci92MS9pbXBvcnQucHJvdG8SDmNvb3JkaW5hdG9yLnYxIj8KFkltcG9ydE1mY0V4cG9ydFJlcXVlc3QSEAoIY3N2X3RleHQYASABKAkSEwoLZXhwb3J0X2RhdGUYAiABKAkipwQKF0ltcG9ydE1mY0V4cG9ydFJlc3BvbnNlEhAKCHJlc29sdmVkGAEgASgNEjQKCnVucmVzb2x2ZWQYAiADKAsyIC5jb29yZGluYXRvci52MS5VbnJlc29sdmVkTWZjUm93Eg0KBWFkZGVkGAMgASgNEg0KBW1vdmVkGAQgASgNEhEKCXVuY2hhbmdlZBgFIAEoDRIPCgdyZW1vdmVkGAYgASgNEhYKDmZhY2V0c193cml0dGVuGAcgASgNEhIKCmtlcHRfbmV3ZXIYCCABKA0SGQoRb2NjdXJyZW5jZXNfYWRkZWQYCSABKA0SIgoab2NjdXJyZW5jZXNfc3RhdHVzX2NoYW5nZWQYCiABKA0SGwoTb2NjdXJyZW5jZXNfcmVtb3ZlZBgLIAEoDRIYChBjb25mbGljdHNfcmFpc2VkGAwgASgNEhkKEWNvbmZsaWN0c19wZW5kaW5nGA0gASgNEhsKE2RpdmVyZ2VuY2VzX3BlbmRpbmcYDiABKA0SFAoMY2hhbmdlc19oZWxkGA8gASgNEhUKDWFsaWduX3BlbmRpbmcYECABKA0SFQoNaW1wb3J0X251bWJlchgRIAEoDRIxCgZyZXZpZXcYEiADKAsyIS5jb29yZGluYXRvci52MS5JbXBvcnRSZXZpZXdHcm91cBIxCgdhcHBsaWVkGBMgAygLMiAuY29vcmRpbmF0b3IudjEuSW1wb3J0UmV2aWV3SXRlbSKgAQoRSW1wb3J0UmV2aWV3R3JvdXASLgoEa2luZBgBIAEoDjIgLmNvb3JkaW5hdG9yLnYxLkltcG9ydFJldmlld0tpbmQSLwoFaXRlbXMYAiADKAsyIC5jb29yZGluYXRvci52MS5JbXBvcnRSZXZpZXdJdGVtEioKBGJ1bGsYAyADKA4yHC5jb29yZGluYXRvci52MS5JbXBvcnRBbnN3ZXIigwEKEEltcG9ydFJldmlld0l0ZW0SEQoJZmFjZXRfa2V5GAEgASgJEg8KB2hlYWRfaWQYAiABKAkSCwoDcmV2GAMgASgJEi0KB2Fuc3dlcnMYBCADKA4yHC5jb29yZGluYXRvci52MS5JbXBvcnRBbnN3ZXISDwoHcGF5bG9hZBgFIAEoCSJQChBVbnJlc29sdmVkTWZjUm93Eg4KBm1mY19pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSDAoEbGluZRgDIAEoDRIOCgZyZWFzb24YBCABKAkq4gEKEEltcG9ydFJldmlld0tpbmQSIgoeSU1QT1JUX1JFVklFV19LSU5EX1VOU1BFQ0lGSUVEEAASHwobSU1QT1JUX1JFVklFV19LSU5EX0NPTkZMSUNUEAESIQodSU1QT1JUX1JFVklFV19LSU5EX01GQ19DSEFOR0UQAhIhCh1JTVBPUlRfUkVWSUVXX0tJTkRfRElWRVJHRU5DRRADEiEKHUlNUE9SVF9SRVZJRVdfS0lORF9IRUxEX0VESVRTEAQSIAocSU1QT1JUX1JFVklFV19LSU5EX0FMSUdOX01GQxAFKqwBCgxJbXBvcnRBbnN3ZXISHQoZSU1QT1JUX0FOU1dFUl9VTlNQRUNJRklFRBAAEhYKEklNUE9SVF9BTlNXRVJfS0VFUBABEhYKEklNUE9SVF9BTlNXRVJfVEFLRRACEhoKFklNUE9SVF9BTlNXRVJfUEVSX0NPUFkQAxIWChJJTVBPUlRfQU5TV0VSX1VORE8QBBIZChVJTVBPUlRfQU5TV0VSX0RJU01JU1MQBTJzCg1JbXBvcnRTZXJ2aWNlEmIKD0ltcG9ydE1mY0V4cG9ydBImLmNvb3JkaW5hdG9yLnYxLkltcG9ydE1mY0V4cG9ydFJlcXVlc3QaJy5jb29yZGluYXRvci52MS5JbXBvcnRNZmNFeHBvcnRSZXNwb25zZWIGcHJvdG8z");
+  fileDesc("Chtjb29yZGluYXRvci92MS9pbXBvcnQucHJvdG8SDmNvb3JkaW5hdG9yLnYxIj8KFkltcG9ydE1mY0V4cG9ydFJlcXVlc3QSEAoIY3N2X3RleHQYASABKAkSEwoLZXhwb3J0X2RhdGUYAiABKAkipQQKF0ltcG9ydE1mY0V4cG9ydFJlc3BvbnNlEhAKCHJlc29sdmVkGAEgASgNEjQKCnVucmVzb2x2ZWQYAiADKAsyIC5jb29yZGluYXRvci52MS5VbnJlc29sdmVkTWZjUm93Eg0KBWFkZGVkGAMgASgNEg0KBW1vdmVkGAQgASgNEhEKCXVuY2hhbmdlZBgFIAEoDRIPCgdyZW1vdmVkGAYgASgNEhYKDmZhY2V0c193cml0dGVuGAcgASgNEhIKCmtlcHRfbmV3ZXIYCCABKA0SGQoRb2NjdXJyZW5jZXNfYWRkZWQYCSABKA0SIgoab2NjdXJyZW5jZXNfc3RhdHVzX2NoYW5nZWQYCiABKA0SGwoTb2NjdXJyZW5jZXNfcmVtb3ZlZBgLIAEoDRIYChBjb25mbGljdHNfcmFpc2VkGAwgASgNEhkKEWNvbmZsaWN0c19wZW5kaW5nGA0gASgNEhsKE2RpdmVyZ2VuY2VzX3BlbmRpbmcYDiABKA0SFQoNYWxpZ25fcGVuZGluZxgQIAEoDRIVCg1pbXBvcnRfbnVtYmVyGBEgASgNEjEKBnJldmlldxgSIAMoCzIhLmNvb3JkaW5hdG9yLnYxLkltcG9ydFJldmlld0dyb3VwEjEKB2FwcGxpZWQYEyADKAsyIC5jb29yZGluYXRvci52MS5JbXBvcnRSZXZpZXdJdGVtSgQIDxAQUgxjaGFuZ2VzX2hlbGQioAEKEUltcG9ydFJldmlld0dyb3VwEi4KBGtpbmQYASABKA4yIC5jb29yZGluYXRvci52MS5JbXBvcnRSZXZpZXdLaW5kEi8KBWl0ZW1zGAIgAygLMiAuY29vcmRpbmF0b3IudjEuSW1wb3J0UmV2aWV3SXRlbRIqCgRidWxrGAMgAygOMhwuY29vcmRpbmF0b3IudjEuSW1wb3J0QW5zd2VyIoMBChBJbXBvcnRSZXZpZXdJdGVtEhEKCWZhY2V0X2tleRgBIAEoCRIPCgdoZWFkX2lkGAIgASgJEgsKA3JldhgDIAEoCRItCgdhbnN3ZXJzGAQgAygOMhwuY29vcmRpbmF0b3IudjEuSW1wb3J0QW5zd2VyEg8KB3BheWxvYWQYBSABKAkiUAoQVW5yZXNvbHZlZE1mY1JvdxIOCgZtZmNfaWQYASABKAkSDgoGc3RhdHVzGAIgASgJEgwKBGxpbmUYAyABKA0SDgoGcmVhc29uGAQgASgJKuQBChBJbXBvcnRSZXZpZXdLaW5kEiIKHklNUE9SVF9SRVZJRVdfS0lORF9VTlNQRUNJRklFRBAAEh8KG0lNUE9SVF9SRVZJRVdfS0lORF9DT05GTElDVBABEiEKHUlNUE9SVF9SRVZJRVdfS0lORF9ESVZFUkdFTkNFEAMSIQodSU1QT1JUX1JFVklFV19LSU5EX0hFTERfRURJVFMQBBIgChxJTVBPUlRfUkVWSUVXX0tJTkRfQUxJR05fTUZDEAUiBAgCEAIqHUlNUE9SVF9SRVZJRVdfS0lORF9NRkNfQ0hBTkdFKqwBCgxJbXBvcnRBbnN3ZXISHQoZSU1QT1JUX0FOU1dFUl9VTlNQRUNJRklFRBAAEhYKEklNUE9SVF9BTlNXRVJfS0VFUBABEhYKEklNUE9SVF9BTlNXRVJfVEFLRRACEhoKFklNUE9SVF9BTlNXRVJfUEVSX0NPUFkQAxIWChJJTVBPUlRfQU5TV0VSX1VORE8QBBIZChVJTVBPUlRfQU5TV0VSX0RJU01JU1MQBTJzCg1JbXBvcnRTZXJ2aWNlEmIKD0ltcG9ydE1mY0V4cG9ydBImLmNvb3JkaW5hdG9yLnYxLkltcG9ydE1mY0V4cG9ydFJlcXVlc3QaJy5jb29yZGluYXRvci52MS5JbXBvcnRNZmNFeHBvcnRSZXNwb25zZWIGcHJvdG8z");
 
 /**
  * @generated from message coordinator.v1.ImportMfcExportRequest
@@ -470,9 +495,9 @@ export type ImportMfcExportResponse = Message<"coordinator.v1.ImportMfcExportRes
   facetsWritten: number;
 
   /**
-   * Resolved rows, not added, of a figure this import held for the user, the
-   * app's side kept meanwhile: a conflict, or a change held for confirmation
-   * (mfc_only HOLD). The 0.2.x name, a 0.3.0 meaning.
+   * Resolved rows, not added, of a figure whose decision is a conflict this
+   * import left for the user (ASK), the app's side kept meanwhile. The 0.2.x
+   * name, a 0.3.0 meaning.
    *
    * @generated from field: uint32 kept_newer = 8;
    */
@@ -523,13 +548,6 @@ export type ImportMfcExportResponse = Message<"coordinator.v1.ImportMfcExportRes
   divergencesPending: number;
 
   /**
-   * Figure items of kind mfc_change pending after this import.
-   *
-   * @generated from field: uint32 changes_held = 15;
-   */
-  changesHeld: number;
-
-  /**
    * Align-MFC entries pending after this import; a dismissed one is not.
    *
    * @generated from field: uint32 align_pending = 16;
@@ -545,8 +563,8 @@ export type ImportMfcExportResponse = Message<"coordinator.v1.ImportMfcExportRes
   importNumber: number;
 
   /**
-   * THE REVIEW SET (R7), in order: conflict, mfc_change, divergence and held
-   * edits, then the align-MFC group. A group with no item is left out.
+   * THE REVIEW SET (R7), in order: conflict, divergence and held edits, then
+   * the align-MFC group. A group with no item is left out.
    *
    * @generated from field: repeated coordinator.v1.ImportReviewGroup review = 18;
    */
@@ -714,14 +732,6 @@ export enum ImportReviewKind {
    * @generated from enum value: IMPORT_REVIEW_KIND_CONFLICT = 1;
    */
   CONFLICT = 1,
-
-  /**
-   * A figure item of kind "mfc_change": only MFC changed, held for
-   * confirmation (mfc_only HOLD).
-   *
-   * @generated from enum value: IMPORT_REVIEW_KIND_MFC_CHANGE = 2;
-   */
-  MFC_CHANGE = 2,
 
   /**
    * A figure item of kind "divergence": only the app changed; MFC is behind.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/imp-figure.schema.json",
   "title": "imp/{site}/figure/{head_id} payload",
-  "description": "UPSERT payload of imp/{site}/figure/{head_id}: a figure item (import.proto THE SERVER DECIDES), a conflict (both sides changed, differently), an mfc_change (only MFC changed, held for confirmation) or a divergence (only the app changed: MFC is behind). The user answers it with res/{site}/{head_id} naming its rev. A tombstone means none is pending. Serialized, at most 3,474,673 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
+  "description": "UPSERT payload of imp/{site}/figure/{head_id}: a figure item (import.proto THE SERVER DECIDES): a conflict (both sides changed, differently) or a divergence (only the app changed: MFC is behind). The user answers it with res/{site}/{head_id} naming its rev. A tombstone means none is pending. Serialized, at most 3,474,673 bytes of UTF-8 as JSON.stringify writes it. Server-owned: a Push of this key is REJECTED facet_key_not_user_owned.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "rev": {
-      "description": "Opaque; states what the import that raised the item found on both sides: kept by an import that finds MFC's side unchanged, never changed by a knowing edit, and changed by a late edit only when its replay changes what that import found. An answer names it.",
+      "description": "Opaque; names one raising of the item (import.proto REVS): a conflict's is kept by an import that finds MFC's side unchanged, a divergence's by one that finds the same values on both sides; never changed by a knowing edit, and changed by a late edit only when its replay changes what the raising import found. An item raised again after it ended has a new one. An answer names it.",
       "type": "string",
       "pattern": "^[0-9A-Za-z:._~-]{1,128}$"
     },
@@ -25,7 +25,6 @@
       "description": "What the item is.",
       "enum": [
         "conflict",
-        "mfc_change",
         "divergence"
       ]
     },

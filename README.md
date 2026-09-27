@@ -147,9 +147,9 @@ server owns `occ/{occ}/origin` and the import's items (`imp/{site}/figure|held|c
 and the marker `imp/{site}/import`); a user answers an item with `res/{site}/{head_id}` and keeps the
 import's preferences in `pref/{site}/import`. **The server decides** (`import.proto` THE SERVER
 DECIDES): every pushed event carries the basis it was made on, a late edit is replayed where it
-belongs, and conflicts, changes held for confirmation, divergences, held edits and what to change on
-MFC by hand come back as items the client shows right after the import, once it has pulled the
-import's transaction. A late edit another device has already reacted to is held, a copy's head,
+belongs, a change only MFC made is applied and listed with its undo, and conflicts, divergences,
+held edits and what to change on MFC by hand come back as items the client shows right after the
+import, once it has pulled the import's transaction. A late edit another device has already reacted to is held, a copy's head,
 status, filing and disposal together, until the user keeps or drops it. Copies the import creates
 get occ ids keyed by a secret only the coordinator holds. Every payload schema is closed and stays closed:
 a new attribute is a new facet key, never a new property, because every write replaces the whole
