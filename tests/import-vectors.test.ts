@@ -72,7 +72,7 @@ describe('golden import vectors: an import write crossing a client edit (sync.pr
 describe('golden import vectors: the re-import (import.proto)', () => {
   it('cover the three-way, ER merges, counts both ways, kinds, filing, absent rows, Count 0 and every unresolved reason', () => {
     const names = vectors.reimports.map((c) => c.name).join('\n');
-    for (const topic of [/spine merge/, /GR-Q3/, /lowered the Count/, /raised the Count/, /adopted/, /conflict per copy/, /filing/, /gone from the export/, /Count 0/, /numerically lowest/, /both bases at one version/, /more recent base stands/]) {
+    for (const topic of [/spine merge/, /GR-Q3/, /lowered the Count/, /raised the Count/, /adopted/, /conflict per copy/, /filing/, /gone from the export/, /Count 0/, /numerically lowest/, /both bases at one version/, /more recent base stands/, /two MFC rows for one figure: the app sold row 900's copy/, /the same sale: nothing is written/, /adopted in place of the removed one, and one copy is removed/, /adopted in place of the removed one, which is then restored/, /which row changed is unknown: a conflict/]) {
       expect(names).toMatch(topic);
     }
     const reasons = new Set(vectors.reimports.flatMap((c) => c.expect.unresolved.map((u) => u.reason)));

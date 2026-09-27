@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -131,6 +131,15 @@ describe('schemaGrowthViolations: a published payload schema never gains a prope
     const shrunk = edit((s) => s.properties.reason.enum.pop());
     expect(schemaGrowthViolations('d.json', DISPOSAL, grown)).toEqual([]);
     expect(schemaGrowthViolations('d.json', DISPOSAL, shrunk)).toEqual(['d.json: /properties/reason enum lost "traded"']);
+  });
+
+  it('flags an enum gained where there was none: an absent enum accepts every value, so a new one narrows', () => {
+    const SCORE = closed({ score: { type: 'integer', minimum: 1, maximum: 10 } });
+    const narrowed = structuredClone(SCORE);
+    Object.assign(narrowed.properties.score, { enum: [5, 6, 7] });
+    expect(schemaGrowthViolations('s.json', SCORE, narrowed)).toEqual(['s.json: /properties/score gained enum 5, 6, 7']);
+    const atTop = edit((s) => Object.assign(s, { enum: [{ reason: 'sold', edited_at: 'x' }] }));
+    expect(schemaGrowthViolations('d.json', DISPOSAL, atTop)).toEqual(['d.json: / gained enum {"reason":"sold","edited_at":"x"}']);
   });
 
   it('flags a schema that is no longer closed', () => {
@@ -301,6 +310,13 @@ describe('main', () => {
 });
 
 describe('this repository', () => {
+  it('says in the script header what is allowed: annotations and enum growth, never a narrowing', () => {
+    const header = readFileSync(new URL('../scripts/schema-growth.ts', import.meta.url), 'utf8').split('\nimport ')[0]!.replace(/\/\/ /g, '').replace(/\s+/g, ' ');
+    expect(header).not.toMatch(/never changes what it accepts/);
+    expect(header).toMatch(/never narrows what it accepts/);
+    expect(header).toMatch(/an enum may only grow, and none may be added where there was none/);
+  });
+
   it('retires only the 0.2.x holding schemas, each with its reason', () => {
     expect(Object.keys(RETIRED_SCHEMAS).sort()).toEqual(['holding-count.schema.json', 'holding-status.schema.json']);
     for (const why of Object.values(RETIRED_SCHEMAS)) expect(why).toMatch(/0\.3\.0/);

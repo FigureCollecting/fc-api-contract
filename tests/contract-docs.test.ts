@@ -255,21 +255,28 @@ describe('sync.proto', () => {
     const text = rule6();
     expect(text).toMatch(/IMPORT CROSSINGS\. An import write is an event whose version carries the reserved all-zero device \(rule 5\)\. The import's three-way rule \(import\.proto\) sees only edits the server holds, so a client catches the rest\./);
     expect(text).toMatch(/An edit of its own to K is OPEN from when the client mints it until its Delta delivers K at or above the edit's version, and a key's open edits CHANGE it unless the latest restates the value the client showed for the key before the oldest was minted\./);
-    expect(text).toMatch(/An arriving event is NEW to an open edit when the client had not taken that version of the event's key, or a higher one, before the edit was minted\./);
-    expect(text).toMatch(/An import write to K, or a conflict raised on K \(a write to imp\/mfc\/conflict\/\{K\}, MFC's side being imp\/mfc\/base\/\{K\}\), arriving in Delta or as `current` on a STALE result, is checked against the open edits it is new to\./);
-    expect(text).toMatch(/Of those, the ones to K are dropped when none of them has been pushed and together they do not change K\./);
+    expect(text).toMatch(/An edit crossed or held by a pending import conflict stays OPEN until that conflict ends, whatever the Delta delivers meanwhile: the event that crosses it never closes it, and a delivery at or above its version meanwhile closes it when the conflict ends\./);
+    expect(text).toMatch(/An arriving event is NEW when the client has not taken that version of its key, or a higher one; one that is not \(a replay from an empty cursor, or a `current` already taken\) crosses nothing again, even once the user has resolved what it crossed\./);
+    expect(text).not.toMatch(/NEW to an open edit/);
+    expect(text).toMatch(/A new import write to K, or a new conflict raised on K \(a write to imp\/mfc\/conflict\/\{K\}, MFC's side being imp\/mfc\/base\/\{K\}\), arriving in Delta or as `current` on a STALE result, is checked against the client's open edits\./);
+    expect(text).toMatch(/Of those, the ones to K are dropped when none of them has been pushed and together they do not change K, and K's local facet reverts to the value and version it had before the oldest of them was minted\./);
     expect(text).toMatch(/Then, when MFC's side differs from the value the client shows for K \(K's own fields, never edited_at or tz; a tombstone is no value\), it CROSSES: \* the open edits to K; \* ROW GRAIN,/);
     expect(text).not.toMatch(/with a value different from the latest one's/);
     expect(text).toMatch(/An event that crosses no edit follows the ordinary rules\. One that crosses is neither applied nor dropped: the client keeps showing its own value, holds the event as MFC's side of a pending import conflict on K, stored with the outbox so a reload keeps it, and pushes no edit to K, or to the key of an edit it crossed, until the conflict ends\./);
     expect(text).toMatch(/A later import write to K, or conflict on K, only replaces MFC's side; a write to K by any other device ends the conflict and follows the ordinary rules, and so do the held edits\./);
     expect(text).toMatch(/The user resolves it with an ordinary write to K, minted with Hlc\.tick\(base\) on the higher of the local and MFC's side's version, that replaces the unpushed edits to K: keep the app's value \(write it again\) or take MFC's \(its value, or a tombstone\)\. The client then pushes the held edits to other keys, unless another pending conflict holds them\./);
     expect(text).toMatch(/An edit already pushed cannot be recalled; if it lands the conflict stays until the user resolves it\./);
+    expect(text).toMatch(/Keeping the app's side moves no base: a copy kept against a removal keeps its tombstone base, so a later import that lowers the Count raises it rather than removing it \(presented, never silent: an accepted cost\), and MFC's copy removed by keeping an addition gives way to the app's copy at the next import that changes the row \(import\.proto ADOPTION IN PLACE\)\./);
     expect(text).toMatch(/A client that calls ImportMfcExport first pushes its outbox, held edits aside, and has every push answered, so the import's three-way sees its own edits\. golden\/import-vectors\.json has the cases\./);
   });
 
-  it('crosses at the row grain: an import that removes or adds a copy crosses a changed status of another copy of its row', () => {
+  it('crosses at the row grain: an import that removes or adds a copy crosses a changed status or head of another copy of its row or figure', () => {
     const text = rule6();
-    expect(text).toMatch(/\* ROW GRAIN, when it writes occ\/\{x\}\/status and removes a copy the client shows live or adds one the client shows with none: the open edits that change the status of another copy of x's row \(a copy whose origin names x's MFC id\), and, for an addition, those that set a copy with no origin, of x's figure, to the kind it adds\./);
+    expect(text).toMatch(/\* ROW GRAIN, when it writes occ\/\{x\}\/status and removes a copy the client shows live or adds one the client shows with none: the open edits that change the status of another copy of x's row \(a copy whose origin names x's MFC id\)\./);
+    expect(text).toMatch(/For a removal, also those that change the status of another copy with an origin on x's figure \(another MFC row for the same figure\) or re-point a copy with an origin off x's figure \(a wrong-variant fix\)\./);
+    expect(text).toMatch(/For an addition, also those that set another copy of x's figure, with no origin or of another row, to the kind it adds, or re-point a copy showing that kind onto x's figure\./);
+    expect(text).not.toMatch(/those that set a copy with no origin, of x's figure, to the kind it adds/);
+    expect(text).toMatch(/A ROW GRAIN crossing is presented with the row's counts, the client's after its open edits beside MFC's \(the row's copies with a live base status\), since the two can agree while the copies differ; the user then keeps the app's side\./);
     expect(text).toMatch(/The import writes a copy's origin and head before its status, so the client knows both when the status arrives\./);
   });
 
@@ -277,6 +284,7 @@ describe('sync.proto', () => {
     const text = rule6();
     expect(text).toMatch(/IMPORT CONFLICTS\. A pending imp\/\{site\}\/conflict\/\{key\} is resolved only by a write to \{key\} above the conflict facet's own version\./);
     expect(text).toMatch(/A write to \{key\} at or below that version that lands \(an edit minted before the conflict reached the server, pushed after it\) has not seen the conflict: in the same transaction the server re-upserts the conflict facet, above its current version, with `against` moved to that write's version, and the conflict stays pending \(import\.proto CONFLICTS\)\./);
+    expect(text).toMatch(/So a resolution another device minted after seeing the conflict, but below the re-upserted version, is taken as unseen and presented again: an accepted cost, since presenting is the safe side \(GR-Q1\)\./);
   });
 
   it('carves the crossing out of THE CLIENT RULE, so adopting `current` whole never drops a crossed edit', () => {
@@ -471,7 +479,8 @@ describe('import.proto', () => {
     expect(text).toMatch(/ER MERGES\. Heads are compared through the spine's redirect chain: two heads are equal when they resolve to one survivor, so a spine merge alone changes no M, B or A, writes nothing and re-keys nothing\./);
     expect(text).toMatch(/Between equal versions, which one import's writes under heads merged later can have, the lower head_id wins \(bytewise, as rule 6 displays\)\./);
     expect(text).toMatch(/M is B when any row resolving to the survivor states B's value, else the value of the numerically lowest MFC id among them; a survivor no row resolves to states no score, note or wishability\./);
-    expect(text).toMatch(/So MFC changes a merged figure only when none of its rows still states the base, and an unchanged export writes nothing whatever versions the merged heads' bases carry\./);
+    expect(text).toMatch(/So MFC changes a merged figure only when none of its rows still states the base, and an unchanged export writes nothing whatever versions the merged heads' bases carry; a change MFC makes to one of those rows while another still states B is not seen \(an accepted cost: bases are per head, not per row\)\./);
+    expect(text).toMatch(/When those rows state different values and none states B, which row MFC changed is unknown, so the case where only MFC changed it is a CONFLICT instead \(GR-Q1\): K is not written and the base moves to M\./);
     expect(text).not.toMatch(/its figure values come from the numerically lowest MFC id among them/);
     expect(text).toMatch(/For a figure field, B is the base with the higher version among the heads resolving to the survivor, A is the value rule 6 displays, and K is rule 6's write target among those heads \(the head of the live facet with the higher version, else the survivor\): the head its base was written under unless the app deleted the field since\./);
     expect(text).toMatch(/tombstones a field, as a device delete does, on every one of those heads holding it live/);
@@ -480,7 +489,10 @@ describe('import.proto', () => {
 
   it('runs the three-way on a row\'s Count, never writing the status of a copy the app changed', () => {
     const text = header();
-    expect(text).toMatch(/A copy is UNCHANGED when its status and head, as the server holds them when the import starts, equal their bases then \(absent equals absent\)\./);
+    expect(text).toMatch(/A copy is UNCHANGED when its status and head, as the server holds them when the import starts \(after ADOPTION IN PLACE\), equal their bases then \(absent equals absent\)\./);
+    expect(text).toMatch(/ADOPTION IN PLACE\. When this export changes the row \(its figure, kind or Count differs from what the row's bases state\), each copy of the row whose status is a tombstone while its base status is live \(a device removed it, as keeping the app's side of an addition crossing does, sync\.proto rule 6\) first gives way to a live copy with no origin whose head resolves to its base head's figure and whose status is its base status, lowest occ id first on both sides\./);
+    expect(text).toMatch(/The import writes that copy's origin at the lowest unused ordinal and gives it the removed copy's base head and status, and the removed copy gets a tombstone base status, so MFC's later changes to the Count reach the app's copy\./);
+    expect(text).toMatch(/While the app changed a copy of another row resolving to the row's figure, one whose status or base status is the row's kind, it removes none and raises the whole difference for removal instead: one figure's MFC rows are fungible, and that change may be the one MFC's Count records\./);
     expect(text).toMatch(/A row absent from this export, or with Count 0, has M_count 0 and B_kind as its kind; otherwise M_count is its Count\./);
     expect(text).toMatch(/HEAD\. For a row in this export, each of its copies with a base head runs the three-way on its head, M being the row's figure\./);
     expect(text).toMatch(/KIND\. When M_count > 0 and the row's kind differs from B_kind, each copy with a live base status runs the three-way on its status, M being the row's kind\./);
@@ -563,6 +575,7 @@ describe('README: the schema guard', () => {
     expect(text).toMatch(/every keyword must be unchanged at every depth except the annotations \(`title`, `description`, `\$comment`, `examples`\), which no validator reads, and `enum`, which may only grow/);
     expect(text).toMatch(/no property, pattern property or subschema is added or removed, a closed object stays closed, and no type, bound, pattern or format changes/);
     expect(text).not.toMatch(/the properties and `required` sets must be unchanged at every depth/);
+    expect(text).toMatch(/An `enum` gained where there was none narrows what the schema accepts, so it is flagged too\./);
   });
 
   it('says a crossing is caught on the facet or on the copy\'s row', () => {
