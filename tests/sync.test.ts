@@ -25,6 +25,23 @@ const UPSERT = {
 };
 
 describe('SyncEvent', () => {
+  it('carries a basis on Push, with presence: absent is basis_missing, empty is "nothing applied yet"', () => {
+    const fields = Object.fromEntries(SyncEventSchema.fields.map((f) => [f.name, f.number]));
+    expect(fields).toEqual({ facet_key: 1, version: 2, op: 3, payload: 4, basis: 5, commit_cursor: 6 });
+    const none = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, UPSERT)));
+    expect(none.basis).toBeUndefined();
+    const empty = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, { ...UPSERT, basis: '' })));
+    expect(empty.basis).toBe('');
+    const at = fromJson(SyncEventSchema, toJson(SyncEventSchema, create(SyncEventSchema, { ...UPSERT, basis: 'c:0000000042' })));
+    expect(at.basis).toBe('c:0000000042');
+  });
+
+  it('marks the last event of a server transaction with the cursor after it (commit_cursor), empty elsewhere', () => {
+    const last = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, { ...UPSERT, commitCursor: 'c:0000000043' })));
+    expect(last.commitCursor).toBe('c:0000000043');
+    expect(fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, UPSERT))).commitCursor).toBe('');
+  });
+
   it('round-trips an upsert through binary and JSON', () => {
     const msg = create(SyncEventSchema, UPSERT);
 
@@ -141,14 +158,16 @@ describe('Push', () => {
     expect(decoded.clientId).toBe('dev-7f3a/batch-00019');
   });
 
-  it('round-trips every outcome the conflict policy can produce', () => {
+  it('round-trips every outcome the conflict policy and the import can produce', () => {
     const outcomes = [
       PushOutcome.APPLIED,
       PushOutcome.DUPLICATE,
       PushOutcome.STALE,
       PushOutcome.REVIEW,
       PushOutcome.REJECTED,
+      PushOutcome.HELD,
     ];
+    expect(PushOutcome.HELD).toBe(6);
     const msg = create(PushResponseSchema, {
       results: outcomes.map((outcome, i) => ({
         facetKey: occFacetKey(OCC, OCC_FIELDS[i % OCC_FIELDS.length]!),

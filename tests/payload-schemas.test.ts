@@ -24,6 +24,7 @@ const load = (family: Family) =>
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const compiled = new Map<Family, ReturnType<typeof ajv.compile>>();
 const validator = (family: Family) => {
+  expect(PATHS[family], `${family} has a schema`).toBeDefined();
   if (!compiled.has(family)) compiled.set(family, ajv.compile(load(family)));
   return compiled.get(family)!;
 };
@@ -33,6 +34,19 @@ const UUID = '5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b';
 const USER = Object.keys(USER_FACET_PAYLOAD_SCHEMAS) as UserFacetFamily[];
 const ALL = Object.keys(PATHS) as Family[];
 const VERSION = '2026-09-27T01:30:00.123456Z#0000000007#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e';
+const UUID2 = '6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7';
+const ZERO = { base: 0, app: 0, mfc: 0 };
+// import.proto 6: a figure item, here a conflict (app 9, MFC 7 on a score of 5) with what keep and take would write.
+const CARD = {
+  rev: 'I2:owned1',
+  kind: 'conflict',
+  import: 2,
+  counts: { owned: { base: 1, app: 1, mfc: 1 }, ordered: ZERO, wished: ZERO },
+  fields: { score: { base: 5, app: 9, mfc: 7, status: 'conflict' }, note: { status: 'nochange' }, wishability: { status: 'nochange' } },
+  copies: [{ occ: UUID2, status: 'owned', tracked: true }],
+  mfc_rows: [{ mfc_id: '1144', kind: 'owned', count: 1 }],
+  preview: { keep: { copies: [], fields: [] }, take: { copies: [], fields: [{ head_id: UUID, field: 'score', score: 7 }] } },
+};
 
 describe('payload schemas', () => {
   it.each(ALL)('%s compiles under draft 2020-12 strict mode', (family) => {
@@ -85,8 +99,22 @@ describe('payload schemas', () => {
     ['occ/status', { status: 'owned', edited_at: '2026-09-14T23:59:59.999+14:00', tz: 'Pacific/Kiritimati' }],
     ['occ/origin', { site: 'mfc', native_id: '1144', ordinal: 1 }],
     ['occ/origin', { site: 'mfc', native_id: '3743689', ordinal: 99 }],
-    ['imp/conflict', { against: VERSION, export_date: '2026-09-09' }],
-    ['imp/conflict', { export_date: '2026-09-09' }], // K had no version: a copy the import raised for addition
+    ['res/answer', { rev: 'I2:owned1', choice: 'keep', ...DISPLAY }],
+    ['res/answer', { rev: 'I2:owned1', choice: 'per_copy', copies: [{ occ: UUID2, status: 'former' }, { occ: UUID, status: 'removed' }], fields: { score: 'mfc' }, ...DISPLAY }],
+    ['res/answer', { rev: 'C3:x', choice: 'undo', ...DISPLAY }],
+    ['res/answer', { rev: 'A3:x', choice: 'dismiss', ...DISPLAY }],
+    ['pref/import', { import_policy: 'ASK', mfc_only: 'APPLY_AND_LIST', ...DISPLAY }],
+    ['pref/import', { import_policy: 'FAVOR_MFC', mfc_only: 'HOLD', disposition_list: '206369', ...DISPLAY }],
+    ['imp/figure', CARD],
+    ['imp/figure', { ...CARD, kind: 'divergence', fields: { score: { status: 'nochange' }, note: { app: 'mine', mfc: 'theirs', status: 'nochange' }, wishability: { status: 'nochange' } } }],
+    ['imp/held', { rev: 'H:5', held: [{ key: `occ/${UUID2}/status`, payload: JSON.stringify({ status: 'former', ...DISPLAY }), version: VERSION, reason: 'late_after_knowing' }] }],
+    ['imp/held', { rev: 'H:6', held: [{ key: `occ/${UUID2}/status`, version: VERSION, reason: 'after_answer' }] }], // a held tombstone
+    ['imp/change', { rev: 'C2:x', kind: 'applied', import: 2, writes: { copies: [{ occ: UUID2, status: 'removed' }], fields: [] }, undo: { copies: [{ occ: UUID2, status: 'owned' }], fields: [] } }],
+    ['imp/change', { rev: 'C2:z', kind: 'applied', import: 2, writes: { copies: [{ occ: UUID2, origin: { site: 'mfc', native_id: '1144', ordinal: 2 }, head_id: UUID, status: 'owned' }], fields: [] }, undo: { copies: [{ occ: UUID2, status: 'removed' }], fields: [] } }],
+    ['imp/change', { rev: 'C2:y', kind: 'favor_mfc', import: 2, writes: { copies: [], fields: [{ head_id: UUID, field: 'score', score: 7 }] }, undo: { copies: [], fields: [{ head_id: UUID, field: 'score', score: 9 }] } }],
+    ['imp/align', { rev: 'A:x', actions: [{ mfc_id: '1144', count: { now: 2, should: 1 }, add_to_list: '206369' }] }],
+    ['imp/align', { rev: 'A:y', actions: [{ mfc_id: '777', status: { now: 'owned' } }, { mfc_id: '1144', score: { now: 7, should: 9 }, note: { should: 'box damaged' } }] }],
+    ['imp/import', { import: 1, export_date: '2026-09-09' }],
   ] as const)('%s accepts %o', (family, payload) => {
     const v = validator(family);
     expect(v(payload), JSON.stringify(v.errors)).toBe(true);
@@ -140,9 +168,35 @@ describe('payload schemas', () => {
     ['occ/origin', 'an uppercase site', { site: 'MFC', native_id: '1144', ordinal: 1 }],
     ['occ/origin', 'a native id with a space', { site: 'mfc', native_id: '11 44', ordinal: 1 }],
     ['occ/origin', 'display fields (a server write)', { site: 'mfc', native_id: '1144', ordinal: 1, ...DISPLAY }],
-    ['imp/conflict', 'a bare-instant against (a user facet always has the full form)', { against: '2026-09-27T01:30:00.123456Z', export_date: '2026-09-09' }],
-    ['imp/conflict', 'no export date', { against: VERSION }],
-    ['imp/conflict', 'an export date with a time', { against: VERSION, export_date: '2026-09-09T00:00:00Z' }],
+    ['res/answer', 'no rev', { choice: 'keep', ...DISPLAY }],
+    ['res/answer', 'an unknown choice', { rev: 'I2:x', choice: 'maybe', ...DISPLAY }],
+    ['res/answer', 'copies with another choice', { rev: 'I2:x', choice: 'keep', copies: [{ occ: UUID2, status: 'owned' }], ...DISPLAY }],
+    ['res/answer', 'choice per_copy with no copies', { rev: 'I2:x', choice: 'per_copy', ...DISPLAY }],
+    ['res/answer', 'a copy status outside the answer', { rev: 'I2:x', choice: 'per_copy', copies: [{ occ: UUID2, status: 'lost' }], ...DISPLAY }],
+    ['res/answer', 'an uppercase occ id', { rev: 'I2:x', choice: 'per_copy', copies: [{ occ: UUID2.toUpperCase(), status: 'owned' }], ...DISPLAY }],
+    ['res/answer', 'a field side other than app or mfc', { rev: 'I2:x', choice: 'per_copy', copies: [], fields: { score: 'both' }, ...DISPLAY }],
+    ['res/answer', 'a rev with a space', { rev: 'I2 x', choice: 'keep', ...DISPLAY }],
+    ['pref/import', 'an unknown import policy', { import_policy: 'FAVOR_ME', mfc_only: 'HOLD', ...DISPLAY }],
+    ['pref/import', 'no mfc_only', { import_policy: 'ASK', ...DISPLAY }],
+    ['pref/import', 'a list id with a leading zero', { import_policy: 'ASK', mfc_only: 'HOLD', disposition_list: '0206369', ...DISPLAY }],
+    ['imp/figure', 'an unknown kind', { ...CARD, kind: 'maybe' }],
+    ['imp/figure', 'no wished counts', { ...CARD, counts: { owned: ZERO, ordered: ZERO } }],
+    ['imp/figure', 'an uppercase copy id', { ...CARD, copies: [{ occ: UUID2.toUpperCase(), tracked: true }] }],
+    ['imp/figure', 'import 0', { ...CARD, import: 0 }],
+    ['imp/figure', 'a Count past 99 on an MFC row', { ...CARD, mfc_rows: [{ mfc_id: '1144', kind: 'owned', count: 100 }] }],
+    ['imp/figure', 'display fields (a server write)', { ...CARD, ...DISPLAY }],
+    ['imp/held', 'an unknown reason', { rev: 'H:5', held: [{ key: `occ/${UUID2}/status`, version: VERSION, reason: 'late' }] }],
+    ['imp/held', 'a bare-instant version (an edit always has the full form)', { rev: 'H:5', held: [{ key: `occ/${UUID2}/status`, version: '2026-09-27T01:30:00.123456Z', reason: 'after_answer' }] }],
+    ['imp/change', 'an unknown kind', { rev: 'C2:x', kind: 'favor', import: 2, writes: { copies: [], fields: [] }, undo: { copies: [], fields: [] } }],
+    ['imp/change', 'a copy status outside the register', { rev: 'C2:x', kind: 'applied', import: 2, writes: { copies: [{ occ: UUID2, status: 'lost' }], fields: [] }, undo: { copies: [], fields: [] } }],
+    ['imp/change', 'a field write of a field the import never writes', { rev: 'C2:x', kind: 'applied', import: 2, writes: { copies: [], fields: [{ head_id: UUID, field: 'price' }] }, undo: { copies: [], fields: [] } }],
+    ['imp/change', 'no undo', { rev: 'C2:x', kind: 'applied', import: 2, writes: { copies: [], fields: [] } }],
+    ['imp/align', 'a Count past 99', { rev: 'A:x', actions: [{ mfc_id: '1144', count: { now: 2, should: 100 } }] }],
+    ['imp/align', 'a list id that is not digits', { rev: 'A:x', actions: [{ mfc_id: '1144', add_to_list: 'sold' }] }],
+    ['imp/align', 'a status MFC cannot hold', { rev: 'A:x', actions: [{ mfc_id: '1144', status: { now: 'former' } }] }],
+    ['imp/align', 'an MFC id with a leading zero', { rev: 'A:x', actions: [{ mfc_id: '01144', count: { now: 2, should: 1 } }] }],
+    ['imp/import', 'import 0', { import: 0, export_date: '2026-09-09' }],
+    ['imp/import', 'an export date with a time', { import: 1, export_date: '2026-09-09T00:00:00Z' }],
   ] as const)('%s rejects a payload with %s', (family, _why, payload) => {
     expect(validator(family)(payload)).toBe(false);
   });
@@ -160,6 +214,8 @@ describe('payload schemas', () => {
     'uf/ktag': {},
     'coll/name': { name: 'Statues' },
     'tag/name': { name: 'red' },
+    'res/answer': { rev: 'D:1', choice: 'keep' },
+    'pref/import': { import_policy: 'ASK', mfc_only: 'APPLY_AND_LIST' },
   };
   const BAD_DISPLAY = [
     ['month 13', { edited_at: '2026-13-14T06:29:58-05:00', tz: DISPLAY.tz }],

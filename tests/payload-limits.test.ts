@@ -28,6 +28,15 @@ const bytes = (payload: object) => utf8(JSON.stringify(payload));
 const WIDEST = { edited_at: '2026-09-14T11:30:00.123456789+18:00', tz: `A${'a'.repeat(63)}` };
 const UUID = '5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b';
 // U+0001 is written by JSON.stringify as \u0001: six bytes, the most any one code point costs.
+const VERSION = '2026-09-27T01:30:00.123456Z#0000000007#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e';
+const NOTE = '\u0001'.repeat(10_000);
+const ORIGIN = { site: `a${'-'.repeat(31)}`, native_id: '~'.repeat(64), ordinal: 99 };
+const COUNT3 = { base: 9999, app: 9999, mfc: 9999 };
+// The import's typed writes (a figure item's preview, a change entry and its undo), each list at its widest.
+const WRITES = {
+  copies: Array.from({ length: 500 }, () => ({ occ: UUID, status: 'removed', head_id: UUID, collection: `ordered/${UUID}`, origin: ORIGIN })),
+  fields: Array.from({ length: 24 }, () => ({ head_id: UUID, field: 'wishability', score: 10, note: NOTE, wishability: 5 })),
+};
 const WORST: Record<UserFacetFamily | ServerFamily, object> = {
   'occ/head': { head_id: UUID, ...WIDEST },
   'occ/status': { status: 'ordered', ...WIDEST },
@@ -48,8 +57,47 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
   'uf/ktag': { ...WIDEST },
   'coll/name': { name: '\u0001'.repeat(100), ...WIDEST },
   'tag/name': { name: '\u0001'.repeat(100), ...WIDEST },
-  'occ/origin': { site: `a${'-'.repeat(31)}`, native_id: '~'.repeat(64), ordinal: 99 },
-  'imp/conflict': { against: '2026-09-27T01:30:00.123456Z#0000000007#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e', export_date: '2026-09-09' },
+  'res/answer': {
+    rev: 'A'.repeat(128),
+    choice: 'per_copy',
+    copies: Array.from({ length: 500 }, () => ({ occ: UUID, status: 'ordered' })),
+    fields: { score: 'app', note: 'mfc', wishability: 'app' },
+    ...WIDEST,
+  },
+  'pref/import': { import_policy: 'FAVOR_APP', mfc_only: 'APPLY_AND_LIST', disposition_list: '9'.repeat(20), ...WIDEST },
+  'occ/origin': ORIGIN,
+  'imp/figure': {
+    rev: 'A'.repeat(128),
+    kind: 'divergence',
+    import: 2_147_483_647,
+    counts: { owned: COUNT3, ordered: COUNT3, wished: COUNT3 },
+    fields: {
+      score: { base: 10, app: 10, mfc: 10, status: 'conflict' },
+      note: { base: NOTE, app: NOTE, mfc: NOTE, status: 'conflict' },
+      wishability: { base: 5, app: 5, mfc: 5, status: 'conflict' },
+    },
+    copies: Array.from({ length: 1000 }, () => ({ occ: UUID, status: 'ordered', tracked: false })),
+    mfc_rows: Array.from({ length: 64 }, () => ({ mfc_id: '9'.repeat(64), kind: 'ordered', count: 99 })),
+    preview: { keep: WRITES, take: WRITES },
+  },
+  'imp/held': {
+    rev: 'A'.repeat(128),
+    held: Array.from({ length: 16 }, () => ({ key: 'a'.repeat(128), payload: '\u0001'.repeat(65_536), version: VERSION, reason: 'made_on_revised_result' })),
+  },
+  'imp/change': { rev: 'A'.repeat(128), kind: 'favor_app', import: 2_147_483_647, writes: WRITES, undo: WRITES },
+  'imp/align': {
+    rev: 'A'.repeat(128),
+    actions: Array.from({ length: 64 }, () => ({
+      mfc_id: '9'.repeat(64),
+      status: { now: 'ordered', should: 'ordered' },
+      count: { now: 99, should: 99 },
+      score: { now: 10, should: 10 },
+      note: { now: NOTE, should: NOTE },
+      wishability: { now: 5, should: 5 },
+      add_to_list: '9'.repeat(20),
+    })),
+  },
+  'imp/import': { import: 2_147_483_647, export_date: '2026-09-09' },
 };
 const FIELDS = Object.keys(USER_FACET_PAYLOAD_SCHEMAS) as UserFacetFamily[];
 const SERVER = Object.keys(SERVER_FACET_PAYLOAD_SCHEMAS) as ServerFamily[];
@@ -139,6 +187,14 @@ describe('maxJsonBytes', () => {
     expect(maxJsonBytes({ type: 'string', pattern: '^.{2}$' })).toBe(2 + 12);
     expect(maxJsonBytes({ type: 'string', pattern: '^\\"\\.$' })).toBe(2 + 12);
     expect(maxJsonBytes({ type: 'string', pattern: '^(?:ab|c)[\\d_-]{0,3}$' })).toBe(2 + 5);
+  });
+
+  it('counts an array as its maxItems widest items, and a boolean as false; an unbounded array is unbounded', () => {
+    expect(maxJsonBytes({ type: 'boolean' })).toBe(5);
+    expect(maxJsonBytes({ type: 'array', maxItems: 3, items: { enum: ['ab'] } })).toBe(2 + 3 * 4 + 2);
+    expect(maxJsonBytes({ type: 'array', maxItems: 0, items: { enum: ['ab'] } })).toBe(2);
+    expect(maxJsonBytes({ type: 'array', items: { enum: ['ab'] } })).toBe(Infinity);
+    expect(maxJsonBytes({ type: 'array', maxItems: 3 })).toBe(Infinity);
   });
 
   it('treats an unanchored, open-ended or top-level alternated pattern as unbounded', () => {

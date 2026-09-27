@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import {
   COLLECTION_KINDS,
   FACET_KEY_GRAMMARS,
-  IMPORT_WRITTEN_FAMILIES,
   OCC_FIELDS,
   UF_FIELDS,
   buildFacetKey,
@@ -17,7 +16,6 @@ import {
   parseServerFacetKey,
   parseUserFacetKey,
   type FacetKey,
-  type ImportTargetKey,
   type ServerFacetKey,
   type UserFacetKey,
 } from '../src/index.js';
@@ -42,6 +40,12 @@ const vectors = JSON.parse(
 ) as Vectors;
 
 const parse = (key: string): FacetKey | undefined => parseUserFacetKey(key) ?? parseServerFacetKey(key);
+// buildFacetKey, asserting it builds: a family the grammar lacks fails the assertion, not the harness.
+const build = (k: FacetKey): string => {
+  let key = '';
+  expect(() => (key = buildFacetKey(k)), JSON.stringify(k)).not.toThrow();
+  return key;
+};
 const grammarsMatching = (key: string) => FACET_KEY_GRAMMARS.filter((g) => g.pattern.test(key)).map((g) => g.family);
 
 describe('golden key vectors', () => {
@@ -61,7 +65,7 @@ describe('golden key vectors', () => {
       expect(user).toBeUndefined();
     }
     expect(grammarsMatching(key)).toEqual([v.parsed.family]);
-    expect(buildFacetKey(v.parsed)).toBe(key);
+    expect(build(v.parsed)).toBe(key);
   });
 
   it.each(vectors.invalid.map((v) => [v.key, v.note] as const))('rejects %j (%s)', (key) => {
@@ -71,7 +75,7 @@ describe('golden key vectors', () => {
   });
 
   it.each(vectors.build.map((v) => [v.note, v] as const))('builds the canonical key: %s', (_note, v) => {
-    expect(buildFacetKey(v.input)).toBe(v.key);
+    expect(build(v.input)).toBe(v.key);
   });
 
   it.each(vectors.buildRejects.map((v) => [v.note, v] as const))('refuses to build: %s', (_note, v) => {
@@ -131,6 +135,9 @@ describe('golden key vectors', () => {
 // ---------------------------------------------------------------------------
 const id = fc.uuid();
 const kind = fc.constantFrom(...COLLECTION_KINDS);
+const site = fc.stringMatching(/^[a-z][a-z0-9-]{0,31}$/);
+// The import's per-figure items (IMPORT_ITEMS, pinned in sync-vocabulary.test.ts).
+const ITEMS = ['figure', 'held', 'change', 'align'] as const;
 const userKey: fc.Arbitrary<UserFacetKey> = fc.oneof(
   fc.record({ family: fc.constantFrom(...OCC_FIELDS.map((f) => `occ/${f}` as const)), occId: id }),
   fc.record({ family: fc.constant('occ/tag' as const), occId: id, tagId: id }),
@@ -139,15 +146,13 @@ const userKey: fc.Arbitrary<UserFacetKey> = fc.oneof(
   fc.record({ family: fc.constant('uf/ktag' as const), headId: id, collKind: kind, tagId: id }),
   fc.record({ family: fc.constant('coll/name' as const), collKind: kind, collId: fc.oneof(id, fc.constant('default')) }),
   fc.record({ family: fc.constant('tag/name' as const), tagId: id }),
+  fc.record({ family: fc.constant('res/answer' as const), site, headId: id }),
+  fc.record({ family: fc.constant('pref/import' as const), site }),
 );
-const importTarget = userKey.filter((k): k is ImportTargetKey => (IMPORT_WRITTEN_FAMILIES as readonly string[]).includes(k.family));
 const serverKey: fc.Arbitrary<ServerFacetKey> = fc.oneof(
   fc.record({ family: fc.constant('occ/origin' as const), occId: id }),
-  fc.record({
-    family: fc.constantFrom('imp/base' as const, 'imp/conflict' as const),
-    site: fc.stringMatching(/^[a-z][a-z0-9-]{0,31}$/),
-    target: importTarget,
-  }),
+  fc.record({ family: fc.constantFrom(...ITEMS.map((i) => `imp/${i}` as const)), site, headId: id }),
+  fc.record({ family: fc.constant('imp/import' as const), site }),
 );
 const anyKey: fc.Arbitrary<FacetKey> = fc.oneof(userKey, serverKey);
 
@@ -160,6 +165,7 @@ const shout = (k: FacetKey): FacetKey =>
 const SEGMENTS = [
   'occ', 'uf', 'coll', 'tag', 'imp', 'holding', 'head', 'status', 'collection', 'disposal', 'origin',
   'score', 'note', 'wishability', 'ktag', 'name', 'base', 'conflict', 'mfc', 'default', 'DEFAULT',
+  'res', 'pref', 'import', 'figure', 'held', 'change', 'align',
   ...COLLECTION_KINDS, 'custom', 'count', '', '6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7',
   '5B0C7C7E-2F1D-4C1E-9A1B-3C4D5E6F7A8B', '0192f3a44f5b6c7d8e9f0123456789ab',
 ];
@@ -168,7 +174,7 @@ describe('key grammar properties', () => {
   it('parse(build(x)) == x for every family', () => {
     fc.assert(
       fc.property(anyKey, (k) => {
-        expect(parse(buildFacetKey(k))).toEqual(k);
+        expect(parse(build(k))).toEqual(k);
       }),
       { numRuns: 2000 },
     );
@@ -177,8 +183,8 @@ describe('key grammar properties', () => {
   it('folds case in the builder only: an uppercase input builds the lowercase key, whose parse is the lowercase input', () => {
     fc.assert(
       fc.property(anyKey, (k) => {
-        const key = buildFacetKey(shout(k));
-        expect(key).toBe(buildFacetKey(k));
+        const key = build(shout(k));
+        expect(key).toBe(build(k));
         expect(parse(key.toUpperCase())).toBeUndefined();
       }),
       { numRuns: 1000 },
@@ -188,7 +194,7 @@ describe('key grammar properties', () => {
   it('claims every built key for exactly one family, the one it was built as', () => {
     fc.assert(
       fc.property(anyKey, (k) => {
-        expect(grammarsMatching(buildFacetKey(k))).toEqual([k.family]);
+        expect(grammarsMatching(build(k))).toEqual([k.family]);
       }),
       { numRuns: 2000 },
     );
@@ -197,7 +203,7 @@ describe('key grammar properties', () => {
   it('never lets two families claim one string, and gives every parsed string one spelling', () => {
     const joined = fc.array(fc.constantFrom(...SEGMENTS), { minLength: 1, maxLength: 7 }).map((s) => s.join('/'));
     fc.assert(
-      fc.property(fc.oneof(joined, fc.string(), anyKey.map(buildFacetKey)), (key) => {
+      fc.property(fc.oneof(joined, fc.string(), anyKey.map(build)), (key) => {
         expect(grammarsMatching(key).length).toBeLessThanOrEqual(1);
         const user = parseUserFacetKey(key);
         const server = parseServerFacetKey(key);

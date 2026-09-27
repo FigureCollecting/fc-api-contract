@@ -7,7 +7,7 @@ import {
   DEFAULT_COLLECTION_ID,
   DISPOSAL_REASONS,
   FACET_KEY_GRAMMARS,
-  IMPORT_WRITTEN_FAMILIES,
+  IMPORT_ITEMS,
   OCCURRENCE_STATUSES,
   OCC_FIELDS,
   PUSH_REJECT_REASONS,
@@ -22,9 +22,11 @@ import {
   collNameKey,
   collectionRef,
   compareVersion,
-  importBaseKey,
-  importConflictKey,
+  answerKey,
+  importItemKey,
+  importMarkerKey,
   importOccIdFromMac,
+  importPrefKey,
   mfcImportOccName,
   occFacetKey,
   occOriginKey,
@@ -55,13 +57,13 @@ describe('vocabulary', () => {
     expect(DISPOSAL_REASONS).toEqual(['sold', 'traded', 'gifted', 'damaged', 'lost', 'stolen', 'other']);
   });
 
-  it('names twelve user-owned and three server-owned families, one grammar each', () => {
+  it('names fourteen user-owned and six server-owned families, one grammar each', () => {
     expect(USER_FACET_FAMILIES).toEqual([
       'occ/head', 'occ/status', 'occ/collection', 'occ/disposal', 'occ/tag',
       'uf/score', 'uf/note', 'uf/wishability', 'uf/tag', 'uf/ktag',
-      'coll/name', 'tag/name',
+      'coll/name', 'tag/name', 'res/answer', 'pref/import',
     ]);
-    expect(SERVER_FACET_FAMILIES).toEqual(['occ/origin', 'imp/base', 'imp/conflict']);
+    expect(SERVER_FACET_FAMILIES).toEqual(['occ/origin', 'imp/figure', 'imp/held', 'imp/change', 'imp/align', 'imp/import']);
     expect(OCC_FIELDS).toEqual(['head', 'status', 'collection', 'disposal']);
     expect(UF_FIELDS).toEqual(['score', 'note', 'wishability']);
     expect(FACET_KEY_GRAMMARS.map((g) => g.family)).toEqual([...USER_FACET_FAMILIES, ...SERVER_FACET_FAMILIES]);
@@ -71,21 +73,26 @@ describe('vocabulary', () => {
     }
   });
 
-  it('lets the import compare only heads, statuses, disposals and the three figure fields: never a filing or a tag', () => {
-    expect(IMPORT_WRITTEN_FAMILIES).toEqual(['occ/head', 'occ/status', 'occ/disposal', 'uf/score', 'uf/note', 'uf/wishability']);
+  it('names the four per-figure items the import keeps on the feed (import.proto THE SERVER DECIDES)', () => {
+    expect(IMPORT_ITEMS).toEqual(['figure', 'held', 'change', 'align']);
+  });
+
+  it('no longer exports the 0.3.0 draft\'s import bases and conflicts (bases are server-internal now)', () => {
+    for (const name of ['importBaseKey', 'importConflictKey', 'IMPORT_WRITTEN_FAMILIES']) expect(contract).not.toHaveProperty(name);
   });
 
   it('publishes no namespace an import occ id could be recomputed from (the key is the coordinator\'s alone)', () => {
     expect(contract).not.toHaveProperty('MFC_IMPORT_OCC_NAMESPACE');
   });
 
-  it('names the five REJECTED reason codes', () => {
+  it('names the six REJECTED reason codes, basis_missing last', () => {
     expect(PUSH_REJECT_REASONS).toEqual([
       'version_malformed',
       'version_future',
       'facet_key_not_user_owned',
       'device_mismatch',
       'payload_invalid',
+      'basis_missing',
     ]);
   });
 
@@ -106,8 +113,21 @@ describe('builders', () => {
     expect(collNameKey('wished', CID.toUpperCase())).toBe(`coll/wished/${CID}/name`);
     expect(tagNameKey(TAG)).toBe(`tag/${TAG}/name`);
     expect(occOriginKey(OCC)).toBe(`occ/${OCC}/origin`);
-    expect(importBaseKey('mfc', occFacetKey(OCC, 'status'))).toBe(`imp/mfc/base/occ/${OCC}/status`);
-    expect(importConflictKey('mfc', `uf/${HEAD.toUpperCase()}/note`)).toBe(`imp/mfc/conflict/uf/${HEAD}/note`);
+  });
+
+  it('build the import\'s keys: an item per figure, the marker, an answer and the preference', () => {
+    expect(typeof importItemKey).toBe('function');
+    expect(importItemKey('mfc', 'figure', HEAD.toUpperCase())).toBe(`imp/mfc/figure/${HEAD}`);
+    expect(importItemKey('mfc', 'align', HEAD)).toBe(`imp/mfc/align/${HEAD}`);
+    expect(importMarkerKey('mfc')).toBe('imp/mfc/import');
+    expect(answerKey('mfc', HEAD)).toBe(`res/mfc/${HEAD}`);
+    expect(importPrefKey('mfc')).toBe('pref/mfc/import');
+    expect(() => importItemKey('mfc', 'base' as never, HEAD)).toThrow(TypeError);
+    expect(() => importItemKey('MFC', 'figure', HEAD)).toThrow(TypeError);
+    expect(() => importItemKey('mfc', 'figure', 'default')).toThrow(TypeError);
+    expect(() => importMarkerKey('m fc')).toThrow(TypeError);
+    expect(() => answerKey('mfc', 7 as never)).toThrow(TypeError);
+    expect(() => importPrefKey(7 as never)).toThrow(TypeError);
   });
 
   it('throw TypeError on anything else', () => {
@@ -117,16 +137,12 @@ describe('builders', () => {
     expect(() => ufKindTagKey(HEAD, 'research' as never, TAG)).toThrow(TypeError);
     expect(() => collNameKey('owned', 'mine')).toThrow(TypeError);
     expect(() => tagNameKey('default')).toThrow(TypeError);
-    expect(() => importBaseKey('mfc', occFacetKey(OCC, 'collection'))).toThrow(TypeError);
-    expect(() => importBaseKey('mfc', `holding/${HEAD}/status`)).toThrow(TypeError);
-    expect(() => importConflictKey('mfc', occOriginKey(OCC))).toThrow(TypeError);
-    expect(() => importConflictKey('m fc', occFacetKey(OCC, 'status'))).toThrow(TypeError);
+    expect(() => buildFacetKey({ family: 'imp/base', site: 'mfc', target: { family: 'occ/status', occId: OCC } } as never)).toThrow(TypeError);
     expect(() => buildFacetKey({ family: 'holding/status', headId: HEAD } as never)).toThrow(TypeError);
     expect(() => buildFacetKey(null as never)).toThrow(TypeError);
     // Malformed input from an untyped caller (a JSON body, an IndexedDB row) is refused, never coerced.
     expect(() => occFacetKey(7 as never, 'status')).toThrow(TypeError);
     expect(() => collNameKey('owned', null as never)).toThrow(TypeError);
-    expect(() => importBaseKey('mfc', 7 as never)).toThrow(TypeError);
   });
 
   it('name an import copy only from a uuid user, a canonical MFC id and an ordinal 1..99', () => {
@@ -185,22 +201,28 @@ describe('payload schemas', () => {
     for (const rel of Object.values(USER_FACET_PAYLOAD_SCHEMAS)) expect(shipped(rel), rel).toBe(true);
   });
 
-  it('points the server-owned origin and conflict at their own schemas, and a base at its target\'s', () => {
+  it('points every server-owned family at a schema of its own', () => {
     expect(SERVER_FACET_PAYLOAD_SCHEMAS).toEqual({
       'occ/origin': 'schemas/occ-origin.schema.json',
-      'imp/conflict': 'schemas/imp-conflict.schema.json',
+      'imp/figure': 'schemas/imp-figure.schema.json',
+      'imp/held': 'schemas/imp-held.schema.json',
+      'imp/change': 'schemas/imp-change.schema.json',
+      'imp/align': 'schemas/imp-align.schema.json',
+      'imp/import': 'schemas/imp-import.schema.json',
     });
     for (const rel of Object.values(SERVER_FACET_PAYLOAD_SCHEMAS)) expect(shipped(rel), rel).toBe(true);
-    const target = { family: 'uf/note', headId: HEAD } as const;
-    expect(payloadSchemaPath({ family: 'imp/base', site: 'mfc', target })).toBe('schemas/uf-note.schema.json');
-    expect(payloadSchemaPath({ family: 'imp/conflict', site: 'mfc', target })).toBe('schemas/imp-conflict.schema.json');
+    expect(payloadSchemaPath({ family: 'imp/held', site: 'mfc', headId: HEAD })).toBe('schemas/imp-held.schema.json');
+    expect(payloadSchemaPath({ family: 'imp/import', site: 'mfc' })).toBe('schemas/imp-import.schema.json');
+    expect(payloadSchemaPath({ family: 'res/answer', site: 'mfc', headId: HEAD })).toBe('schemas/res-answer.schema.json');
+    expect(payloadSchemaPath({ family: 'pref/import', site: 'mfc' })).toBe('schemas/pref-import.schema.json');
     expect(payloadSchemaPath({ family: 'occ/origin', occId: OCC })).toBe('schemas/occ-origin.schema.json');
     expect(payloadSchemaPath({ family: 'occ/tag', occId: OCC, tagId: TAG })).toBe('schemas/occ-tag.schema.json');
   });
 
-  it('ships no schema for the retired holding grain', () => {
+  it('ships no schema for the retired holding grain or the 0.3.0 draft\'s import conflict', () => {
     expect(shipped('schemas/holding-status.schema.json')).toBe(false);
     expect(shipped('schemas/holding-count.schema.json')).toBe(false);
+    expect(shipped('schemas/imp-conflict.schema.json')).toBe(false);
   });
 });
 
