@@ -43,8 +43,9 @@ describe('golden import vectors: an import write crossing a client edit (sync.pr
     }
   });
 
-  it('cover the losing, the landed, the held, the agreeing, the replayed, the other-device and the closed-window edit', () => {
-    expect(vectors.crossings.length).toBeGreaterThanOrEqual(10);
+  it('cover the losing, the landed, the held, the agreeing, the replayed, the other-device, the closed-window and the no-net-change edit', () => {
+    expect(vectors.crossings.length).toBeGreaterThanOrEqual(13);
+    expect(vectors.crossings.map((c) => c.name).join('\n')).toMatch(/change nothing: they are dropped[\s\S]*\(S2\), unpushed, are dropped too[\s\S]*already pushed cannot be recalled/);
     const outcomes = vectors.crossings.flatMap((c) => c.steps.flatMap((s) => ('answer' in s ? [s.answer.outcome] : [])));
     expect(new Set(outcomes)).toEqual(new Set(['APPLIED', 'STALE']));
     const choices = vectors.crossings.flatMap((c) => c.steps.flatMap((s) => ('resolve' in s ? [s.resolve.choice] : [])));
@@ -71,7 +72,7 @@ describe('golden import vectors: an import write crossing a client edit (sync.pr
 describe('golden import vectors: the re-import (import.proto)', () => {
   it('cover the three-way, ER merges, counts both ways, kinds, filing, absent rows, Count 0 and every unresolved reason', () => {
     const names = vectors.reimports.map((c) => c.name).join('\n');
-    for (const topic of [/spine merge/, /GR-Q3/, /lowered the Count/, /raised the Count/, /adopted/, /conflict per copy/, /filing/, /gone from the export/, /Count 0/, /numerically lowest/]) {
+    for (const topic of [/spine merge/, /GR-Q3/, /lowered the Count/, /raised the Count/, /adopted/, /conflict per copy/, /filing/, /gone from the export/, /Count 0/, /numerically lowest/, /both bases at one version/, /more recent base stands/]) {
       expect(names).toMatch(topic);
     }
     const reasons = new Set(vectors.reimports.flatMap((c) => c.expect.unresolved.map((u) => u.reason)));
@@ -99,6 +100,13 @@ describe('golden import vectors: the re-import (import.proto)', () => {
       expect(Object.values(after.copies).filter((x) => x.status === 'former')).toHaveLength(1);
       expect(after.writes).toEqual([]);
       expect(after.conflicts).toEqual([]);
+    }
+  });
+
+  it('gives one result whatever order the heads and copies are listed in (equal versions order by head_id)', () => {
+    for (const c of vectors.reimports) {
+      const flipped: ReimportCase = { ...c, copies: [...c.copies].reverse(), figures: Object.fromEntries(Object.entries(c.figures ?? {}).reverse()) };
+      expect(reimport(flipped), c.name).toEqual(reimport(c));
     }
   });
 

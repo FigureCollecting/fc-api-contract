@@ -1,5 +1,5 @@
 {
-  "$comment": "Golden cases for the MFC re-import (import.proto) and for an import write crossing a client's own edit (sync.proto rule 6, IMPORT CROSSINGS). Every implementation (fc-coordinator's import, fc-mobile's store and sync engine) must agree with every case. `crossings`: one facet K on one client whose device is devices.self; each step is a Delta event (take), a user edit (edit), a Push of the unpushed edits (push), the PushResult of the oldest pushed edit (answer) or the user's resolution (resolve), and `expect` is the client after it: the value shown, the pending import conflict (MFC's side) or null, and the unpushed edits. Values stand for K's own fields; null is a tombstone. `reimports`: one import over abstract ids (occ ids order by name; new:{k} is the copy minted at ordinal k), heads (survivors maps a merged head to its survivor) and values. A figure cell is {value, v, base, baseV}: v and baseV rank versions, and this import writes at 100. `expect` is the whole state after the import, the user-owned and origin keys it wrote, the conflicts pending, and the unresolved rows.",
+  "$comment": "Golden cases for the MFC re-import (import.proto) and for an import write or conflict crossing a client's own edit (sync.proto rule 6, IMPORT CROSSINGS and IMPORT CONFLICTS). Every implementation (fc-coordinator's import and Push path, fc-mobile's store and sync engine) must agree with every case. `crossings`: one facet K on one client whose device is devices.self; each step is a Delta event (take), a user edit (edit), a Push of the unpushed edits (push), the PushResult of the oldest pushed edit (answer) or the user's resolution (resolve), and `expect` is the client after it: the value shown, the pending import conflict (MFC's side) or null, and the unpushed edits. Values stand for K's own fields; null is a tombstone. `keyedCrossings`: the same steps over several keys on one client, an origin facet's value standing for its MFC id and a conflict facet's for its `against`; `expect` gives the values shown for some keys, every pending import conflict (key: MFC's side) and the unpushed edits as [key, value]. `conflictPushes`: the server applying pushes to a key K that holds a pending import conflict; `now` is the server's clock, and `expect` is the outcome, K, the conflict facet ({against, version}) and whether it is pending. `reimports`: one import over abstract ids (occ ids order by name; new:{k} is the copy minted at ordinal k), heads (survivors maps a merged head to its survivor) and values. A figure cell is {value, v, base, baseV}: v and baseV rank versions, and this import writes at 100. `expect` is the whole state after the import, the user-owned and origin keys it wrote, the conflicts pending, and the unresolved rows.",
   "devices": {"self": "0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "import": "00000000000000000000000000000000", "other": "9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"},
   "crossings": [
     {"name": "an offline edit made before the import, the import write arriving by Delta first, is held and presented (S1)", "steps": [
@@ -76,7 +76,252 @@
       {"answer": {"outcome": "APPLIED", "current": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}},
       {"take": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 9, "crossing": null, "outbox": []}},
       {"take": {"value": 3, "version": "2026-10-01T13:00:00.000000Z#0000000003#00000000000000000000000000000000"}, "expect": {"shows": 3, "crossing": null, "outbox": []}}
+    ]},
+    {"name": "an offline edit and its revert (5, 9, 5), unpushed, change nothing: they are dropped and the import write is taken", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"value": 5, "version": "2026-10-01T10:05:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": 5, "crossing": null, "outbox": [9, 5]}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 7, "crossing": null, "outbox": []}}
+    ]},
+    {"name": "an edit and its revert made after the import ran (S2), unpushed, are dropped too, so the older import write is not pushed over", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"value": 5, "version": "2026-10-01T11:35:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 7, "crossing": null, "outbox": []}},
+      {"push": true, "expect": {"shows": 7, "crossing": null, "outbox": []}}
+    ]},
+    {"name": "the same edit and revert already pushed cannot be recalled, so the import write is presented", "steps": [
+      {"take": {"value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"value": 5, "version": "2026-10-01T10:05:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"take": {"value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": 5, "crossing": {"mfc": 7}, "outbox": []}}
     ]}
+  ],
+  "keyedCrossings": [
+    {"name": "GR-Q3 offline (S1): the phone sold o1 and the import, not seeing it, removed o2; the removal arriving first crosses the sale and is presented, and keeping the app's side writes o2 again", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {}, "outbox": [["occ/o1/status", "former"]]}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {"occ/o2/status": null}, "outbox": [["occ/o1/status", "former"]]}},
+      {"push": true, "expect": {"crossings": {"occ/o2/status": null}, "outbox": [["occ/o1/status", "former"]]}},
+      {"resolve": {"key": "occ/o2/status", "choice": "keep", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {}, "outbox": [["occ/o1/status", "former"], ["occ/o2/status", "owned"]]}},
+      {"push": true, "expect": {"crossings": {}, "outbox": []}}
+    ]},
+    {"name": "GR-Q3 offline (S1), the sale pushed first: APPLIED, since the import wrote no o1, and the removal arriving before its echo still crosses it; taking MFC's side removes o2", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "APPLIED", "current": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}, "expect": {"shows": {"occ/o1/status": "former"}, "crossings": {}, "outbox": []}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o2/status": "owned"}, "crossings": {"occ/o2/status": null}, "outbox": []}},
+      {"take": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {"occ/o2/status": null}, "outbox": []}},
+      {"resolve": {"key": "occ/o2/status", "choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": null}, "crossings": {}, "outbox": [["occ/o2/status", null]]}}
+    ]},
+    {"name": "GR-Q3 offline (S1), the phone sold o2, the very copy the import removed: the removal crosses that copy's own sale", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o2/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "owned", "occ/o2/status": "former"}, "crossings": {"occ/o2/status": null}, "outbox": [["occ/o2/status", "former"]]}},
+      {"resolve": {"key": "occ/o2/status", "choice": "keep", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/o2/status": "former"}, "crossings": {}, "outbox": [["occ/o2/status", "former"]]}}
+    ]},
+    {"name": "GR-Q3 offline (S1), the phone sold o2 and pushed first: answered STALE with the removal, which is held, not adopted", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o2/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "STALE", "current": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}}, "expect": {"shows": {"occ/o1/status": "owned", "occ/o2/status": "former"}, "crossings": {"occ/o2/status": null}, "outbox": []}}
+    ]},
+    {"name": "GR-Q3 (S2): the phone sold o1 after an import it had not seen removed o2; pushed and APPLIED, the older removal still crosses the sale", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "APPLIED", "current": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {"occ/o2/status": null}, "outbox": []}}
+    ]},
+    {"name": "GR-Q3 (S2) with the removal first: the newer sale is held, not pushed over it, until the user resolves", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {"occ/o2/status": null}, "outbox": [["occ/o1/status", "former"]]}},
+      {"push": true, "expect": {"crossings": {"occ/o2/status": null}, "outbox": [["occ/o1/status", "former"]]}},
+      {"resolve": {"key": "occ/o2/status", "choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/o2/status": null}, "crossings": {}, "outbox": [["occ/o1/status", "former"], ["occ/o2/status", null]]}},
+      {"push": true, "expect": {"crossings": {}, "outbox": []}}
+    ]},
+    {"name": "raise (S1): the app added a copy offline and MFC raised the Count; the import's new copy crosses the app's addition, and keeping the app's side tombstones MFC's copy", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/a1/head", "value": "H1", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"key": "occ/a1/status", "value": "owned", "version": "2026-10-01T10:00:00.000000Z#0000000001#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/a1/status": "owned", "occ/o2/status": null}, "crossings": {"occ/o2/status": "owned"}, "outbox": [["occ/a1/head", "H1"], ["occ/a1/status", "owned"]]}},
+      {"push": true, "expect": {"crossings": {"occ/o2/status": "owned"}, "outbox": [["occ/a1/status", "owned"]]}},
+      {"resolve": {"key": "occ/o2/status", "choice": "keep", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/a1/status": "owned", "occ/o2/status": null}, "crossings": {}, "outbox": [["occ/a1/status", "owned"], ["occ/o2/status", null]]}}
+    ]},
+    {"name": "raise (S2), the app's copy pushed first: added after the import and APPLIED, it still crosses MFC's new copy; taking MFC's side makes that copy live too", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/a1/head", "value": "H1", "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"key": "occ/a1/status", "value": "owned", "version": "2026-10-01T11:30:00.000000Z#0000000001#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "APPLIED", "current": {"key": "occ/a1/head", "value": "H1", "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}},
+      {"answer": {"outcome": "APPLIED", "current": {"key": "occ/a1/status", "value": "owned", "version": "2026-10-01T11:30:00.000000Z#0000000001#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/a1/status": "owned", "occ/o2/status": null}, "crossings": {"occ/o2/status": "owned"}, "outbox": []}},
+      {"resolve": {"key": "occ/o2/status", "choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"occ/a1/status": "owned", "occ/o2/status": "owned"}, "crossings": {}, "outbox": [["occ/o2/status", "owned"]]}}
+    ]},
+    {"name": "a sale taken back offline (owned, former, owned) changes nothing, so the removal of the other copy is taken", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T10:05:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "owned", "occ/o2/status": null}, "crossings": {}, "outbox": [["occ/o1/status", "former"], ["occ/o1/status", "owned"]]}}
+    ]},
+    {"name": "an import that changes another copy's kind removes and adds nothing, so it crosses no sale", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "ordered", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "ordered", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {}, "outbox": [["occ/o1/status", "former"]]}}
+    ]},
+    {"name": "an app copy of another kind, and a sale in another row, cross no addition", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o3/origin", "value": "900", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o3/head", "value": "H3", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o3/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/a1/head", "value": "H1", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"key": "occ/a1/status", "value": "wished", "version": "2026-10-01T10:00:00.000000Z#0000000001#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"edit": {"key": "occ/o3/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000002#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/a1/status": "wished", "occ/o2/status": "owned", "occ/o3/status": "former"}, "crossings": {}, "outbox": [["occ/a1/head", "H1"], ["occ/a1/status", "wished"], ["occ/o3/status", "former"]]}}
+    ]},
+    {"name": "an import removal the client took before its sale, delivered again in a replay, crosses nothing", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o2/status": null}, "crossings": {}, "outbox": []}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:30:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "expect": {"shows": {"occ/o2/status": "owned"}, "crossings": {}, "outbox": []}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {}, "outbox": [["occ/o1/status", "former"]]}}
+    ]},
+    {"name": "another device's write to the removed copy ends the row conflict, and the held sale is pushed", "steps": [
+      {"take": {"key": "occ/o1/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o1/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/origin", "value": "1144", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/head", "value": "H1", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"edit": {"key": "occ/o1/status", "value": "former", "version": "2026-10-01T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "occ/o2/status", "value": null, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"crossings": {"occ/o2/status": null}, "outbox": [["occ/o1/status", "former"]]}},
+      {"take": {"key": "occ/o2/status", "value": "owned", "version": "2026-10-01T11:30:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "expect": {"shows": {"occ/o1/status": "former", "occ/o2/status": "owned"}, "crossings": {}, "outbox": [["occ/o1/status", "former"]]}},
+      {"push": true, "expect": {"crossings": {}, "outbox": []}}
+    ]},
+    {"name": "a conflict raised on a field the phone edited offline before the import (S1) is presented and the edit held; the resolution is minted above the conflict", "steps": [
+      {"take": {"key": "uf/H1/score", "value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "imp/mfc/base/uf/H1/score", "value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "uf/H1/score", "value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}},
+      {"edit": {"key": "uf/H1/score", "value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "imp/mfc/base/uf/H1/score", "value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "imp/mfc/conflict/uf/H1/score", "value": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"uf/H1/score": 8}, "crossings": {"uf/H1/score": 7}, "outbox": [["uf/H1/score", 8]]}},
+      {"push": true, "expect": {"crossings": {"uf/H1/score": 7}, "outbox": [["uf/H1/score", 8]]}},
+      {"resolve": {"key": "uf/H1/score", "choice": "keep", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"uf/H1/score": 8}, "crossings": {}, "outbox": [["uf/H1/score", 8]]}}
+    ]},
+    {"name": "a conflict raised on a field the phone edited offline after the import (S2), already pushed and APPLIED, is still presented: the user never saw it", "steps": [
+      {"take": {"key": "uf/H1/score", "value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "imp/mfc/base/uf/H1/score", "value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "uf/H1/score", "value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}},
+      {"edit": {"key": "uf/H1/score", "value": 8, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"push": true},
+      {"answer": {"outcome": "APPLIED", "current": {"key": "uf/H1/score", "value": 8, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}}},
+      {"take": {"key": "imp/mfc/base/uf/H1/score", "value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "imp/mfc/conflict/uf/H1/score", "value": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"uf/H1/score": 8}, "crossings": {"uf/H1/score": 7}, "outbox": []}},
+      {"resolve": {"key": "uf/H1/score", "choice": "take", "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "expect": {"shows": {"uf/H1/score": 7}, "crossings": {}, "outbox": [["uf/H1/score", 7]]}}
+    ]},
+    {"name": "a conflict the client had taken before its edit, delivered again, crosses nothing: that edit is the user's resolution", "steps": [
+      {"take": {"key": "uf/H1/score", "value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "imp/mfc/base/uf/H1/score", "value": 5, "version": "2026-10-01T09:00:00.000000Z#0000000001#00000000000000000000000000000000"}},
+      {"take": {"key": "uf/H1/score", "value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}},
+      {"take": {"key": "imp/mfc/base/uf/H1/score", "value": 7, "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      {"take": {"key": "imp/mfc/conflict/uf/H1/score", "value": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"uf/H1/score": 9}, "crossings": {}, "outbox": []}},
+      {"edit": {"key": "uf/H1/score", "value": 8, "version": "2026-10-01T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}},
+      {"take": {"key": "imp/mfc/conflict/uf/H1/score", "value": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "expect": {"shows": {"uf/H1/score": 8}, "crossings": {}, "outbox": [["uf/H1/score", 8]]}}
+    ]}
+  ],
+  "conflictPushes": [
+    {"name": "an edit minted before the import that raised the conflict, pushed after it, lands but has not seen it: `against` moves to it and the conflict stays pending",
+      "start": {"K": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      "pushes": [
+        {"event": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "now": "2026-10-01T12:00:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "version": "2026-10-01T12:00:00.000000Z"}, "pending": true}}
+      ]},
+    {"name": "the user's resolution, minted above the conflict facet's version, resolves it",
+      "start": {"K": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "version": "2026-10-01T12:00:00.000000Z"}},
+      "pushes": [
+        {"event": {"value": 7, "version": "2026-10-01T12:05:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "now": "2026-10-01T12:06:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 7, "version": "2026-10-01T12:05:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "version": "2026-10-01T12:00:00.000000Z"}, "pending": false}}
+      ]},
+    {"name": "an edit minted after the import but below the moved conflict facet has not seen it either, and keeps it pending",
+      "start": {"K": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "version": "2026-10-01T12:00:00.000000Z"}},
+      "pushes": [
+        {"event": {"value": 6, "version": "2026-10-01T11:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "now": "2026-10-01T12:10:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 6, "version": "2026-10-01T11:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T11:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T12:10:00.000000Z"}, "pending": true}}
+      ]},
+    {"name": "a push that loses by LWW changes nothing",
+      "start": {"K": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      "pushes": [
+        {"event": {"value": 8, "version": "2026-10-01T09:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "now": "2026-10-01T12:00:00.000000Z", "expect": {"outcome": "STALE", "K": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "pending": true}}
+      ]},
+    {"name": "an edit minted after the import that raised the conflict resolves it on the server; the phone that made it presents the conflict (keyedCrossings)",
+      "start": {"K": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      "pushes": [
+        {"event": {"value": 8, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "now": "2026-10-01T12:00:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 8, "version": "2026-10-01T11:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}, "pending": false}}
+      ]},
+    {"name": "two older edits in turn each move `against`, and the resolution above the last move resolves it",
+      "start": {"K": {"value": 9, "version": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T11:00:00.000000Z#0000000002#00000000000000000000000000000000"}},
+      "pushes": [
+        {"event": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "now": "2026-10-01T12:00:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 8, "version": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:30:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "version": "2026-10-01T12:00:00.000000Z"}, "pending": true}},
+        {"event": {"value": 4, "version": "2026-10-01T10:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "now": "2026-10-01T12:01:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 4, "version": "2026-10-01T10:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a"}, "conflict": {"against": "2026-10-01T10:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T12:01:00.000000Z"}, "pending": true}},
+        {"event": {"value": 7, "version": "2026-10-01T12:02:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "now": "2026-10-01T12:03:00.000000Z", "expect": {"outcome": "APPLIED", "K": {"value": 7, "version": "2026-10-01T12:02:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e"}, "conflict": {"against": "2026-10-01T10:45:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "version": "2026-10-01T12:01:00.000000Z"}, "pending": false}}
+      ]}
   ],
   "reimports": [
     {
@@ -390,6 +635,48 @@
       "expect": {
         "copies": [{"occ": "o1", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}, {"occ": "o2", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}],
         "figures": {"H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "two rows' products merged after one import wrote both bases at one version: an unchanged export writes nothing, whichever head is listed first",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 9, "v": 1, "base": 9, "baseV": 1}}, "H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 9}, {"line": 3, "id": "900", "head": "H2", "status": "Owned", "count": "", "score": 7}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 9, "v": 1, "base": 9, "baseV": 1}}, "H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+        "writes": [],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "two merged rows' bases at one version: MFC changed the row whose value is shown and no row states it now, so the numerically lowest row's value is written under the head shown (the lower head_id)",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 9, "v": 1, "base": 9, "baseV": 1}}, "H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 8}, {"line": 3, "id": "900", "head": "H2", "status": "Owned", "count": "", "score": 7}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 7, "v": 100, "base": 7, "baseV": 100}}, "H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+        "writes": ["uf/H1/score"],
+        "conflicts": [],
+        "unresolved": []
+      }
+    },
+    {
+      "name": "after a merge the more recent base stands, as long as a row still states it: an unchanged export writes nothing",
+      "survivors": {"H1": "H2"},
+      "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}],
+      "figures": {"H1": {"score": {"value": 8, "v": 2, "base": 8, "baseV": 2}}, "H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
+      "export": [{"line": 2, "id": "1144", "head": "H2", "status": "Owned", "count": "", "score": 8}, {"line": 3, "id": "900", "head": "H2", "status": "Owned", "count": "", "score": 7}],
+      "expect": {
+        "copies": [{"occ": "o1", "origin": {"id": "1144", "ordinal": 1}, "head": "H1", "status": "owned", "base": {"head": "H1", "status": "owned"}}, {"occ": "o2", "origin": {"id": "900", "ordinal": 1}, "head": "H2", "status": "owned", "base": {"head": "H2", "status": "owned"}}],
+        "figures": {"H1": {"score": {"value": 8, "v": 2, "base": 8, "baseV": 2}}, "H2": {"score": {"value": 7, "v": 1, "base": 7, "baseV": 1}}},
         "writes": [],
         "conflicts": [],
         "unresolved": []

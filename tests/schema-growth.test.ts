@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RETIRED_SCHEMAS, checkSchemaGrowth, main, schemaGrowthViolations } from '../scripts/schema-growth.js';
+import { ANNOTATIONS, RETIRED_SCHEMAS, checkSchemaGrowth, main, schemaGrowthViolations } from '../scripts/schema-growth.js';
 
 // A closed object schema, the shape every payload schema here has.
 const closed = <P extends Record<string, object>>(properties: P, required: string[] = Object.keys(properties)) => ({
@@ -33,10 +33,57 @@ const edit = (f: (s: typeof DISPOSAL) => void) => {
 };
 
 describe('schemaGrowthViolations: a published payload schema never gains a property', () => {
-  it('passes the same schema, and a changed description or bound', () => {
+  it('passes the same schema, and changed annotations, which no validator reads', () => {
+    expect(ANNOTATIONS).toEqual(['title', 'description', '$comment', 'examples']);
     expect(schemaGrowthViolations('d.json', DISPOSAL, structuredClone(DISPOSAL))).toEqual([]);
-    const reworded = edit((s) => Object.assign(s.properties.edited_at, { description: 'when', maxLength: 64 }));
+    const reworded = edit((s) => {
+      Object.assign(s.properties.edited_at, { description: 'when', title: 'Edited at', $comment: 'display only', examples: ['2026-10-01T09:00:00Z'] });
+      Object.assign(s, { description: 'a disposal' });
+    });
     expect(schemaGrowthViolations('d.json', DISPOSAL, reworded)).toEqual([]);
+  });
+
+  it('flags a changed type, bound, pattern, format or const, added or removed', () => {
+    const SCORE = closed({ score: { type: 'integer', minimum: 1, maximum: 10 }, at: { type: 'string', pattern: '^\\d{4}$', format: 'date', maxLength: 64 }, v: { const: 1 } });
+    const change = (f: (s: typeof SCORE) => void) => {
+      const s = structuredClone(SCORE);
+      f(s);
+      return schemaGrowthViolations('s.json', SCORE, s);
+    };
+    expect(change((s) => Object.assign(s.properties.score, { type: 'number', maximum: 100 }))).toEqual([
+      's.json: /properties/score changed maximum from 10 to 100',
+      's.json: /properties/score changed type from "integer" to "number"',
+    ]);
+    expect(change((s) => Object.assign(s.properties.at, { pattern: '^.*$', format: 'date-time', maxLength: 65, minLength: 1 }))).toEqual([
+      's.json: /properties/at changed format from "date" to "date-time"',
+      's.json: /properties/at changed maxLength from 64 to 65',
+      's.json: /properties/at changed minLength from absent to 1',
+      's.json: /properties/at changed pattern from "^\\\\d{4}$" to "^.*$"',
+    ]);
+    expect(change((s) => {
+      delete (s.properties.score as { minimum?: number }).minimum;
+      Object.assign(s.properties.v, { const: 2 });
+    })).toEqual(['s.json: /properties/score changed minimum from 1 to absent', 's.json: /properties/v changed const from 1 to 2']);
+  });
+
+  it('flags a pattern property added or removed, whatever its body', () => {
+    const typed = edit((s) => Object.assign(s, { patternProperties: { '^fx$': { type: 'string' } } }));
+    const anyXKey = edit((s) => Object.assign(s, { patternProperties: { '^x-': {} } }));
+    expect(schemaGrowthViolations('d.json', DISPOSAL, typed)).toEqual(['d.json: / gained patternProperties ^fx$']);
+    expect(schemaGrowthViolations('d.json', DISPOSAL, anyXKey)).toEqual(['d.json: / gained patternProperties ^x-']);
+    expect(schemaGrowthViolations('d.json', typed, DISPOSAL)).toEqual(['d.json: / lost patternProperties ^fx$', 'd.json: /patternProperties/^fx$ is gone']);
+  });
+
+  it('flags any new subschema, not only one that declares properties', () => {
+    const negated = edit((s) => Object.assign(s.properties.edited_at, { not: { const: '' } }));
+    const either = edit((s) => Object.assign(s, { anyOf: [{}, true] }));
+    expect(schemaGrowthViolations('d.json', DISPOSAL, negated)).toEqual(['d.json: /properties/edited_at/not is new']);
+    expect(schemaGrowthViolations('d.json', DISPOSAL, either)).toEqual(['d.json: /anyOf/0 is new', 'd.json: /anyOf/1 is new']);
+  });
+
+  it('flags a boolean subschema that changed', () => {
+    const before = { type: 'array', items: false };
+    expect(schemaGrowthViolations('a.json', before, { type: 'array', items: true })).toEqual(['a.json: /items changed from false to true']);
   });
 
   it('flags a property added at the top level', () => {
