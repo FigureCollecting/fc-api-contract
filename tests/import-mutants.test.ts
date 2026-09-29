@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { stable, type Switches } from './support/server-model.js';
 import { runScenario } from './support/trace-runner.js';
 import { vectors } from './support/vectors.js';
-import { itemReactionWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
+import { compoundReactionWorld, itemReactionWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
 
 type Client = { staging?: boolean; pullAfterImport?: boolean; resumeFromNext?: boolean };
 const eq = (a: unknown, b: unknown) => stable(a) === stable(b);
@@ -32,10 +32,15 @@ const reactionBreaches = (sw: Switches) => {
 };
 const itemBreaches = (sw: Switches) => {
   const t = itemReactionWorld({ sw });
-  return t.silent + t.silentItem + (t.collisions - 9);
+  return t.silent + t.silentItem + t.collisions;
+};
+// every 13th case of world 7 (a stride that meets both device forms and every answer and hand)
+const compoundBreaches = (sw: Switches) => {
+  const t = compoundReactionWorld({ sw, every: 13 });
+  return t.silent + t.silentItem;
 };
 
-type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items';
+type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound';
 const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detector; mustInclude?: string }[] = [
   { name: 'F1: no marker frame (a figure the import decided without writing gets no frame)', sw: { noMarker: true }, detector: 'world' },
   { name: 'F2: no client staging (a page ending inside an import is shown half applied)', client: { staging: false }, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
@@ -76,14 +81,15 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'R8: a divergence raised for a figure with no MFC id', sw: { divergeWithoutId: true }, detector: 'review', mustInclude: 'Align-MFC is derived only where the MFC id is known' },
   // round 7
   { name: 'HELD (ii) as in round 6: every push is a revision, an answer included', sw: { revisionsFromAnswers: true }, detector: 'review', mustInclude: 'An answer is no revision' },
-  { name: 'HELD (ii) as in round 6: a replay\'s change to the items is no revision', sw: { revisionIgnoresItems: true }, detector: 'review', mustInclude: 'A by-hand reaction to a listed change, the late sale first' },
+  { name: 'HELD (ii) as in round 6: items play no part in it (a replay\'s change to the items is no revision)', sw: { revisionIgnoresItems: true }, detector: 'review', mustInclude: 'A by-hand reaction to a listed change, the late sale first' },
   { name: 'HELD (ii) as in round 6: any knowing edit made before a revision is held, a tag on an untouched copy included', sw: { revisedHoldsAnyEdit: true }, detector: 'review', mustInclude: 'HELD (ii) holds only a reaction to the revision' },
-  { name: 'HELD (i) and (ii) as in round 6: a status write made while the figure had an item the two sides leave different is no reaction', sw: { narrowReaction: true }, detector: 'items' },
+  { name: 'the same, for a figure value', sw: { revisedHoldsAnyEdit: true }, detector: 'review', mustInclude: 'HELD (ii) applies a figure value made before a revision' },
+  { name: 'HELD (i) and (ii) as in round 6: no item clause, so a status write made while the figure had an item is no reaction', sw: { narrowReaction: true }, detector: 'items' },
   { name: 'the same, caught by its golden', sw: { narrowReaction: true }, detector: 'review', mustInclude: 'A by-hand reaction to a conflict' },
   { name: 'closing a conflict on a knowing edit writes the decision (round 6)', sw: { closeWrites: true }, detector: 'review', mustInclude: 'A knowing edit that leaves MFC a change to make writes nothing' },
   { name: 'a knowing edit ends a conflict that still leaves MFC a change to make', sw: { closeWhenNoConflict: true }, detector: 'review', mustInclude: 'A knowing edit that leaves MFC a change to make leaves the conflict standing and writes nothing' },
   { name: 'a knowing edit ends a conflict once MFC\'s changes are in the app, the app\'s own changes aside (sides not yet agreeing)', sw: { closeWhenMfcInApp: true }, detector: 'review', mustInclude: 'A by-hand reaction to a conflict' },
-  { name: 'items compared by their whole payload, so a replay that only re-shows the app\'s side in an item is a revision (round 6\'s relevance view)', sw: { itemsByPayload: true }, detector: 'review', mustInclude: 'A replay that only re-shows the app\'s side in an item is no revision' },
+  { name: 'items compared by their whole payload, so a replay that only re-shows the app\'s side in an item is a revision (round 6\'s relevance view)', sw: { itemsByPayload: true }, detector: 'review', mustInclude: 'A replay that only re-shows the app\'s side in an item changes no item' },
   { name: 'the relevance test compares raw status and head facets, so a removed copy\'s head counts (round 6)', sw: { relevanceRawFacets: true }, detector: 'review', mustInclude: 'The relevance test compares live copies' },
   { name: 'the relevance test leaves the unit\'s own copies out (round 6)', sw: { relevanceExcludesOwn: true }, detector: 'review', mustInclude: 'The relevance test counts the unit\'s own copy' },
   { name: 'HELD (iii) compares the basis with the answer\'s commit inclusively', sw: { answerBoundaryInclusive: true }, detector: 'review', mustInclude: 'HELD (iii) counts an answer only when the edit was made before its commit' },
@@ -91,6 +97,20 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'a held-edit card leaves out `more`', sw: { heldNoMore: true }, detector: 'review', mustInclude: 'A held-edit card counts what it does not list' },
   { name: 'a divergence\'s rev is its content alone, so one raised again keeps its old rev (round 6)', sw: { divRevContentOnly: true }, detector: 'review', mustInclude: 'A divergence raised again after a conflict replaced it has a new rev' },
   { name: 'a divergence an import keeps still shows the rows of the import that raised it (round 6)', sw: { divergenceKeepsOldRows: true }, detector: 'review', mustInclude: 'An MFC-only change over a figure the app is ahead on is applied and listed with its undo, and the score the app is ahead on stays one divergence; keep acknowledges it and the align-MFC entry asks for the score alone' },
+  // round 8
+  { name: 'HELD (i) as in round 7: an answer that ended the item the device saw hides its by-hand reaction', sw: { answerHidesReaction: true }, detector: 'compound' },
+  { name: 'the same, caught by its golden', sw: { answerHidesReaction: true }, detector: 'review', mustInclude: 'A compound reaction in one push, dismiss and sale' },
+  { name: 'HELD (ii) as in round 7: no revision point for a replay that changes nothing against S just before its push', sw: { revisionFromPushStart: true }, detector: 'compound' },
+  { name: 'the same, caught by its golden', sw: { revisionFromPushStart: true }, detector: 'review', mustInclude: 'A compound reaction in two pushes, undo and sale' },
+  { name: 'HELD (ii) as in round 7: a revision is everything its push emitted, an answer in the push included', sw: { revisionWholePush: true }, detector: 'review', mustInclude: 'A revision is what the replayed late edits alone change' },
+  { name: 'a revision\'s change counts its late edits\' own writes (a tag on the copy the replayed sale took out is held)', sw: { revisionCountsOwn: true }, detector: 'review', mustInclude: 'HELD (ii) holds only a reaction to the revision' },
+  { name: 'reaction clause (b) dropped: a copy added after the import reacts only through what it touches', sw: { noNewCopyReaction: true }, detector: 'review', mustInclude: 'Reaction clause (b) alone' },
+  { name: 'reaction clause (c) without its first half: an item the device saw that the two sides end differently is no reaction by itself', sw: { noItemDiffClause: true }, detector: 'review', mustInclude: 'Reaction clause (c), an item the two placements end differently' },
+  { name: 'a pending divergence keeps its rev when an import finds other values', sw: { divRevKeptOnNewValues: true }, detector: 'review', mustInclude: 'A divergence whose values change between imports takes a new rev' },
+  { name: 'a change entry raised again, identical, keeps the old rev', sw: { changeRevWithoutImport: true }, detector: 'review', mustInclude: 'A change entry raised again, identical, after it ended has a new rev' },
+  { name: 'a device that saw an item only after it ended counts as having seen it', sw: { sawEndedItem: true }, detector: 'review', mustInclude: 'A device that saw an item only after it ended did not react to it' },
+  { name: 'a push whose late edits are all held is still a revision', sw: { heldLateIsRevision: true }, detector: 'review', mustInclude: 'A push whose late edits are all held is no revision' },
+  { name: 'an undo of an applied change realigns the bases', sw: { undoRealigns: true }, detector: 'review', mustInclude: 'An undo moves no base' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
@@ -100,6 +120,7 @@ describe('mutants: every rule is load-bearing', () => {
     expect(worldBreaches({})).toBe(0);
     expect(reactionBreaches({})).toBe(0);
     expect(itemBreaches({})).toBe(0);
+    expect(compoundBreaches({})).toBe(0);
     const t = twoDevices();
     expect(t.silentCounts + t.differsShown).toBe(0);
   }, 300_000);
@@ -108,6 +129,7 @@ describe('mutants: every rule is load-bearing', () => {
     const sw = m.sw ?? {};
     if (m.detector === 'world') expect(worldBreaches(sw, m.client?.staging ?? true)).toBeGreaterThan(0);
     else if (m.detector === 'items') expect(itemBreaches(sw)).toBeGreaterThan(0);
+    else if (m.detector === 'compound') expect(compoundBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'twoDevices') {
       const t = twoDevices({ sw });
       expect(t.silentCounts + t.differsShown).toBeGreaterThan(0);

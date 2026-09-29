@@ -127,7 +127,14 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       /A by-hand reaction to a conflict: /, /A by-hand reaction to a conflict, the late sale first/, /holds only a reaction to the revision/,
       /A conflict raised again after it ended has a new rev/, /A divergence raised again after a conflict replaced it has a new rev/,
       /keeps its rev, whatever the app did meanwhile/, /counts what it does not list/, /An MFC-only change over a figure the app is ahead on/,
-      /counts the unit's own copy/, /only re-shows the app's side in an item is no revision/])
+      /counts the unit's own copy/, /only re-shows the app's side in an item changes no item/,
+      // round 8
+      /A compound reaction in one push, dismiss and sale: /, /A compound reaction in one push, dismiss and re-add: /,
+      /A compound reaction in two pushes, dismiss and re-own: /, /A compound reaction in two pushes, undo and sale: /,
+      /A compound reaction on three devices: /, /A revision is what the replayed late edits alone change/, /Reaction clause \(b\) alone/,
+      /A divergence whose values change between imports takes a new rev/, /A change entry raised again, identical, after it ended has a new rev/,
+      /A push whose late edits are all held is no revision/, /An undo moves no base/, /A device that saw an item only after it ended did not react to it/,
+      /Reaction clause \(c\), an item the two placements end differently/, /HELD \(ii\) applies a figure value made before a revision/])
       expect(names.join('\n')).toMatch(topic);
     expect(names.join('\n')).not.toMatch(/mfc_only|mfc_change|HOLD/);
   });
@@ -172,6 +179,25 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
     // (ii) holds only a reaction: a tag on a copy the revision left alone is applied, a new copy held; an answer is no revision
     expect(push('HELD (ii) holds only a reaction to the revision', 1)).toEqual(['APPLIED', 'HELD', 'HELD']);
     expect(push('An answer is no revision', 1)).toEqual(['APPLIED', 'APPLIED', 'APPLIED']);
+  });
+
+  it('pin HELD on a compound reaction: an answer plus a by-hand edit on the same showing, in one push or two, or on a third device (round 8)', () => {
+    const push = (prefix: string, k: number) =>
+      vectors.review.find((c) => c.name.startsWith(prefix))!.steps.filter((s) => s.op === 'push')[k]!.expect!.map((x) => x.outcome);
+    // (i): the answer ended the item, so both placements end alike; what the tablet saw holds the phone's late sale
+    expect(push('A compound reaction in one push, dismiss and sale: ', 1)).toEqual(['HELD']);
+    expect(push('A compound reaction in one push, dismiss and re-add: ', 1)).toEqual(['HELD']);
+    // (ii): the phone's push is a revision point though it changes nothing against S just before it
+    expect(push('A compound reaction in two pushes, dismiss and re-own: ', 2)).toEqual(['HELD']);
+    expect(push('A compound reaction in two pushes, undo and sale: ', 2)).toEqual(['HELD']);
+    expect(push('A compound reaction on three devices: ', 2)).toEqual(['HELD']);
+    // a revision is the replayed late edits alone: an answer in the same push is no part of it
+    expect(push('A revision is what the replayed late edits alone change', 1)).toEqual(['APPLIED']);
+    // and a push whose late edits are all held is none
+    expect(push('A push whose late edits are all held is no revision', 2)).toEqual(['APPLIED', 'APPLIED']);
+    // reaction clause (b) alone holds, and a device that saw an item only after it ended did not react to it
+    expect(push('Reaction clause (b) alone', 1)).toEqual(['HELD', 'HELD']);
+    expect(push('A device that saw an item only after it ended did not react to it', 1)).toEqual(['APPLIED']);
   });
 
   it.each(vectors.review.map((c) => [c.name, c] as const))('%s', (_name, c) => {

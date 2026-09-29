@@ -1,5 +1,6 @@
-// Runs one golden/import-vectors.json scenario (serverScenarios or review) on the server model with a phone (P)
-// and a tablet (T), and reports every step's observable result and the end state, for the test to compare.
+// Runs one golden/import-vectors.json scenario (serverScenarios or review) on the server model with a phone (P), a
+// tablet (T) and, when a step names it, a third device (U), and reports every step's observable result and the end
+// state, for the test to compare.
 import { Device } from './replica-client.js';
 import { Server, type AlignAction, type Choice, type Field, type ImportCounters, type ImportResult, type ItemKind, type Json, type Row, type Switches } from './server-model.js';
 
@@ -78,28 +79,30 @@ export function runScenario(c: Scenario, switches: Switches = {}, client: { stag
   const rank = c.rank !== undefined && Object.keys(c.rank).length > 0 ? (x: string) => c.rank![x] ?? x : undefined;
   const s = new Server({ namer: scenarioNamer, ...(rank === undefined ? {} : { rank }), switches });
   const devs: Record<string, Device> = { P: new Device(s, 'P', client), T: new Device(s, 'T', client) };
+  // a third device (U) exists once a step names it
+  const dev = (name: string): Device => (devs[name] ??= new Device(s, name, client));
   const shows = (d: Device, keys: Iterable<string>) => Object.fromEntries([...keys].map((k) => [k, d.show(k)]));
   /** One entry per step with an `expect`, in step order: what the model gives for it. */
   const actual: unknown[] = [];
   for (const st of c.steps) {
     if (st.op === 'import') {
       // R1: the requester pushes its outbox first; R7: it pulls the import's transaction before it shows the review set
-      if (st.by !== undefined) devs[st.by]!.push(st.t);
+      if (st.by !== undefined) dev(st.by).push(st.t);
       const I = s.runImport(st.rows, st.t);
       if (st.expect !== undefined) actual.push(pinned(s.importResult(I)));
-      if (st.by !== undefined && client.pullAfterImport !== false) devs[st.by]!.pull();
+      if (st.by !== undefined && client.pullAfterImport !== false) dev(st.by).pull();
     } else if (st.op === 'redirect') s.redirect(st.head, st.survivor, st.t);
-    else if (st.op === 'edit') devs[st.dev]!.edit(st.key, st.value, st.t);
-    else if (st.op === 'resolve') devs[st.dev]!.answer(st.fig, st.choice, st.t, st.copies, st.fields, st.item, st.revOf ?? st.item);
+    else if (st.op === 'edit') dev(st.dev).edit(st.key, st.value, st.t);
+    else if (st.op === 'resolve') dev(st.dev).answer(st.fig, st.choice, st.t, st.copies, st.fields, st.item, st.revOf ?? st.item);
     else if (st.op === 'push') {
-      const keys = devs[st.dev]!.outbox.map((e) => e.key);
-      const res = devs[st.dev]!.push(st.t, st.n).map((r, i) => ({ key: keys[i]!, outcome: r.outcome }));
+      const keys = dev(st.dev).outbox.map((e) => e.key);
+      const res = dev(st.dev).push(st.t, st.n).map((r, i) => ({ key: keys[i]!, outcome: r.outcome }));
       if (st.expect !== undefined) actual.push(res);
     } else if (st.op === 'pull') {
-      devs[st.dev]!.pull(st.n);
-      if (st.expect !== undefined) actual.push({ shows: shows(devs[st.dev]!, Object.keys(st.expect.shows)) });
-    } else if (st.op === 'restart') devs[st.dev]!.restart();
-    else devs[st.dev]!.replayFromEmpty();
+      dev(st.dev).pull(st.n);
+      if (st.expect !== undefined) actual.push({ shows: shows(dev(st.dev), Object.keys(st.expect.shows)) });
+    } else if (st.op === 'restart') dev(st.dev).restart();
+    else dev(st.dev).replayFromEmpty();
   }
   const wanted = c.steps.flatMap((st) => ('expect' in st && st.expect !== undefined ? [st.expect] : []));
   // an import step that pins no counters is compared without them

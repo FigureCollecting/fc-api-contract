@@ -2,13 +2,17 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   DISPOSAL_REASONS,
   OCCURRENCE_STATUSES,
   SERVER_FACET_PAYLOAD_SCHEMAS,
   USER_FACET_PAYLOAD_SCHEMAS,
+  parseUserFacetKey,
   type UserFacetFamily,
 } from '../src/index.js';
+import type { Json } from './support/server-model.js';
+import { vectors } from './support/vectors.js';
 
 type Family = UserFacetFamily | keyof typeof SERVER_FACET_PAYLOAD_SCHEMAS;
 const PATHS: Record<Family, string> = { ...USER_FACET_PAYLOAD_SCHEMAS, ...SERVER_FACET_PAYLOAD_SCHEMAS };
@@ -243,5 +247,62 @@ describe('payload schemas', () => {
 
   it.each(USER)('%s is closed: any extra property is invalid', (family) => {
     expect(validator(family)({ ...BODY[family], ...DISPLAY, extra: 1 })).toBe(false);
+  });
+});
+
+// golden/import-vectors.json writes abstract payloads (its $comment: ids, heads and values are abstract). Lifted to the
+// wire, each abstract id a uuid and the display fields added, every payload a golden step sends must validate against
+// its closed schema, so an implementation that validates what it is pushed can run every golden as written.
+describe('golden payloads', () => {
+  const uuidOf = (name: string) => {
+    const h = createHash('sha256').update(name).digest('hex');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-8${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+  };
+  const liftKey = (key: string) => {
+    const p = key.split('/');
+    if (p[0] === 'occ' || p[0] === 'uf' || p[0] === 'res') p[p[0] === 'res' ? 2 : 1] = uuidOf(p[p[0] === 'res' ? 2 : 1]!);
+    if ((p[0] === 'occ' || p[0] === 'uf') && p[2] === 'tag') p[3] = uuidOf(p[3]!);
+    return p.join('/');
+  };
+  const liftValue = (family: UserFacetFamily, v: Json): unknown => {
+    const body = (b: object) => ({ ...b, ...DISPLAY });
+    if (family === 'occ/status') return body({ status: v });
+    if (family === 'occ/head') return body({ head_id: uuidOf(String(v)) });
+    if (family === 'occ/collection') {
+      const [kind, id] = String(v).split('/');
+      return body({ collection: `${kind}/${id === 'default' ? id : uuidOf(id!)}` });
+    }
+    if (family === 'uf/score' || family === 'uf/note' || family === 'uf/wishability') return body({ [family.slice(3)]: v });
+    return typeof v === 'object' && v !== null && !Array.isArray(v) ? body(v) : v;
+  };
+  const steps = [
+    ...vectors.serverScenarios.map((c) => [c.id, c.steps] as const),
+    ...vectors.review.map((c) => [c.name, c.steps] as const),
+  ];
+
+  it('every edit and answer a golden pushes validates against its closed schema once lifted to the wire', () => {
+    const bad: string[] = [];
+    let checked = 0;
+    for (const [where, ss] of steps)
+      for (const st of ss) {
+        if (st.op === 'edit') {
+          const parsed = parseUserFacetKey(liftKey(st.key));
+          if (parsed === undefined) {
+            bad.push(`${where}: ${st.key} is no user-owned key`);
+            continue;
+          }
+          if (st.value === null) continue; // a tombstone carries no payload
+          checked++;
+          const payload = liftValue(parsed.family as UserFacetFamily, st.value);
+          if (!validator(parsed.family as Family)(payload)) bad.push(`${where}: ${st.key} ${JSON.stringify(st.value)}`);
+        } else if (st.op === 'resolve') {
+          checked++;
+          const copies = st.copies === undefined ? {} : { copies: Object.entries(st.copies).map(([occ, status]) => ({ occ: uuidOf(occ), status })) };
+          const payload = { item: st.item ?? 'figure', rev: 'I2:x', choice: st.choice, ...copies, ...(st.fields === undefined ? {} : { fields: st.fields }), ...DISPLAY };
+          if (parseUserFacetKey(liftKey(`res/mfc/${st.fig}`)) === undefined || !validator('res/answer')(payload)) bad.push(`${where}: answer ${JSON.stringify(payload)}`);
+        }
+      }
+    expect(checked).toBeGreaterThan(300);
+    expect(bad).toEqual([]);
   });
 });

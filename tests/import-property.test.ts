@@ -1,10 +1,11 @@
 // THE SERVER DECIDES, as a property: however an offline phone's edits meet an import (pushed after it, pulled first,
 // or across two imports), the end state equals the path where the phone pushed first; and when another device reacted
 // to the import first, the phone's late units are held and shown, never lost silently. FC_PROPERTY_FULL=1 runs the
-// two-import world in full (554,286 path runs); CI runs every 16th case of it.
+// two-import world in full (554,286 path runs) and the compound-reaction world in full (137,682); CI runs every 16th case
+// of the first and every 7th of the second.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { itemReactionWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
+import { compoundReactionWorld, itemReactionWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
 
 // The tallies go to the console, and to the file FC_PROPERTY_REPORT names when it is set.
 const report = (name: string, t: Tally) => {
@@ -51,9 +52,25 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
     expect(t.runs).toBe(12_936);
     expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
-    // plain concurrency on one copy (the tablet's by-hand sale took the copy the phone sold offline), which no import decided
-    expect(t.collisions).toBe(9);
+    // the tablet's by-hand sale of the very copy the phone sold offline: since round 8 each is held and shown (the tablet
+    // saw the change the phone's sale withdraws), so none is left as plain concurrency
+    expect(t.collisions).toBe(0);
   }, 600_000);
+
+  it('a compound reaction: the tablet answers the item it was shown and acts by hand on the same showing, in one push or two, or a third device acts by hand (HELD (i), (ii))', () => {
+    const full = process.env.FC_PROPERTY_FULL === '1';
+    const t = compoundReactionWorld({ every: full ? 1 : 7 });
+    const line =
+      `a compound reaction${full ? ' (full)' : ' (every 7th case)'}: ${t.runs} path runs; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
+      `differs but shown ${t.differsShown}; a by-hand pick the replay moved ${t.picks}; silent ${t.silent}; silent, pushed-first has an item ${t.silentItem}`;
+    console.log(line);
+    if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+    expect(t.runs).toBe(full ? 137_682 : 19_694);
+    expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
+    // pushed-first, the device's pick (the lowest or highest live copy) is the phone's own late copy, which it could not
+    // see offline; with that copy taken out by name, pushed-first ends the same
+    expect(t.picks, t.pickCases.join('\n')).toBe(full ? 10 : 0);
+  }, 3_600_000);
 
   it('two devices, one edit each, both pull the import first (fuzz2_a.py)', () => {
     const t = twoDevices();

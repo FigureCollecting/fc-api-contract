@@ -476,3 +476,211 @@ export function itemReactionWorld(opts: { sw?: Switches } = {}): ItemReactionTal
       }
   return t;
 }
+
+// ------------------------------------------------------------------ world 7: compound reactions (HELD (i) and (ii))
+// The tablet answers the item it was shown (undo or dismiss a change entry, keep or take a figure item, dismiss an
+// align-MFC entry) AND someone acts by hand on the same showing: the tablet itself, its outbox going as one push or as
+// two (the answer first) with the phone's late unit between or after, or a third device U that pulled the same showing.
+// Each offline path is compared with pushed-first plus the same conditional reactions, the other devices' pushes in the
+// path's own order. When pushed-first the by-hand pick (the highest or lowest live copy) is the phone's own late copy,
+// which the device could not see offline, the path is compared once more with pushed-first where the device takes out
+// the copy it took out offline, by name: equal there, it is counted apart as a pick, never as silent.
+type CAnswer = 'undo' | 'dismiss' | 'take' | 'keep' | 'dismiss-align';
+type CHand = 'sell-high' | 'sell-low' | 'reown' | 'readd' | 'tag';
+export type COrder = 'T-P' | 'P-T' | 'T1-P-T2' | 'T1-T2-P' | 'P-T1-T2' | 'T-P-U' | 'T-U-P' | 'P-T-U' | 'U-T-P' | 'U-P-T' | 'P-U-T';
+/** Pushed-first: the phone's unit before the import, the other devices' pushes in the path's own order. */
+type CRef = 'REF T' | 'REF T1-T2' | 'REF T-U' | 'REF U-T';
+export interface CCase {
+  policy: string;
+  pre: string;
+  n: number;
+  u: [string, string];
+  d: number;
+  a: CAnswer;
+  h: CHand;
+  /** T: the tablet answers and acts by hand; TU: the tablet answers and U acts by hand. */
+  who: 'T' | 'TU';
+}
+/** What a device shows for H1 when it acts by hand (its outbox then holds its answer at most, never an edit). */
+const liveAndRemoved = (d: Device) => {
+  const occs = [...new Set([...d.replica.keys()].filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!))].sort();
+  return {
+    live: occs.filter((c) => d.show(`occ/${c}/status`) === 'owned' && d.show(`occ/${c}/head`) === 'H1'),
+    removed: occs.filter((c) => d.show(`occ/${c}/status`) === null && d.show(`occ/${c}/head`) === 'H1'),
+  };
+};
+
+export function runCompound(c: CCase, path: CRef | COrder, allow: { a: boolean; h: boolean }, sw: Switches, byName?: string) {
+  const s = new Server({ namer: namer2, switches: sw });
+  const P = new Device(s, 'P');
+  const Tb = new Device(s, 'T');
+  const U = new Device(s, 'U');
+  Tb.edit('pref/mfc/import', { import_policy: c.policy }, T('07:50'));
+  Tb.push(T('07:51'));
+  s.runImport([row('1144', 'H1', 'owned', c.n)], T('08:00'));
+  for (const d of [P, Tb, U]) d.pull();
+  if (c.pre === 'appadd') {
+    Tb.edit('occ/b1/head', 'H1', T('08:10'));
+    Tb.edit('occ/b1/status', 'owned', T('08:10'));
+  } else if (c.pre === 'appsell') Tb.edit(`occ/o${c.n}/status`, 'former', T('08:10'));
+  Tb.push(T('08:11'));
+  const [op, x] = c.u;
+  if (op === 'sell' || op === 'sell+disposal') P.edit(`occ/${x}/status`, 'former', T('08:20'));
+  if (op === 'sell+disposal') P.edit(`occ/${x}/disposal`, { reason: 'sold' }, T('08:20'));
+  if (op === 'cancel') P.edit(`occ/${x}/status`, null, T('08:20'));
+  if (op === 'add') {
+    P.edit('occ/a1/head', 'H1', T('08:20'));
+    P.edit('occ/a1/status', 'owned', T('08:20'));
+  }
+  if (path.startsWith('REF')) P.push(T('08:30'));
+  s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d))], T('10:00'));
+  Tb.pull();
+  const fig = Tb.show('imp/mfc/figure/H1');
+  const ch = Tb.show('imp/mfc/change/H1');
+  const al = Tb.show('imp/mfc/align/H1');
+  let didA = false;
+  if (allow.a) {
+    if ((c.a === 'undo' || c.a === 'dismiss') && ch !== null) didA = true;
+    if ((c.a === 'take' || c.a === 'keep') && fig !== null) didA = true;
+    if (c.a === 'dismiss-align' && al !== null) didA = true;
+    if (didA) Tb.answer('H1', c.a === 'dismiss-align' ? 'dismiss' : c.a, T('10:10'), {}, {}, c.a === 'dismiss-align' ? 'align' : c.a === 'undo' || c.a === 'dismiss' ? 'change' : 'figure');
+  }
+  const nA = Tb.outbox.length;
+  // the by-hand device: the tablet, or U, which pulled the same showing
+  const H = c.who === 'T' ? Tb : U;
+  if (c.who === 'TU') U.pull();
+  const shown = ['figure', 'change', 'align'].some((k) => H.show(`imp/mfc/${k}/H1`) !== null);
+  let didH = '';
+  if (allow.h && shown) {
+    const { live, removed } = liveAndRemoved(H);
+    const t = T('10:11');
+    if (c.h === 'sell-high' || c.h === 'sell-low') {
+      const o = byName ?? (c.h === 'sell-low' ? live[0] : live.at(-1));
+      if (o !== undefined) {
+        H.edit(`occ/${o}/status`, 'former', t);
+        didH = o;
+      }
+    } else if (c.h === 'reown') {
+      const o = removed.at(-1);
+      if (o !== undefined) {
+        H.edit(`occ/${o}/status`, 'owned', t);
+        didH = 'reown';
+      }
+    } else if (c.h === 'readd') {
+      H.edit('occ/r1/head', 'H1', t);
+      H.edit('occ/r1/status', 'owned', t);
+      didH = 'readd';
+    } else if (live[0] !== undefined) {
+      H.edit(`occ/${live[0]}/tag/t9`, {}, t);
+      didH = 'tag';
+    }
+  }
+  const res: string[] = [];
+  const pT = (n?: number) => res.push(...Tb.push(T('11:00') + res.length, n).map((r) => r.outcome));
+  const pP = () => res.push(...P.push(T('11:00') + res.length).map((r) => r.outcome));
+  const pU = () => res.push(...U.push(T('11:00') + res.length).map((r) => r.outcome));
+  const split = nA > 0 && Tb.outbox.length > nA;
+  const seq: Record<CRef | COrder, (() => void)[]> = {
+    'REF T': [() => pT()],
+    'REF T1-T2': [() => pT(nA), () => pT()],
+    'REF T-U': [() => pT(), pU],
+    'REF U-T': [pU, () => pT()],
+    'T-P': [() => pT(), pP],
+    'P-T': [pP, () => pT()],
+    'T1-P-T2': [() => pT(nA), pP, () => pT()],
+    'T1-T2-P': [() => pT(nA), () => pT(), pP],
+    'P-T1-T2': [pP, () => pT(nA), () => pT()],
+    'T-P-U': [() => pT(), pP, pU],
+    'T-U-P': [() => pT(), pU, pP],
+    'P-T-U': [pP, () => pT(), pU],
+    'U-T-P': [pU, () => pT(), pP],
+    'U-P-T': [pU, pP, () => pT()],
+    'P-U-T': [pP, pU, () => pT()],
+  };
+  for (const f of seq[path]) f();
+  for (let i = 0; i < 2; i++) for (const d of [P, Tb, U]) d.pull();
+  let counts = 0;
+  for (const [k, v] of s.emitted) if (k.endsWith('/status') && v[0] === 'owned' && s.emitted.get(k.replace('/status', '/head'))?.[0] === 'H1') counts++;
+  const items = JSON.stringify({ f: s.figureItems(), c: Object.keys(s.changeEntries()).sort(), a: Object.keys(s.alignEntries()).sort() });
+  const held = Object.values(s.heldCards()).flat().length;
+  return { counts, items, held, stale: didA && res.includes('STALE'), didA, didH, split, out: res.join(',') };
+}
+
+export interface CompoundTally {
+  runs: number;
+  same: number;
+  sameCountsShown: number;
+  differsShown: number;
+  /** A by-hand pick the replay made differ, equal to pushed-first with the copy taken out by name. */
+  picks: number;
+  pickCases: string[];
+  silent: number;
+  /** Counts equal, pushed-first has an item and this path shows nothing. */
+  silentItem: number;
+  first: string[];
+}
+
+/**
+ * One late unit on the phone (a sale, a sale with its disposal, a cancel, an added copy), MFC changes the Count by -2 to
+ * +2, and the tablet answers what it shows while it, or a third device, acts by hand on the same showing (ASK, FAVOR_APP
+ * and FAVOR_MFC; the app unchanged, a copy added, or a copy sold before the import). No path may differ from its
+ * pushed-first reference silently. `every` runs every k-th case (CI); FC_PROPERTY_FULL runs them all.
+ */
+export function compoundReactionWorld(opts: { sw?: Switches; every: number }): CompoundTally {
+  const sw = opts.sw ?? {};
+  const every = opts.every;
+  const t: CompoundTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, pickCases: [], silent: 0, silentItem: 0, first: [] };
+  const EMPTY = '{"f":{},"c":[],"a":[]}';
+  const sameAs = (r: { counts: number; items: string }, g: { counts: number; items: string }) => r.counts === g.counts && r.items === g.items;
+  let k = 0;
+  for (const policy of ['ASK', 'FAVOR_APP', 'FAVOR_MFC'])
+    for (const pre of ['none', 'appadd', 'appsell'])
+      for (const n of [1, 2, 3]) {
+        const copies = Array.from({ length: n }, (_, i) => `o${i + 1}`).filter((x) => !(pre === 'appsell' && x === `o${n}`));
+        const units: [string, string][] = [...copies.flatMap((x) => ['sell', 'sell+disposal', 'cancel'].map((op): [string, string] => [op, x])), ['add', '']];
+        for (const u of units)
+          for (const d of [-2, -1, 1, 2]) {
+            if (n + d < 0) continue;
+            for (const a of ['undo', 'dismiss', 'take', 'keep', 'dismiss-align'] as CAnswer[])
+              for (const h of ['sell-high', 'sell-low', 'reown', 'readd', 'tag'] as CHand[])
+                for (const who of ['T', 'TU'] as const) {
+                  if (k++ % every !== 0) continue;
+                  const c: CCase = { policy, pre, n, u, d, a, h, who };
+                  const refs = new Map<string, ReturnType<typeof runCompound>>();
+                  const orders: COrder[] = who === 'T' ? ['T-P', 'P-T', 'T1-P-T2', 'T1-T2-P', 'P-T1-T2'] : ['T-P-U', 'T-U-P', 'P-T-U', 'U-T-P', 'U-P-T', 'P-U-T'];
+                  for (const path of orders) {
+                    const got = runCompound(c, path, { a: true, h: true }, sw);
+                    if (!got.split && path.includes('1')) continue; // one push: the same as T-P or P-T
+                    const allow = { a: got.didA, h: got.didH !== '' };
+                    const refPath = `REF ${path.split('-').filter((x) => x !== 'P').join('-')}` as CRef;
+                    const key = `${allow.a}|${allow.h}|${refPath}`;
+                    if (!refs.has(key)) refs.set(key, runCompound(c, refPath, allow, sw));
+                    const ref = refs.get(key)!;
+                    t.runs++;
+                    if (got.counts === ref.counts && got.items === ref.items && got.held === 0) {
+                      t.same++;
+                      continue;
+                    }
+                    const shown = got.held > 0 || got.stale || (got.items !== ref.items && got.items !== EMPTY);
+                    const what = `${JSON.stringify(c)} ${path} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`;
+                    if (got.counts === ref.counts) {
+                      if (shown) t.sameCountsShown++;
+                      else {
+                        t.silentItem++;
+                        if (t.first.length < 5) t.first.push(`item: ${what}`);
+                      }
+                    } else if (shown) t.differsShown++;
+                    else if (u[0] === 'add' && ref.didH === 'a1' && got.didH !== 'a1' && sameAs(runCompound(c, refPath, allow, sw, got.didH), got)) {
+                      t.picks++;
+                      if (t.pickCases.length < 20) t.pickCases.push(what);
+                    }
+                    else {
+                      t.silent++;
+                      if (t.first.length < 5) t.first.push(what);
+                    }
+                  }
+                }
+          }
+      }
+  return t;
+}
