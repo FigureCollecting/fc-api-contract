@@ -223,27 +223,44 @@
 // removed copy is out whatever facets it keeps; the unit's own copies count
 // too) and S's ITEMS (its figure item, change entry and align-MFC entry, each
 // by its rev: an item changes when it appears, ends or takes a new rev, not
-// when it only shows the app's side anew); the unit passes when they differ. A
-// REACTION to a result is an edit, made after that result without having seen
-// what withdraws it, that writes a copy whose live state the two sides leave
-// different, that adds a copy to S (writes the head or status of a copy that
-// had no head when the import ran), or that writes the status or head of a copy
-// of S while S had an item, as its device saw it, that the two sides leave
-// different. A unit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown
-// in its figure's held-edit card, when
-//   (i)   it is late, it passes the relevance test, and a reaction to I's
-//         result arrived before it or in the same push: an edit made after I
-//         without having seen the unit's replay (knowing for I, whether or not
-//         it is late for a later import), the two sides being the two
-//         placements. HOLD ON REACTION: another device acted on the result the
-//         late edit would withdraw;
+// when it only shows the app's side anew); the unit passes when they differ.
+// A REACTION to a result is an edit, made after that result without having seen
+// what withdraws it, that
+//   * writes a copy whose live state the two sides leave different;
+//   * adds a copy to S: writes the head or status of a copy that had no head
+//     when the import ran, judged in arrival order (the server had emitted no
+//     head of the copy by the import's marker, wherever a replay places a late
+//     head); or
+//   * writes the status or head of a copy of S while S had an item, as its
+//     device saw it (pending: a device that saw an item only after it ended saw
+//     none), that the two sides leave different, or that the side where the
+//     result stands gave S, with the rev the device saw, and the other side
+//     never gives it, whatever an answer has done to that item since.
+// A unit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown in its
+// figure's held-edit card, when
+//   (i)   it is late, and a reaction to I's result arrived before it or in the
+//         same push: an edit made after I without having seen the unit's replay
+//         (knowing for I, whether or not it is late for a later import), the
+//         two sides being the two placements, the result standing at arrival.
+//         The unit must pass the relevance test, unless the reaction is to an
+//         item its device saw that the placement before I never gives S: an
+//         answer (a dismiss, an undo) may since have ended the item, so that
+//         both placements end alike. HOLD ON REACTION: another device acted on
+//         the result the late edit would withdraw;
 //   (ii)  a knowing edit of it was made before a REVISION of S that its device
-//         had not seen, and is a reaction to the result the revision changed,
-//         the two sides being S before and after the revision. A revision is a
-//         push that replays a late edit and so changes S's live copies or
-//         items; an answer's writes are no revision. An edit that is no
-//         reaction (a tag on a copy the revision left alone, a figure value) is
-//         applied;
+//         had not seen, and is a reaction to the result the revision withdrew,
+//         the two sides being S just before the revision, where the result
+//         stands, and S after it. Every push that replays a late edit is a
+//         revision of that edit's figures, even one that changes nothing
+//         against S just before it (an answer may already have ended the item a
+//         device reacted to); a push whose late edits are all held is none.
+//         What a revision changes is what its replayed late edits alone make of
+//         S: S replayed with them, without the push's answers and knowing
+//         edits, against S just before the push, leaving out the late edits'
+//         own writes. So an answer's writes are no revision, even in the push
+//         of a late edit, and a by-hand tag on the copy a replayed sale took
+//         out is applied. An edit that is no reaction (a tag on a copy the
+//         revision left alone, a figure value) is applied;
 //   (iii) it is late, its basis is before the commit of an answer on S that the
 //         server accepted (to any of S's items; a device that had applied the
 //         answer's transaction made its edit after the answer), and it passes
@@ -269,26 +286,39 @@
 //     only MFC changed is still applied. take: MFC's side is made true on the
 //     copies MFC tracks (copies with a live base, and placeholders):
 //     conversions first, arrivals first, lowest occ id; then removals, highest
-//     occ id; then restoring a tracked copy that is out, one whose base is the
-//     kind first, which can bring back a copy the app sold; then new copies. A
-//     copy with no base is never changed, and a disputed field takes MFC's
-//     value. per_copy: the final statuses listed and "app" or "mfc" per
-//     disputed field, exactly. After any answer the bases REALIGN to MFC's
-//     side: the row bases become the export's rows, the field bases MFC's
-//     values, and per kind the live copies with the lowest occ ids, up to MFC's
-//     Count, get that base; other copies get base OUT, and MFC's Counts beyond
-//     the app's copies become placeholders.
+//     occ id; then restoring a copy that is out: a tracked one first, one whose
+//     base is the kind first, which can bring back a copy the app sold, then
+//     one an import removed (not tracked: its base is OUT), lowest occ id
+//     first; then new copies, each for the lowest-numbered row of S of the
+//     kind, whatever its Count, at that row's lowest unused ordinal. A copy
+//     with no base is never changed, but for one an import removed, and a
+//     disputed field takes MFC's value. per_copy: the final statuses listed and
+//     "app" or "mfc" per disputed field, exactly. After a keep, take or
+//     per_copy on a conflict, a take on a divergence, and the undo of a
+//     favor_app settlement, the bases REALIGN to MFC's side: the row bases
+//     become the export's rows, the field bases MFC's values, and per kind the
+//     live copies with the lowest occ ids, up to MFC's Count, get that base;
+//     other copies get base OUT, and MFC's Counts beyond the app's copies
+//     become placeholders. A keep on a divergence and the undo of an applied or
+//     favor_mfc change move no base: they acknowledge the app's side, which
+//     stays an app change against MFC's, so a later MFC change that meets it is
+//     a conflict. A dismiss and a held-edit card's answer move none either.
 //   * A divergence. keep ("MFC is behind") acknowledges it; take makes MFC's
 //     side true as for a conflict.
 //   * A held-edit card: keep or take, as HELD says.
-//   * A change entry. undo: an applied or favor_mfc change is reverted, each
-//     write restored while it still holds the value the import wrote (else
-//     STALE), and a favor_app settlement is taken now. dismiss: it goes.
+//   * A change entry. undo: an applied or favor_mfc change is reverted by its
+//     undo list, each facet the import wrote back to its value before the
+//     import, while every write still holds the value the import wrote (else
+//     the undo is STALE); a copy the import created keeps its origin and head,
+//     and only its status is tombstoned. A favor_app settlement is taken now.
+//     dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
-//     found. An import that finds MFC's side unchanged keeps it, whatever the
-//     app did meanwhile.
+//     found, both sides of each (for the counts, the transitions each side left
+//     unmatched), so it carries the app's side of the disputed parts as that
+//     import found it. An import that finds MFC's side unchanged keeps it,
+//     whatever the app did meanwhile.
 //   * A divergence: the raising import with both sides' values of the parts
 //     that differ. An import that finds the same values keeps it; other values,
 //     on either side, give a new rev.

@@ -800,11 +800,11 @@ export interface Switches {
   undoIgnoresLaterEdits?: boolean;
   /** Round 6's model: every push's emissions are revisions for HELD (ii), an answer's included. */
   revisionsFromAnswers?: boolean;
-  /** Round 6's model: a replay's change to S's items is no revision for HELD (ii). */
+  /** Round 6's model: items play no part in HELD (ii): a replay's change to S's items is no revision, and what a device saw is not asked. */
   revisionIgnoresItems?: boolean;
   /** Round 6's model: HELD (ii) holds any knowing edit made before a revision, a tag or a figure value included. */
   revisedHoldsAnyEdit?: boolean;
-  /** Round 6's model: a status or head write made while S had an item the placements leave different is no reaction. */
+  /** Round 6's model: no item clause in a reaction: a status or head write made while S had an item, as its device saw it, is no reaction. */
   narrowReaction?: boolean;
   /** Round 6's model: closing a conflict on a knowing edit writes the decision's writes. */
   closeWrites?: boolean;
@@ -830,6 +830,28 @@ export interface Switches {
   divRevContentOnly?: boolean;
   /** Round 6's model: a divergence an import keeps still shows the MFC rows of the import that raised it. */
   divergenceKeepsOldRows?: boolean;
+  /** Reaction clause (c) without its first half: an item the device saw pending that the two sides end differently is no reaction by itself. */
+  noItemDiffClause?: boolean;
+  /** Round 7's model: HELD (i) judges a reaction by the two placements' end states alone, so an answer that ended the item the device saw hides it. */
+  answerHidesReaction?: boolean;
+  /** Round 7's model: HELD (ii) has no revision point for a replay that changes nothing against S just before its push, and never asks what the device saw. */
+  revisionFromPushStart?: boolean;
+  /** Round 7's model: a revision is everything its push emitted, the push's answers and knowing edits included. */
+  revisionWholePush?: boolean;
+  /** A revision's change counts the replayed late edits' own writes too (a tag on the copy the replayed sale moved is a reaction). */
+  revisionCountsOwn?: boolean;
+  /** Reaction clause (b) dropped: a copy added after the import is a reaction only through the copies or items it touches. */
+  noNewCopyReaction?: boolean;
+  /** A pending divergence keeps its rev when an import finds other values. */
+  divRevKeptOnNewValues?: boolean;
+  /** A change entry's rev without its import: one raised again, identical, keeps the old rev. */
+  changeRevWithoutImport?: boolean;
+  /** A device that saw an item only after it ended (its tombstone) counts as having seen it. */
+  sawEndedItem?: boolean;
+  /** A push whose late edits are all HELD is still a revision. */
+  heldLateIsRevision?: boolean;
+  /** An undo of an applied or favor_mfc change realigns the bases. */
+  undoRealigns?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -888,12 +910,18 @@ export interface Policy {
   disposition_list?: string;
 }
 type HeldReason = 'late_after_knowing' | 'made_on_revised_result' | 'after_answer';
+/** Per item key: every rev one replay gave the item, pending at any point of it. */
+type RevHist = Map<string, Set<string>>;
 interface Revision {
   seq: number;
   copies: Set<string>;
   items: Set<string>;
   imp: Import | undefined;
+  /** Item revs the replay before the push produced, and the replay with only its replayed late edits added (HELD (ii)). */
+  before: RevHist;
+  after: RevHist;
 }
+const ITEM_KINDS = ['figure', 'change', 'align'] as const;
 
 export const ITEM = (kind: 'figure' | 'held' | 'change' | 'align', S: string) => `imp/mfc/${kind}/${S}`;
 export const MARKER = 'imp/mfc/import';
@@ -935,6 +963,10 @@ export class Server {
   private placedLate = new Set<number>();
   /** Arrivals the relevance test places at their arrival, not before their import. */
   private force = new Set<number>();
+  /** Arrivals a revision's replay leaves out: its push's answers and knowing edits (HELD (ii)). */
+  private skip = new Set<number>();
+  /** Per replayed state: every rev each item had during that replay. */
+  private readonly revHist = new WeakMap<Canon, RevHist>();
   private readonly heldReason = new Map<number, HeldReason>();
   readonly namer: Namer;
   readonly rank: Rank;
@@ -974,7 +1006,7 @@ export class Server {
     const placed = new Set<number>();
     for (const e of this.inputs) {
       // HELD is decided when the edit's push arrives (decideHolds), never here: a held edit is not replayed
-      if (e.type !== 'edit' || e.held || this.force.has(e.arr) || this.sw.M1) continue;
+      if (e.type !== 'edit' || e.held || this.force.has(e.arr) || this.skip.has(e.arr) || this.sw.M1) continue;
       const I = this.lates(e, prev)[0];
       if (I !== undefined) {
         anchored.set(I.arr, [...(anchored.get(I.arr) ?? []), e]);
@@ -984,6 +1016,7 @@ export class Server {
     this.placedLate = placed;
     const order: Input[] = [];
     for (const i of this.inputs) {
+      if (this.skip.has(i.arr)) continue;
       if (i.type === 'import') {
         order.push(...(anchored.get(i.arr) ?? []).sort((a, b) => a.arr - b.arr), i);
       } else if (i.type === 'edit') {
@@ -1066,10 +1099,13 @@ export class Server {
       if (afterAnswer && this.sw.answerHoldWithoutRelevance === true) return 'after_answer';
       if (cands.length > 0 && this.sw.holdWithoutRelevance === true) return 'late_after_knowing';
       if (afterAnswer || cands.length > 0) {
-        const { differs, copies, items } = this.relevant(U, figs);
+        const { differs, copies, items, hist } = this.relevant(U, figs);
         if (differs && afterAnswer) return 'after_answer';
         const reaction = (k: Edit) => this.sw.broadReaction === true || this.reacts(k, copies, items, I0);
         if (differs && cands.some(reaction)) return 'late_after_knowing';
+        // a status or head write made while its device saw an item of S, by rev, that the placement at arrival produces
+        // and the placement before I never does, whatever an answer has done to that item since
+        if (!this.sw.answerHidesReaction && !this.sw.narrowReaction && cands.some((k) => this.sawWithdrawn(k, figs, hist[1], hist[0]))) return 'late_after_knowing';
       }
     }
     // (ii): a knowing edit made before a revision of S it had not seen, when it reacts to that revision
@@ -1080,6 +1116,8 @@ export class Server {
           for (const R of this.revisions.get(f) ?? []) {
             if (!(e.basis < R.seq && R.seq < at)) continue;
             if (this.sw.revisedHoldsAnyEdit || this.reacts(e, R.copies, R.items, R.imp)) return 'made_on_revised_result';
+            // measured from S as the device saw it: an item it saw that S before the revision had and the revision withdraws
+            if (!this.sw.revisionFromPushStart && !this.sw.narrowReaction && !this.sw.revisionIgnoresItems && this.sawWithdrawn(e, [f], R.before, R.after)) return 'made_on_revised_result';
           }
       }
     return null;
@@ -1094,8 +1132,8 @@ export class Server {
     if (!k.key.startsWith('occ/')) return false;
     const [, c, facet] = k.key.split('/');
     if (copies.has(c!)) return true;
-    if (I !== undefined && this.newCopy(k, I)) return true;
-    if (this.sw.narrowReaction || (facet !== 'status' && facet !== 'head')) return false;
+    if (I !== undefined && !this.sw.noNewCopyReaction && this.newCopy(k, I)) return true;
+    if (this.sw.narrowReaction || this.sw.noItemDiffClause || (facet !== 'status' && facet !== 'head')) return false;
     return this.sawItem(k.basis, items);
   }
 
@@ -1107,7 +1145,34 @@ export class Server {
       if (ev.seq > basis) break;
       if (keys.has(ev.key)) last.set(ev.key, ev.value);
     }
-    return [...last.values()].some((v) => v !== null);
+    return this.sw.sawEndedItem ? last.size > 0 : [...last.values()].some((v) => v !== null);
+  }
+
+  /** The rev of item K as a device saw it at `basis` ('null': none pending). */
+  private seenRev(basis: number, K: string): string {
+    let v: Json = null;
+    for (const ev of this.feed) {
+      if (ev.seq > basis) break;
+      if (ev.key === K) v = ev.value;
+    }
+    return revOf(v);
+  }
+
+  /**
+   * A REACTION to a withdrawn item (HELD (i) and (ii)): a status or head write to a copy made while its device saw an
+   * item of S, by rev, that one replay (`produced`) gave S at some point and the other (`never`) never does.
+   */
+  private sawWithdrawn(k: Edit, figs: Iterable<string>, produced: RevHist, never: RevHist): boolean {
+    if (!k.key.startsWith('occ/')) return false;
+    const facet = k.key.split('/')[2];
+    if (facet !== 'status' && facet !== 'head') return false;
+    for (const f of figs)
+      for (const kind of ITEM_KINDS) {
+        const K = ITEM(kind, f);
+        const r = this.seenRev(k.basis, K);
+        if (r !== 'null' && (produced.get(K)?.has(r) ?? false) && !(never.get(K)?.has(r) ?? false)) return true;
+      }
+    return false;
   }
 
   /** The reaction wrote the head or status of a copy that had no head when I0 ran: a copy added after the import. */
@@ -1124,16 +1189,18 @@ export class Server {
    * its decision; the push's later units are placed as if not held. Returns whether anything differs, the copies whose
    * live state differs and the item keys that differ.
    */
-  private relevant(U: readonly Edit[], figs: Set<string>): { differs: boolean; copies: Set<string>; items: Set<string> } {
+  private relevant(U: readonly Edit[], figs: Set<string>): { differs: boolean; copies: Set<string>; items: Set<string>; hist: [RevHist, RevHist] } {
     const saved = new Set(this.force);
     const own = new Set(U.map((e) => e.key));
     const ownCopies = new Set(U.filter((e) => e.key.startsWith('occ/')).map((e) => e.key.split('/')[1]!));
     // mutant heldNotSticky: round 5's relevance replay, which reset every other edit's hold
     if (this.sw.heldNotSticky) for (const e of this.inputs) if (e.type === 'edit' && !U.includes(e)) e.held = false;
     const out: Record<string, string>[] = [];
+    const hist: RevHist[] = [];
     for (const atArrival of [false, true]) {
       this.force = new Set([...saved, ...(atArrival ? U.map((e) => e.arr) : [])]);
       const st = this.replay();
+      hist.push(this.revHist.get(st) ?? new Map());
       const view: Record<string, string> = {};
       const ofS = (c: string) => {
         const hs = new Set(this.headHist.get(c) ?? []);
@@ -1166,6 +1233,7 @@ export class Server {
       differs: diff.length > 0,
       copies: new Set(diff.filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!)),
       items: new Set(diff.filter(isItemKey)),
+      hist: hist as [RevHist, RevHist],
     };
   }
 
@@ -1251,6 +1319,10 @@ export class Server {
 
   /** Set a server-owned facet to `v` (null: tombstone), only when it changes. */
   private put(st: Canon, key: string, v: Json, ver: Version): void {
+    if (v !== null && ITEM_KINDS.some((kind) => key.startsWith(`imp/mfc/${kind}/`))) {
+      const m = this.revHist.get(st) ?? this.revHist.set(st, new Map()).get(st)!;
+      (m.get(key) ?? m.set(key, new Set()).get(key)!).add(revOf(v));
+    }
     if (eq(st.val(key), v)) return;
     if (v === null && !st.facets.has(key)) return;
     st.set(key, v, ver);
@@ -1462,7 +1534,7 @@ export class Server {
     const M = zero();
     for (const r of exp.values()) M[r.kind] += r.count;
     // the same values keep the rev; the item still shows MFC's rows as this import found them
-    const rev = item?.kind === 'divergence' && item.expFields === content ? item.rev : this.sw.divRevContentOnly ? `D:${content}` : `D${n}:${content}`;
+    const rev = item?.kind === 'divergence' && (item.expFields === content || this.sw.divRevKeptOnNewValues === true) ? item.rev : this.sw.divRevContentOnly ? `D:${content}` : `D${n}:${content}`;
     const raised = item?.kind === 'divergence' && item.rev === rev ? item.import : n;
     st.conflicts.set(S, { kind: 'divergence', rev, exp: this.sw.divergenceKeepsOldRows && item?.rev === rev ? item.exp : exp, expFields: content, B: M, M, comps: {}, import: raised, known: [...known] });
   }
@@ -1596,7 +1668,7 @@ export class Server {
         if (cf !== undefined && cf.kind !== 'divergence' && !this.sw.keepStaleItem) st.conflicts.delete(S);
         if (writes && baseRows.size > 0) {
           const { writes: w, undo } = this.diff(st, before);
-          st.changes.set(S, { kind: 'applied', rev: `C${I.n}:applied:${stable(w)}`, import: I.n, writes: w, undo, exp });
+          st.changes.set(S, { kind: 'applied', rev: `C${this.sw.changeRevWithoutImport ? '' : I.n}:applied:${stable(w)}`, import: I.n, writes: w, undo, exp });
         }
         this.diverge(st, S, exp, known, baseRows, I.n);
         st.decisions.push([`import#${I.n}`, S, d.status]);
@@ -1708,6 +1780,7 @@ export class Server {
     } else {
       if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
       for (const u of ch.undo) st.set(u.key, u.value, R.version);
+      if (this.sw.undoRealigns) applyOps(st, realign(st, S, ch.exp), R.version);
       const baseRows = baseRowsFor(st, S);
       this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
     }
@@ -1839,12 +1912,12 @@ export class Server {
     this.decideHolds(items, prev);
     if (this.sw.holdWithoutArrivedBefore) this.redecide(prev);
     // HELD (ii): a REVISION is a push that replays a late edit before an import; an answer's writes are none
-    const replayed = items.filter((it): it is Edit => it.type === 'edit' && !it.held && this.lates(it, prev).length > 0);
+    const replayed = items.filter((it): it is Edit => it.type === 'edit' && (!it.held || this.sw.heldLateIsRevision === true) && this.lates(it, prev).length > 0);
     const before = new Map(this.emitted);
     const n0 = this.feed.length;
     const out = this.recompute(t);
     this.commit(n0);
-    if (replayed.length > 0 || this.sw.revisionsFromAnswers) this.recordRevision(items, replayed, out, before, prev);
+    if (replayed.length > 0 || this.sw.revisionsFromAnswers) this.recordRevision(items, replayed, before, prev);
     // HELD (iii): an accepted answer's position, its push's commit
     for (const it of items) {
       if (it.type !== 'answer') continue;
@@ -1863,29 +1936,51 @@ export class Server {
     });
   }
 
-  /** HELD (ii): what this push's replay changed, per figure: copies whose live state moved, and S's items. */
-  private recordRevision(items: readonly Pushable[], replayed: readonly Edit[], out: readonly [number, string][], before: Map<string, [Json, Version]>, prev: Canon): void {
-    const own = new Set(items.filter((it) => it.type === 'edit').map((it) => it.key));
+  /**
+   * HELD (ii): a REVISION, per figure: what this push's replayed late edits alone changed against S just before the push
+   * (the push replayed without its answers and knowing edits), leaving out those late edits' own writes: the copies
+   * whose live state moved and the items whose rev did. Every push that replays a late edit is a revision point for its
+   * figures, whatever it changed; the item revs of both replays go with it, for what a device saw (sawWithdrawn).
+   */
+  private recordRevision(items: readonly Pushable[], replayed: readonly Edit[], before: Map<string, [Json, Version]>, prev: Canon): void {
     const st = this.canon!;
     const seq = this.feed.length;
     const imp = replayed.map((e) => this.lates(e, prev)[0]!).sort((a, b) => a.arr - b.arr)[0];
+    const whole = this.sw.revisionWholePush === true || this.sw.revisionsFromAnswers === true;
+    let after: Map<string, [Json, Version]> = this.emitted;
+    let histAfter: RevHist = this.revHist.get(st) ?? new Map();
+    if (!whole) {
+      // the late edits alone: an answer's writes are no revision, and neither is a knowing edit of the same push
+      const accepted = this.inputs.filter((i): i is Answer => i.type === 'answer').map((a) => [a, a.accepted] as const);
+      this.skip = new Set(items.filter((it) => !(replayed as readonly Pushable[]).includes(it)).map((it) => it.arr));
+      const late = this.replay();
+      this.skip = new Set();
+      for (const [a, v] of accepted) a.accepted = v;
+      after = late.facets;
+      histAfter = this.revHist.get(late) ?? new Map();
+    }
+    // the replayed late edits' own writes are no part of the change (round 7 left out every edit of the push)
+    const own = new Set(this.sw.revisionCountsOwn ? [] : (whole ? items.filter((it) => it.type === 'edit') : replayed).map((it) => it.key));
     const liveOf = (m: Map<string, [Json, Version]>, c: string) => {
       const h = m.get(`occ/${c}/head`)?.[0];
       const s = m.get(`occ/${c}/status`)?.[0];
       return typeof h === 'string' && (KINDS as readonly unknown[]).includes(s) ? `${st.surv(h)}:${s as string}` : OUT;
     };
+    const histBefore: RevHist = this.revHist.get(prev) ?? new Map();
     const per = new Map<string, Revision>();
-    const at = (f: string) => per.get(f) ?? per.set(f, { seq, copies: new Set(), items: new Set(), imp }).get(f)!;
-    for (const [, k] of out) {
-      if (own.has(k)) continue;
+    const at = (f: string) => per.get(f) ?? per.set(f, { seq, copies: new Set(), items: new Set(), imp, before: histBefore, after: histAfter }).get(f)!;
+    const val = (m: Map<string, [Json, Version]>, k: string) => m.get(k)?.[0] ?? null;
+    for (const k of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+      if (own.has(k) || eq(val(before, k), val(after, k))) continue;
       const p = k.split('/');
       if (isItemKey(k)) {
-        if (this.sw.revisionIgnoresItems || !['figure', 'change', 'align'].includes(p[2]!)) continue;
-        if (!this.sw.itemsByPayload && revOf(before.get(k)?.[0] ?? null) === revOf(this.emitted.get(k)?.[0] ?? null)) continue;
+        if (this.sw.revisionIgnoresItems || !(ITEM_KINDS as readonly string[]).includes(p[2]!)) continue;
+        if (!this.sw.itemsByPayload && revOf(val(before, k)) === revOf(val(after, k))) continue;
         for (const f of this.figsOfKey(k, st)) at(f).items.add(k);
-      } else if (p[0] === 'occ' && (p[2] === 'status' || p[2] === 'head') && liveOf(before, p[1]!) !== liveOf(this.emitted, p[1]!))
+      } else if (p[0] === 'occ' && (p[2] === 'status' || p[2] === 'head') && liveOf(before, p[1]!) !== liveOf(after, p[1]!))
         for (const f of this.figsOfKey(k, st)) at(f).copies.add(p[1]!);
     }
+    if (!this.sw.revisionFromPushStart) for (const e of replayed) for (const f of this.figsOf(e, st)) at(f);
     for (const [f, r] of per) this.revisions.set(f, [...(this.revisions.get(f) ?? []), r]);
   }
 

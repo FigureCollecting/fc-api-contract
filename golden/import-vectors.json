@@ -2467,7 +2467,7 @@
     {"op": "import", "t": 660, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}]},
     {"op": "pull", "dev": "T"},
     {"op": "edit", "dev": "T", "key": "occ/o2/status", "value": "former", "t": 690},
-    {"op": "edit", "dev": "T", "key": "occ/o2/disposal", "value": {"reason": "sold", "price": 120}, "t": 690},
+    {"op": "edit", "dev": "T", "key": "occ/o2/disposal", "value": {"reason": "sold", "price": {"amount": "120", "currency": "USD"}}, "t": 690},
     {"op": "push", "dev": "T", "t": 691, "expect": [{"key": "occ/o2/status", "outcome": "APPLIED"}, {"key": "occ/o2/disposal", "outcome": "APPLIED"}]},
     {"op": "push", "dev": "P", "t": 720, "expect": [{"key": "occ/a1/head", "outcome": "HELD"}, {"key": "occ/a1/status", "outcome": "HELD"}]},
     {"op": "pull", "dev": "P"},
@@ -2478,7 +2478,7 @@
      "occ/o1/head": "H1",
      "occ/o1/origin": "1144#1",
      "occ/o1/status": "owned",
-     "occ/o2/disposal": {"reason": "sold", "price": 120},
+     "occ/o2/disposal": {"reason": "sold", "price": {"amount": "120", "currency": "USD"}},
      "occ/o2/head": "H1",
      "occ/o2/origin": "1144#2",
      "occ/o2/status": "former"
@@ -2491,7 +2491,7 @@
        "occ/o1/head": "H1",
        "occ/o1/origin": "1144#1",
        "occ/o1/status": "owned",
-       "occ/o2/disposal": {"reason": "sold", "price": 120},
+       "occ/o2/disposal": {"reason": "sold", "price": {"amount": "120", "currency": "USD"}},
        "occ/o2/head": "H1",
        "occ/o2/origin": "1144#2",
        "occ/o2/status": "former"
@@ -2504,7 +2504,7 @@
        "occ/o1/head": "H1",
        "occ/o1/origin": "1144#1",
        "occ/o1/status": "owned",
-       "occ/o2/disposal": {"reason": "sold", "price": 120},
+       "occ/o2/disposal": {"reason": "sold", "price": {"amount": "120", "currency": "USD"}},
        "occ/o2/head": "H1",
        "occ/o2/origin": "1144#2",
        "occ/o2/status": "former"
@@ -2528,7 +2528,7 @@
     {"op": "import", "t": 660, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}]},
     {"op": "pull", "dev": "T"},
     {"op": "edit", "dev": "T", "key": "occ/o2/collection", "value": "owned/shelf-b", "t": 690},
-    {"op": "edit", "dev": "T", "key": "occ/o2/tag/signed", "value": true, "t": 690},
+    {"op": "edit", "dev": "T", "key": "occ/o2/tag/signed", "value": {}, "t": 690},
     {"op": "push", "dev": "T", "t": 691, "expect": [{"key": "occ/o2/collection", "outcome": "APPLIED"}, {"key": "occ/o2/tag/signed", "outcome": "APPLIED"}]},
     {"op": "push", "dev": "P", "t": 720, "expect": [{"key": "occ/a1/head", "outcome": "HELD"}, {"key": "occ/a1/status", "outcome": "HELD"}]},
     {"op": "pull", "dev": "P"},
@@ -2543,7 +2543,7 @@
      "occ/o2/head": "H1",
      "occ/o2/origin": "1144#2",
      "occ/o2/status": "owned",
-     "occ/o2/tag/signed": true
+     "occ/o2/tag/signed": {}
     },
     "cards": [],
     "held": [["P", "occ/a1/head"], ["P", "occ/a1/status"]],
@@ -2557,7 +2557,7 @@
        "occ/o2/head": "H1",
        "occ/o2/origin": "1144#2",
        "occ/o2/status": "owned",
-       "occ/o2/tag/signed": true
+       "occ/o2/tag/signed": {}
       },
       "cards": [],
       "outbox": 0
@@ -2571,7 +2571,7 @@
        "occ/o2/head": "H1",
        "occ/o2/origin": "1144#2",
        "occ/o2/status": "owned",
-       "occ/o2/tag/signed": true
+       "occ/o2/tag/signed": {}
       },
       "cards": [],
       "outbox": 0
@@ -2624,7 +2624,7 @@
     {"op": "import", "t": 660, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}]},
     {"op": "pull", "dev": "T"},
     {"op": "edit", "dev": "T", "key": "occ/o2/collection", "value": "owned/shelf-b", "t": 690},
-    {"op": "edit", "dev": "T", "key": "occ/o2/disposal", "value": {"reason": "gift", "note": "to Kim"}, "t": 690},
+    {"op": "edit", "dev": "T", "key": "occ/o2/disposal", "value": {"reason": "gifted", "note": "to Kim"}, "t": 690},
     {"op": "push", "dev": "T", "t": 691, "expect": [{"key": "occ/o2/collection", "outcome": "APPLIED"}, {"key": "occ/o2/disposal", "outcome": "APPLIED"}]},
     {"op": "push", "dev": "P", "t": 720, "expect": [{"key": "occ/a1/head", "outcome": "HELD"}, {"key": "occ/a1/status", "outcome": "HELD"}]},
     {"op": "import", "t": 780, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 3, "fields": {}}]}
@@ -2638,7 +2638,7 @@
      "occ/o1/origin": "1144#1",
      "occ/o1/status": "owned",
      "occ/o2/collection": "owned/shelf-b",
-     "occ/o2/disposal": {"reason": "gift", "note": "to Kim"},
+     "occ/o2/disposal": {"reason": "gifted", "note": "to Kim"},
      "occ/o2/head": "H1",
      "occ/o2/origin": "1144#2",
      "occ/o2/status": "owned"
@@ -2653,7 +2653,7 @@
        "occ/o1/origin": "1144#1",
        "occ/o1/status": "owned",
        "occ/o2/collection": "owned/shelf-b",
-       "occ/o2/disposal": {"reason": "gift", "note": "to Kim"},
+       "occ/o2/disposal": {"reason": "gifted", "note": "to Kim"},
        "occ/o2/head": "H1",
        "occ/o2/origin": "1144#2",
        "occ/o2/status": "owned"
@@ -2762,7 +2762,7 @@
     },
     {"op": "pull", "dev": "P"},
     {"op": "pull", "dev": "T"},
-    {"op": "edit", "dev": "P", "key": "occ/o1/tag/signed", "value": true, "t": 600},
+    {"op": "edit", "dev": "P", "key": "occ/o1/tag/signed", "value": {}, "t": 600},
     {
      "op": "import",
      "t": 660,
@@ -2778,7 +2778,7 @@
      "occ/o1/head": "H1",
      "occ/o1/origin": "1144#1",
      "occ/o1/status": "owned",
-     "occ/o1/tag/signed": true,
+     "occ/o1/tag/signed": {},
      "occ/o2/collection": "owned/shelf-b",
      "occ/o2/head": "H1",
      "occ/o2/origin": "1144#2",
@@ -2796,7 +2796,7 @@
        "occ/o1/head": "H1",
        "occ/o1/origin": "1144#1",
        "occ/o1/status": "owned",
-       "occ/o1/tag/signed": true,
+       "occ/o1/tag/signed": {},
        "occ/o2/head": "H1",
        "occ/o2/origin": "1144#2",
        "occ/o2/status": "owned",
@@ -2957,7 +2957,7 @@
     {"op": "pull", "dev": "P"},
     {"op": "pull", "dev": "T"},
     {"op": "edit", "dev": "P", "key": "occ/o1/status", "value": "former", "t": 600},
-    {"op": "edit", "dev": "P", "key": "occ/o1/disposal", "value": {"reason": "sold", "price": 120}, "t": 600},
+    {"op": "edit", "dev": "P", "key": "occ/o1/disposal", "value": {"reason": "sold", "price": {"amount": "120", "currency": "USD"}}, "t": 600},
     {"op": "import", "t": 660, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}]},
     {"op": "pull", "dev": "T"},
     {"op": "edit", "dev": "T", "key": "occ/a3/head", "value": "H1", "t": 670},
@@ -4090,13 +4090,7 @@
    "name": "Scenario 1: one of two copies sold and settled at the last import, one wished to buy back, a disposition list configured; re-imports of the unchanged export raise nothing (app-only richness never raises by itself)",
    "rule": "R2",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -4393,13 +4387,7 @@
    "name": "Scenario 3: the app sold one and MFC was not updated: nothing is written and one divergence entry is raised, once, across identical re-imports; \"MFC is behind\" yields an align-MFC entry (Count and the configured sold list) that identical re-imports never re-raise; it clears itself when MFC catches up",
    "rule": "R4 R8",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -4592,13 +4580,7 @@
    "name": "Scenario 3, take MFC: the tracked copy the app sold is owned again and nothing recurs",
    "rule": "R4",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -4733,13 +4715,7 @@
    "name": "Scenario 3: a new app change re-opens an acknowledged divergence at the next import",
    "rule": "R4 R7",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -4909,13 +4885,7 @@
    "name": "Scenario 3: a dismissed align-MFC entry stays dismissed across identical re-imports",
    "rule": "R8",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -5241,7 +5211,7 @@
    "name": "Scenario 4, FAVOR_APP: the conflict is settled as keep, recorded in the summary with an undo, and yields an align-MFC entry; undo takes MFC's side and the entry clears",
    "rule": "R5 R8",
    "steps": [
-    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP", "mfc_only": "APPLY_AND_LIST"}, "t": 530},
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -5379,7 +5349,7 @@
    "name": "Scenario 4, FAVOR_MFC: the conflict is settled as take and recorded in the summary with an undo; undo keeps the app side and yields an align-MFC entry",
    "rule": "R5 R8",
    "steps": [
-    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_MFC", "mfc_only": "APPLY_AND_LIST"}, "t": 530},
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_MFC"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -5511,7 +5481,7 @@
    "name": "Scenario 4, FAVOR_APP is applied only to true conflicts: an MFC-only change is still applied and listed, and an app-only change is still a divergence",
    "rule": "R5",
    "steps": [
-    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP", "mfc_only": "APPLY_AND_LIST"}, "t": 530},
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -6444,13 +6414,7 @@
    "name": "A spine merge ends the items of both heads; the next import raises one divergence for the merged figure, once, and keep yields one align-MFC entry that keeps the row whose copy is still owned and adds both sold rows to the list; following it by hand clears it and keeps that copy",
    "rule": "R4 R7 R8",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -6672,7 +6636,7 @@
    "name": "HELD (iii) counts every answer on the figure: the tablet's late score, made before the phone undid a FAVOR_MFC settlement, is held, since its replay would change what the undo decided",
    "rule": "R5 F3",
    "steps": [
-    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_MFC", "mfc_only": "APPLY_AND_LIST"}, "t": 530},
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_MFC"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
@@ -7187,13 +7151,7 @@
    "name": "add_to_list only for a row the entry lowers: a sale MFC already settled is not listed again when a later score is kept",
    "rule": "R8",
    "steps": [
-    {
-     "op": "edit",
-     "dev": "T",
-     "key": "pref/mfc/import",
-     "value": {"import_policy": "ASK", "mfc_only": "APPLY_AND_LIST", "disposition_list": "206369"},
-     "t": 530
-    },
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "ASK", "disposition_list": "206369"}, "t": 530},
     {"op": "push", "dev": "T", "t": 530, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
     {
      "op": "import",
