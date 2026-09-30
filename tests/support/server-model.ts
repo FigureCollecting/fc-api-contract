@@ -866,6 +866,8 @@ export interface Switches {
   answerStaleAfterWithdrawal?: boolean;
   /** Round 8's model: a unit's placements put the push's later units before their import, as if not held, so two late units that each withdraw what a device reacted to excuse each other. */
   laterUnitsReplayed?: boolean;
+  /** An item's revs recorded only after an import, not after every input: a rev the other side has pending only after a knowing edit or an answer counts as never pending. */
+  pendingAtImportsOnly?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1284,7 +1286,7 @@ export class Server {
       else if (inp.type === 'answer') this.applyAnswer(st, inp);
       else this.applyRedirect(st, inp);
       if (inp.type === 'import') nImp = inp.n;
-      this.recordPending(st, nImp);
+      if (!this.sw.pendingAtImportsOnly || inp.type === 'import') this.recordPending(st, nImp);
     }
     st.held = this.inputs.filter((e): e is Edit => e.type === 'edit' && e.held);
     this.emitHeldCards(st);
