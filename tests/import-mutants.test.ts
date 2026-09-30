@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { stable, type Switches } from './support/server-model.js';
 import { runScenario } from './support/trace-runner.js';
 import { vectors } from './support/vectors.js';
-import { compoundReactionWorld, crossImportWorld, itemReactionWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
+import { compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
 
 type Client = { staging?: boolean; pullAfterImport?: boolean; resumeFromNext?: boolean };
 const eq = (a: unknown, b: unknown) => stable(a) === stable(b);
@@ -49,7 +49,10 @@ const crossBreaches = (sw: Switches) => {
   return t.silent + t.silentItem;
 };
 
-type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross';
+// every 499th case of world 9 (two late units of one push meet reactions there, and every policy and order)
+const lateBreaches = (sw: Switches) => lateUnitsWorld({ sw, every: 499 }).silent;
+
+type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross' | 'late';
 const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detector; mustInclude?: string }[] = [
   { name: 'F1: no marker frame (a figure the import decided without writing gets no frame)', sw: { noMarker: true }, detector: 'world' },
   { name: 'F2: no client staging (a page ending inside an import is shown half applied)', client: { staging: false }, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
@@ -114,7 +117,7 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'HELD (ii) as in round 7: a revision is everything its push emitted, an answer in the push included', sw: { revisionWholePush: true }, detector: 'review', mustInclude: 'A revision is what the replayed late edits alone change' },
   { name: 'a revision\'s change counts its late edits\' own writes (a tag on the copy the replayed sale took out is held)', sw: { revisionCountsOwn: true }, detector: 'review', mustInclude: 'HELD (ii) holds only a reaction to the revision' },
   { name: 'reaction clause (b) dropped: a copy added after the import reacts only through what it touches', sw: { noNewCopyReaction: true }, detector: 'review', mustInclude: 'Reaction clause (b) alone' },
-  { name: 'reaction clause (c) without its first half: an item the device saw that the two sides end differently is no reaction by itself', sw: { noItemDiffClause: true }, detector: 'review', mustInclude: 'Reaction clause (c), an item the two placements end differently' },
+  { name: 'reaction clause (c) without its first half: an item the device saw that the two sides end differently is no reaction by itself', sw: { noItemDiffClause: true }, detector: 'review', mustInclude: 'Reaction clause (c), an item the two placements end differently, though both pass through the rev the device saw' },
   { name: 'a pending divergence keeps its rev when an import finds other values', sw: { divRevKeptOnNewValues: true }, detector: 'review', mustInclude: 'A divergence whose values change between imports takes a new rev' },
   { name: 'a change entry raised again, identical, keeps the old rev', sw: { changeRevWithoutImport: true }, detector: 'review', mustInclude: 'A change entry raised again, identical, after it ended has a new rev' },
   { name: 'a device that saw an item only after it ended counts as having seen it', sw: { sawEndedItem: true }, detector: 'review', mustInclude: 'A device that saw an item only after it ended did not react to it' },
@@ -131,6 +134,11 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'what a device saw read to the feed\'s head, not its basis', sw: { sawItemAtHead: true }, detector: 'review', mustInclude: 'A device that saw no item did not react to one raised after its edit' },
   { name: 'a favor_app change entry raised again, identical, keeps the old rev', sw: { favorRevWithoutImport: true }, detector: 'review', mustInclude: 'A favor_app change entry raised again, identical, after it ended has a new rev' },
   { name: 'an answer is STALE once a revision its device had not seen withdrew the item, though a later replay gave it back at its rev', sw: { answerStaleAfterWithdrawal: true }, detector: 'review', mustInclude: 'An item a replay withdrew and a later replay gives back at the same rev is pending with that rev again' },
+  // round 8, recheck 1 (world 9)
+  { name: 'a unit\'s placements put the push\'s later units before their import (round 8\'s model), so two late units of one push excuse each other', sw: { laterUnitsReplayed: true }, detector: 'late' },
+  { name: 'the same, a by-hand sale, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late units of one push never excuse each other' },
+  { name: 'the same, a knowing filing, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late units of one push never excuse each other, a knowing filing' },
+  { name: 'the same, two late sales, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late sales of one push never excuse each other' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
@@ -142,6 +150,7 @@ describe('mutants: every rule is load-bearing', () => {
     expect(itemBreaches({})).toBe(0);
     expect(compoundBreaches({})).toBe(0);
     expect(crossBreaches({})).toBe(0);
+    expect(lateBreaches({})).toBe(0);
     const t = twoDevices();
     expect(t.silentCounts + t.differsShown).toBe(0);
   }, 300_000);
@@ -152,6 +161,7 @@ describe('mutants: every rule is load-bearing', () => {
     else if (m.detector === 'items') expect(itemBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'compound') expect(compoundBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'cross') expect(crossBreaches(sw)).toBeGreaterThan(0);
+    else if (m.detector === 'late') expect(lateBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'twoDevices') {
       const t = twoDevices({ sw });
       expect(t.silentCounts + t.differsShown).toBeGreaterThan(0);

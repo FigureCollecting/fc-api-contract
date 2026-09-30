@@ -1,11 +1,12 @@
 // THE SERVER DECIDES, as a property: however an offline phone's edits meet an import (pushed after it, pulled first,
 // or across two imports), the end state equals the path where the phone pushed first; and when another device reacted
 // to the import first, the phone's late units are held and shown, never lost silently. FC_PROPERTY_FULL=1 runs the
-// two-import world in full (554,286 path runs) and the compound-reaction world in full (137,682); CI runs every 16th case
-// of the first and every 7th of the second. The cross-import world runs its 20,000 random scripts everywhere.
+// two-import world in full (554,286 path runs), the compound-reaction world in full (137,682) and the late-units world in
+// full (2,710,620); CI runs every 16th case of the first, every 7th of the second and every 101st of the third. The
+// cross-import world runs its 20,000 random scripts everywhere.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compoundReactionWorld, crossImportWorld, itemReactionWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
+import { compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
 
 // The tallies go to the console, and to the file FC_PROPERTY_REPORT names when it is set.
 const report = (name: string, t: Tally) => {
@@ -85,6 +86,23 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // the paths counted apart, each read (none is a loss): pinned so that any change is seen
     expect({ picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual({ picks: 30, refHeldAnswered: 9, answeredSameRev: 2, collisions: 15 });
   }, 600_000);
+
+  it('late units and every reaction: one late unit or two, in one push or two, the tablet and a third device reacting by hand or by an answer to what they are shown, a second import or none, every order (HELD (i), (ii), (iii))', () => {
+    const full = process.env.FC_PROPERTY_FULL === '1';
+    const t = lateUnitsWorld({ every: full ? 1 : 101 });
+    const line =
+      `late units and every reaction${full ? ' (full)' : ' (every 101st case)'}: ${t.runs} path runs; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
+      `differs but shown ${t.differsShown}; a by-hand pick among other copies ${t.picks}; one copy taken out by a late unit and by hand ${t.collisions}; ` +
+      `one copy taken out on two devices ${t.tuCollisions}; silent ${t.silent} (${t.silentWithItemInBoth} with a figure item in both)`;
+    console.log(line);
+    if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+    expect(t.runs).toBe(full ? 2_710_620 : 26_838);
+    expect({ silent: t.silent }, t.first.join('\n')).toEqual({ silent: 0 });
+    // the paths counted apart, each read (none is a loss; t.apart lists the first): a by-hand pick among copies both
+    // paths show, and a by-hand sale of the very copy a late unit took out (two devices recorded one sale); pinned so
+    // that any change is seen
+    expect({ picks: t.picks, collisions: t.collisions, tuCollisions: t.tuCollisions }, t.apart.join('\n')).toEqual(full ? { picks: 27, collisions: 1_512, tuCollisions: 0 } : { picks: 0, collisions: 13, tuCollisions: 0 });
+  }, 7_200_000);
 
   it('two devices, one edit each, both pull the import first (fuzz2_a.py)', () => {
     const t = twoDevices();

@@ -957,3 +957,274 @@ export function crossImportWorld(opts: { sw?: Switches; from: number; to: number
   }
   return t;
 }
+
+// ------------------------------------------------------------------ world 9: late units and every reaction (HELD)
+// Adopted from the round-7 recheck's world 6, run in full (W6_FULL): the phone makes one late unit or two (a sale, a sale
+// with its disposal, a cancel, an added copy), in one push or two; MFC changes the Count; the tablet and a third device
+// U pull the import and react to what they are shown (a figure item, a change entry or an align-MFC entry): by hand (a
+// sale of the highest or lowest live copy, a re-own, an added copy, a tag, a sale plus an added copy) or by an answer
+// (take, keep, undo, dismiss the align-MFC entry); sometimes a second import follows the reactions (the same Count, one
+// less or one more); then the devices push in every order. Each path is compared with pushed-first plus the same
+// conditional reactions. SILENT: other live counts and nothing shown (no held card, no STALE answer, no figure item that
+// pushed-first lacks). Three differences are counted apart: a by-hand pick the device made among other copies (equal to
+// pushed-first with that copy taken by name), a by-hand sale of the very copy a late unit took out (plain concurrency
+// between the phone and that device), and the tablet and U taking out one copy (plain concurrency between them).
+type W9Unit = [string, string];
+type W9React = 'none' | 'sell-high' | 'sell-low' | 'reown' | 'add' | 'tag' | 'take' | 'keep' | 'undo' | 'dismiss-align' | 'sell+add';
+export interface W9Case {
+  policy: string;
+  pre: string;
+  n: number;
+  units: W9Unit[];
+  split: boolean;
+  d: number;
+  second: number | null;
+  rT: W9React;
+  rU: W9React;
+  order: string;
+}
+const namer9 = (r: string, k: number) => (r === '1144' ? `o${k}` : `n${r}:${k}`);
+
+function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string): string {
+  const fig = d.show('imp/mfc/figure/H1');
+  const ch = d.show('imp/mfc/change/H1');
+  const al = d.show('imp/mfc/align/H1');
+  if (r === 'none' || (fig === null && ch === null && al === null)) return 'no';
+  const occs = [...new Set([...d.replica.keys()].filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!))].sort();
+  const live = occs.filter((c) => d.show(`occ/${c}/status`) === 'owned' && d.show(`occ/${c}/head`) === 'H1');
+  const removed = occs.filter((c) => d.show(`occ/${c}/status`) === null && d.show(`occ/${c}/head`) === 'H1');
+  if (r === 'sell-high' || r === 'sell-low' || r === 'sell+add') {
+    // by name only a copy this device shows live here: a copy that exists only offline (one a late unit's replay
+    // withdraws) is no pick
+    const c = byName !== undefined ? (live.includes(byName) ? byName : undefined) : r === 'sell-low' ? live[0] : live.at(-1);
+    if (c === undefined) return 'no';
+    d.edit(`occ/${c}/status`, 'former', t);
+    if (r === 'sell+add') {
+      d.edit(`occ/x${tag}/head`, 'H1', t);
+      d.edit(`occ/x${tag}/status`, 'owned', t);
+    }
+    return `${r} ${c}`;
+  }
+  if (r === 'reown') {
+    const c = removed.at(-1);
+    if (c === undefined) return 'no';
+    d.edit(`occ/${c}/status`, 'owned', t);
+    return `reown ${c}`;
+  }
+  if (r === 'add') {
+    d.edit(`occ/x${tag}/head`, 'H1', t);
+    d.edit(`occ/x${tag}/status`, 'owned', t);
+    return 'add';
+  }
+  if (r === 'tag') {
+    if (live[0] === undefined) return 'no';
+    d.edit(`occ/${live[0]}/tag/t9`, {}, t);
+    return 'tag';
+  }
+  if (r === 'take' || r === 'keep') {
+    if (fig === null) return 'no';
+    d.answer('H1', r, t);
+    return r;
+  }
+  if (r === 'undo') {
+    if (ch === null) return 'no';
+    d.answer('H1', 'undo', t, {}, {}, 'change');
+    return r;
+  }
+  if (al === null) return 'no';
+  d.answer('H1', 'dismiss', t, {}, {}, 'align');
+  return r;
+}
+
+function w9Unit(d: Device, [op, x]: W9Unit, t: number): void {
+  if (op === 'sell' || op === 'selldisp') d.edit(`occ/${x}/status`, 'former', t);
+  if (op === 'selldisp') d.edit(`occ/${x}/disposal`, { reason: 'sold' }, t);
+  if (op === 'cancel') d.edit(`occ/${x}/status`, null, t);
+  if (op === 'add') {
+    d.edit(`occ/a${x}/head`, 'H1', t);
+    d.edit(`occ/a${x}/status`, 'owned', t);
+  }
+}
+
+/** One path of a world-9 case; `names` gives a by-hand sale's copy by name (pushed-first with the offline pick). */
+export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names: { T?: string; U?: string } = {}) {
+  const s = new Server({ namer: namer9, switches: sw });
+  const P = new Device(s, 'P');
+  const Tb = new Device(s, 'T');
+  const U = new Device(s, 'U');
+  Tb.edit('pref/mfc/import', { import_policy: c.policy }, 470);
+  Tb.push(471);
+  s.runImport([row('1144', 'H1', 'owned', c.n)], 480);
+  for (const d of [P, Tb, U]) d.pull();
+  if (c.pre === 'appadd') {
+    Tb.edit('occ/b1/head', 'H1', 490);
+    Tb.edit('occ/b1/status', 'owned', 490);
+  }
+  if (c.pre === 'appsell') Tb.edit(`occ/o${c.n}/status`, 'former', 490);
+  Tb.push(491);
+  c.units.forEach((u, i) => w9Unit(P, u, 500 + i));
+  const k1 = c.split ? 1 : c.units.reduce((a, u) => a + (u[0] === 'add' || u[0] === 'selldisp' ? 2 : 1), 0);
+  if (path === 'REF') P.push(510);
+  s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d))], 600);
+  Tb.pull();
+  const shownT = w9React(Tb, c.rT, 610, 'T', names.T);
+  U.pull();
+  const shownU = w9React(U, c.rU, 615, 'U', names.U);
+  const res: string[] = [];
+  const answered = ['take', 'keep', 'undo', 'dismiss-align'];
+  let stale = false;
+  const pushOf = (d: Device, react: string, t: number, n?: number) => {
+    const out = d.push(t, n).map((x) => x.outcome);
+    // a STALE answer is shown: the client shows the item as it now is
+    if (out.includes('STALE') && answered.includes(react)) stale = true;
+    res.push(...out);
+  };
+  if (c.second !== null) {
+    pushOf(Tb, shownT, 620);
+    pushOf(U, shownU, 621);
+    s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d + c.second))], 630);
+  }
+  const pushP = (n?: number) => pushOf(P, 'no', 700 + res.length, n);
+  const pushT = () => pushOf(Tb, shownT, 700 + res.length);
+  const pushU = () => pushOf(U, shownU, 700 + res.length);
+  if (path === 'OFF') {
+    if (c.order === 'P-T-U') {
+      pushP(k1);
+      pushP();
+      pushT();
+      pushU();
+    } else if (c.order === 'T-U-P') {
+      pushT();
+      pushU();
+      pushP(k1);
+      pushP();
+    } else if (c.order === 'T-P-U') {
+      pushT();
+      pushP(k1);
+      pushP();
+      pushU();
+    } else {
+      pushP(k1);
+      pushT();
+      pushU();
+      pushP();
+    }
+  } else {
+    pushT();
+    pushU();
+    pushP();
+  }
+  for (let i = 0; i < 2; i++) for (const d of [P, Tb, U]) d.pull();
+  const counts: Record<string, number> = {};
+  for (const [k, v] of s.emitted)
+    if (k.endsWith('/status') && v[0] === 'owned') {
+      const h = s.emitted.get(k.replace('/status', '/head'))?.[0];
+      if (typeof h === 'string') counts[h] = (counts[h] ?? 0) + 1;
+    }
+  return { counts: JSON.stringify(counts), figure: JSON.stringify(s.figureItems()), held: Object.values(s.heldCards()).flat().length, stale, reacted: `${shownT}|${shownU}`, out: res.join(',') };
+}
+
+export interface LateUnitsTally {
+  runs: number;
+  same: number;
+  sameCountsShown: number;
+  differsShown: number;
+  picks: number;
+  collisions: number;
+  tuCollisions: number;
+  silent: number;
+  /** Of the silent paths, those where both paths have a figure item (the challenger's silentButFigureItemInBoth). */
+  silentWithItemInBoth: number;
+  first: string[];
+  /** The first paths counted apart, for reading. */
+  apart: string[];
+}
+
+/** Every `every`-th case from `offset` (whole cases: all of a case's orders), for the policies given. */
+export function lateUnitsWorld(opts: { sw?: Switches; every?: number; offset?: number; policies?: readonly string[] } = {}): LateUnitsTally {
+  const sw = opts.sw ?? {};
+  const every = opts.every ?? 1;
+  const offset = opts.offset ?? 0;
+  const t: LateUnitsTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, collisions: 0, tuCollisions: 0, silent: 0, silentWithItemInBoth: 0, first: [], apart: [] };
+  const apart = (why: string, c: W9Case, got: unknown, ref: unknown) => {
+    if (t.apart.length < 30) t.apart.push(`${why}: ${JSON.stringify(c)} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`);
+  };
+  const reacts: W9React[] = ['none', 'sell-high', 'sell-low', 'reown', 'add', 'tag', 'take', 'keep', 'undo', 'dismiss-align', 'sell+add'];
+  let k = 0;
+  for (const policy of opts.policies ?? ['ASK', 'FAVOR_APP', 'FAVOR_MFC'])
+    for (const pre of ['none', 'appadd', 'appsell'])
+      for (const n of [1, 2, 3]) {
+        const copies = Array.from({ length: n }, (_, i) => `o${i + 1}`).filter((x) => !(pre === 'appsell' && x === `o${n}`));
+        const one: W9Unit[] = [...copies.flatMap((x) => ['sell', 'selldisp', 'cancel'].map((op): W9Unit => [op, x])), ['add', '1']];
+        const unitSets: W9Unit[][] = [...one.map((u) => [u]), ...one.flatMap((u, i) => one.slice(i + 1).filter((v) => v[1] !== u[1] || v[0] === 'add').map((v) => [u, v]))];
+        for (const units of unitSets)
+          for (const d of [-2, -1, 1, 2]) {
+            if (n + d < 0) continue;
+            for (const second of [null, 0, -1, 1])
+              for (const rT of reacts)
+                for (const rU of ['none', 'sell-high', 'add', 'keep', 'undo'] as W9React[])
+                  for (const split of units.length > 1 ? [false, true] : [false]) {
+                    if (k++ % every !== offset) continue;
+                    const base: W9Case = { policy, pre, n, units, split, d, second, rT, rU, order: 'P-T-U' };
+                    const refs = new Map<string, ReturnType<typeof runLateUnits>>();
+                    for (const order of ['P-T-U', 'T-U-P', 'T-P-U', 'P1-T-U-P2']) {
+                      if (order === 'P1-T-U-P2' && !split) continue;
+                      const c = { ...base, order };
+                      const got = runLateUnits(c, 'OFF', sw);
+                      // pushed-first with the reactions this path made (a device that reacted here reacts there by the same rule)
+                      const [gt, gu] = got.reacted.split('|') as [string, string];
+                      const refCase = { ...base, rT: gt !== 'no' ? rT : 'none', rU: gu !== 'no' ? rU : 'none' } as W9Case;
+                      const refKey = `${gt !== 'no'}|${gu !== 'no'}`;
+                      if (!refs.has(refKey)) refs.set(refKey, runLateUnits(refCase, 'REF', sw));
+                      const ref = refs.get(refKey)!;
+                      t.runs++;
+                      const sameCounts = got.counts === ref.counts;
+                      if (sameCounts && got.figure === ref.figure && got.held === 0) {
+                        t.same++;
+                        continue;
+                      }
+                      const shown = got.held > 0 || got.stale || (got.figure !== ref.figure && got.figure !== '{}');
+                      if (shown) {
+                        if (sameCounts) t.sameCountsShown++;
+                        else t.differsShown++;
+                        continue;
+                      }
+                      if (sameCounts) {
+                        // the same counts, and pushed-first's figure item gone: counted with the silent paths
+                        t.silent++;
+                        if (t.first.length < 5) t.first.push(`item: ${JSON.stringify(c)} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`);
+                        continue;
+                      }
+                      // a by-hand pick among other copies: pushed-first with the copies this path took out, by name
+                      const pick = (x: string) => (x.startsWith('sell') ? x.split(' ')[1] : undefined);
+                      const names = { T: pick(gt), U: pick(gu) };
+                      if (names.T !== undefined || names.U !== undefined) {
+                        const ref2 = runLateUnits(refCase, 'REF', sw, names);
+                        if (ref2.reacted === got.reacted && ref2.counts === got.counts && ref2.figure === got.figure) {
+                          t.picks++;
+                          apart('pick', c, got, ref2);
+                          continue;
+                        }
+                      }
+                      // a device took out the very copy a late unit took out (plain concurrency)
+                      const outs = units.filter((u) => ['sell', 'selldisp', 'cancel'].includes(u[0])).map((u) => u[1]);
+                      const sold = [names.T, names.U].filter((x): x is string => x !== undefined);
+                      if (sold.some((x) => outs.includes(x))) {
+                        t.collisions++;
+                        apart('collision', c, got, ref);
+                        continue;
+                      }
+                      if (sold.length === 2 && sold[0] === sold[1]) {
+                        t.tuCollisions++;
+                        apart('two devices', c, got, ref);
+                        continue;
+                      }
+                      t.silent++;
+                      if (got.figure !== '{}') t.silentWithItemInBoth++;
+                      if (t.first.length < 5) t.first.push(`${JSON.stringify(c)} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`);
+                    }
+                  }
+          }
+      }
+  return t;
+}
