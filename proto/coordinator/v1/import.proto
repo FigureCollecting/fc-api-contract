@@ -215,15 +215,16 @@
 // HELD. The server decides HELD once, when a push arrives, for each UNIT of the
 // push in push order: the push's edits to one copy's head, status, collection
 // and disposal are one unit, held or replayed together; every other edit (a
-// tag, a figure value) is a unit by itself. A unit is late when an edit of it
-// is late. The RELEVANCE TEST of a late unit: the server replays S both ways,
-// the unit's late edits before their import I and at their arrival, every
-// earlier input as decided and the push's later units as if not held, and
-// compares S's LIVE COPIES (each copy's figure and kind, or out: a former or
-// removed copy is out whatever facets it keeps; the unit's own copies count
-// too) and S's ITEMS (its figure item, change entry and align-MFC entry, each
-// by its rev: an item changes when it appears, ends or takes a new rev, not
-// when it only shows the app's side anew); the unit passes when they differ.
+// tag, a figure value) is a unit with the push's other edits of its key. A unit
+// is late when an edit of it is late. The RELEVANCE TEST of a late unit: the
+// server replays S both ways, the unit's late edits before their import I and
+// at their arrival, every earlier input as decided and the push's later units
+// as if not held, and compares S's LIVE COPIES (each copy's figure and kind, or
+// out: a former or removed copy is out whatever facets it keeps; the unit's own
+// copies count too) and S's ITEMS (its figure item, change entry and align-MFC
+// entry, each by its rev: an item changes when it appears, ends or takes a new
+// rev, not when it only shows the app's side anew); the unit passes when they
+// differ.
 // A REACTION to a result is an edit, made after that result without having seen
 // what withdraws it, that
 //   * writes a copy whose live state the two sides leave different;
@@ -234,8 +235,9 @@
 //   * writes the status or head of a copy of S while S had an item, as its
 //     device saw it (pending: a device that saw an item only after it ended saw
 //     none), that the two sides leave different, or that the side where the
-//     result stands gave S, with the rev the device saw, and the other side
-//     never gives it, whatever an answer has done to that item since.
+//     result stands has pending with the rev the device saw at or after the
+//     result's import I (I raised or kept it), and the other side never has
+//     pending at or after I, whatever an answer has done to that item since.
 // A unit is HELD (PUSH_OUTCOME_HELD): kept, not replayed, and shown in its
 // figure's held-edit card, when
 //   (i)   it is late, and a reaction to I's result arrived before it or in the
@@ -243,17 +245,23 @@
 //         (knowing for I, whether or not it is late for a later import), the
 //         two sides being the two placements, the result standing at arrival.
 //         The unit must pass the relevance test, unless the reaction is to an
-//         item its device saw that the placement before I never gives S: an
-//         answer (a dismiss, an undo) may since have ended the item, so that
-//         both placements end alike. HOLD ON REACTION: another device acted on
-//         the result the late edit would withdraw;
-//   (ii)  a knowing edit of it was made before a REVISION of S that its device
-//         had not seen, and is a reaction to the result the revision withdrew,
-//         the two sides being S just before the revision, where the result
-//         stands, and S after it. Every push that replays a late edit is a
-//         revision of that edit's figures, even one that changes nothing
-//         against S just before it (an answer may already have ended the item a
-//         device reacted to); a push whose late edits are all held is none.
+//         item its device saw that the placement before I never has pending at
+//         or after I: an answer (a dismiss, an undo) may since have ended the
+//         item, so that both placements end alike. HOLD ON REACTION: another
+//         device acted on the result the late edit would withdraw;
+//   (ii)  an edit of it was made after a REVISION's import (knowing for that
+//         import, whether or not it is late for a later one) and before the
+//         revision, which its device had not seen, and is a reaction to the
+//         result the revision withdrew, the two sides being S just before the
+//         revision, where the result stands, and S after it. Every push that
+//         replays a late edit is a revision of that edit's figures; its import
+//         is the earliest import those late edits are late for, and its
+//         position is its push's commit on the feed (a push that emits nothing
+//         is at the feed's last commit, so a device already there has seen it).
+//         It is a revision even when it changes nothing against S just before
+//         it (an answer may already have ended the item a device reacted to),
+//         but a copy an edit adds reacts only to a revision that changes S's
+//         live copies or items; a push whose late edits are all held is none.
 //         What a revision changes is what its replayed late edits alone make of
 //         S: S replayed with them, without the push's answers and knowing
 //         edits, against S just before the push, leaving out the late edits'
@@ -281,7 +289,9 @@
 // An answer is accepted only while that item of S is pending with that rev;
 // otherwise it is STALE, with `current` (the item changed, or another device
 // answered first, and the client shows what is there now). The first accepted
-// answer wins.
+// answer wins. An item a replay withdrew and a later replay gives back at the
+// same rev is pending with that rev again, so an answer naming it is accepted:
+// it answers what the user was asked.
 //   * A conflict. keep: the app's side of every disputed part stands, and what
 //     only MFC changed is still applied. take: MFC's side is made true on the
 //     copies MFC tracks (copies with a live base, and placeholders):
@@ -311,7 +321,10 @@
 //     import, while every write still holds the value the import wrote (else
 //     the undo is STALE); a copy the import created keeps its origin and head,
 //     and only its status is tombstoned. A favor_app settlement is taken now.
-//     dismiss: it goes.
+//     An undo works against the export of the import that made the entry,
+//     whatever a later import found: that take, and the realignment after it,
+//     use that export's side, and an applied or favor_mfc undo acknowledges
+//     MFC's rows as that export stated them. dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it

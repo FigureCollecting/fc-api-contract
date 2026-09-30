@@ -852,6 +852,18 @@ export interface Switches {
   heldLateIsRevision?: boolean;
   /** An undo of an applied or favor_mfc change realigns the bases. */
   undoRealigns?: boolean;
+  /** Round 8's first cut: clause (c)'s second half judged over the whole replay, so an item an earlier import raised and I kept is given by both sides. */
+  seenOverWholeReplay?: boolean;
+  /** Round 8's first cut: HELD (ii) never judges a late edit, even one knowing for the revision's import. */
+  skipLateInRevision?: boolean;
+  /** Round 8's first cut: clause (b) (adds a copy) for every revision point, one whose change is empty included. */
+  newCopyAnyRevision?: boolean;
+  /** What a device saw read to the feed's head, not to its basis. */
+  sawItemAtHead?: boolean;
+  /** A favor_app or favor_mfc change entry's rev without its import: one raised again, identical, keeps the old rev. */
+  favorRevWithoutImport?: boolean;
+  /** An answer is STALE when a revision its device had not seen withdrew the item, even once a later replay gave it back at the same rev. */
+  answerStaleAfterWithdrawal?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -911,7 +923,8 @@ export interface Policy {
 }
 type HeldReason = 'late_after_knowing' | 'made_on_revised_result' | 'after_answer';
 /** Per item key: every rev one replay gave the item, pending at any point of it. */
-type RevHist = Map<string, Set<string>>;
+/** Per item key: each rev the item was pending with between the inputs of a replay, and the last import applied while it was. */
+type RevHist = Map<string, Map<string, number>>;
 interface Revision {
   seq: number;
   copies: Set<string>;
@@ -965,8 +978,10 @@ export class Server {
   private force = new Set<number>();
   /** Arrivals a revision's replay leaves out: its push's answers and knowing edits (HELD (ii)). */
   private skip = new Set<number>();
-  /** Per replayed state: every rev each item had during that replay. */
+  /** Per replayed state: every rev each item was pending with during that replay, and the last import applied while it was. */
   private readonly revHist = new WeakMap<Canon, RevHist>();
+  /** Per replayed state: the item keys (figure item, change entry, align-MFC entry) it has written. */
+  private readonly itemKeys = new WeakMap<Canon, Set<string>>();
   private readonly heldReason = new Map<number, HeldReason>();
   readonly namer: Namer;
   readonly rank: Rank;
@@ -1105,19 +1120,26 @@ export class Server {
         if (differs && cands.some(reaction)) return 'late_after_knowing';
         // a status or head write made while its device saw an item of S, by rev, that the placement at arrival produces
         // and the placement before I never does, whatever an answer has done to that item since
-        if (!this.sw.answerHidesReaction && !this.sw.narrowReaction && cands.some((k) => this.sawWithdrawn(k, figs, hist[1], hist[0]))) return 'late_after_knowing';
+        if (!this.sw.answerHidesReaction && !this.sw.narrowReaction && cands.some((k) => this.sawWithdrawn(k, figs, hist[1], hist[0], I0))) return 'late_after_knowing';
       }
     }
-    // (ii): a knowing edit made before a revision of S it had not seen, when it reacts to that revision
+    // (ii): an edit made after a revision's import (knowing for it, whether or not late for a later import) and before
+    // that revision, which its device had not seen, when it reacts to the revision
     if (!this.sw.noHold)
       for (const e of U) {
-        if (lates.get(e.arr)!.length > 0) continue;
+        const Le = lates.get(e.arr)!;
+        if (Le.length > 0 && this.sw.skipLateInRevision) continue;
         for (const f of this.figsOf(e, prev))
           for (const R of this.revisions.get(f) ?? []) {
             if (!(e.basis < R.seq && R.seq < at)) continue;
-            if (this.sw.revisedHoldsAnyEdit || this.reacts(e, R.copies, R.items, R.imp)) return 'made_on_revised_result';
-            // measured from S as the device saw it: an item it saw that S before the revision had and the revision withdraws
-            if (!this.sw.revisionFromPushStart && !this.sw.narrowReaction && !this.sw.revisionIgnoresItems && this.sawWithdrawn(e, [f], R.before, R.after)) return 'made_on_revised_result';
+            // an edit late for the revision's own import is (i)'s
+            if (Le.length > 0 && (R.imp === undefined || Le.includes(R.imp))) continue;
+            // a copy added reacts only to a revision that changes S's live copies or items
+            const bImp = this.sw.newCopyAnyRevision || R.copies.size + R.items.size > 0 ? R.imp : undefined;
+            if (this.sw.revisedHoldsAnyEdit || this.reacts(e, R.copies, R.items, bImp)) return 'made_on_revised_result';
+            // measured from S as the device saw it: an item it saw that S before the revision had pending from the
+            // revision's import on and the revision withdraws
+            if (!this.sw.revisionFromPushStart && !this.sw.narrowReaction && !this.sw.revisionIgnoresItems && this.sawWithdrawn(e, [f], R.before, R.after, R.imp)) return 'made_on_revised_result';
           }
       }
     return null;
@@ -1142,7 +1164,7 @@ export class Server {
     if (keys.size === 0) return false;
     const last = new Map<string, Json>();
     for (const ev of this.feed) {
-      if (ev.seq > basis) break;
+      if (ev.seq > basis && !this.sw.sawItemAtHead) break;
       if (keys.has(ev.key)) last.set(ev.key, ev.value);
     }
     return this.sw.sawEndedItem ? last.size > 0 : [...last.values()].some((v) => v !== null);
@@ -1160,17 +1182,20 @@ export class Server {
 
   /**
    * A REACTION to a withdrawn item (HELD (i) and (ii)): a status or head write to a copy made while its device saw an
-   * item of S, by rev, that one replay (`produced`) gave S at some point and the other (`never`) never does.
+   * item of S, by rev, that one replay (`produced`, where the result stands) has pending at or after the result's import
+   * I (I raised it or kept it) and the other (`never`) never has pending at or after I.
    */
-  private sawWithdrawn(k: Edit, figs: Iterable<string>, produced: RevHist, never: RevHist): boolean {
+  private sawWithdrawn(k: Edit, figs: Iterable<string>, produced: RevHist, never: RevHist, I: Import | undefined): boolean {
     if (!k.key.startsWith('occ/')) return false;
     const facet = k.key.split('/')[2];
     if (facet !== 'status' && facet !== 'head') return false;
+    const from = I === undefined || this.sw.seenOverWholeReplay ? 0 : I.n;
+    const pendingFrom = (h: RevHist, K: string, r: string) => (h.get(K)?.get(r) ?? -1) >= from;
     for (const f of figs)
       for (const kind of ITEM_KINDS) {
         const K = ITEM(kind, f);
         const r = this.seenRev(k.basis, K);
-        if (r !== 'null' && (produced.get(K)?.has(r) ?? false) && !(never.get(K)?.has(r) ?? false)) return true;
+        if (r !== 'null' && pendingFrom(produced, K, r) && !pendingFrom(never, K, r)) return true;
       }
     return false;
   }
@@ -1245,15 +1270,32 @@ export class Server {
     const prev = this.canon ?? st;
     const order = this.canonicalOrder(prev);
     const late = this.placedLate;
+    let nImp = 0;
     for (const inp of order) {
       if (inp.type === 'edit') this.applyEdit(st, inp, !late.has(inp.arr));
       else if (inp.type === 'import') this.applyImport(st, inp);
       else if (inp.type === 'answer') this.applyAnswer(st, inp);
       else this.applyRedirect(st, inp);
+      if (inp.type === 'import') nImp = inp.n;
+      this.recordPending(st, nImp);
     }
     st.held = this.inputs.filter((e): e is Edit => e.type === 'edit' && e.held);
     this.emitHeldCards(st);
     return st;
+  }
+
+  /** After each input of a replay: each pending item's rev, with the last import applied while it is pending (HELD, clause (c)). */
+  private recordPending(st: Canon, nImp: number): void {
+    const keys = this.itemKeys.get(st);
+    if (keys === undefined) return;
+    const m = this.revHist.get(st) ?? this.revHist.set(st, new Map()).get(st)!;
+    for (const k of keys) {
+      const v = st.val(k);
+      if (v === null) continue;
+      const revs = m.get(k) ?? m.set(k, new Map()).get(k)!;
+      const r = revOf(v);
+      revs.set(r, Math.max(revs.get(r) ?? 0, nImp));
+    }
   }
 
   /** A spine merge: the items of the merged-away head and of its survivor end, and the next import decides the merged figure. */
@@ -1319,10 +1361,7 @@ export class Server {
 
   /** Set a server-owned facet to `v` (null: tombstone), only when it changes. */
   private put(st: Canon, key: string, v: Json, ver: Version): void {
-    if (v !== null && ITEM_KINDS.some((kind) => key.startsWith(`imp/mfc/${kind}/`))) {
-      const m = this.revHist.get(st) ?? this.revHist.set(st, new Map()).get(st)!;
-      (m.get(key) ?? m.set(key, new Set()).get(key)!).add(revOf(v));
-    }
+    if (ITEM_KINDS.some((kind) => key.startsWith(`imp/mfc/${kind}/`))) (this.itemKeys.get(st) ?? this.itemKeys.set(st, new Set()).get(st)!).add(key);
     if (eq(st.val(key), v)) return;
     if (v === null && !st.facets.has(key)) return;
     st.set(key, v, ver);
@@ -1658,7 +1697,7 @@ export class Server {
         const { writes: w, undo } = this.diff(st, before);
         const kind = choice === 'keep' ? 'favor_app' : 'favor_mfc';
         const shown = choice === 'keep' ? this.writesOf(st, S, this.takeSettled(st, S, exp)) : undo;
-        st.changes.set(S, { kind, rev: `C${I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp });
+        st.changes.set(S, { kind, rev: `C${this.sw.favorRevWithoutImport ? '' : I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp });
         st.conflicts.delete(S);
         this.acknowledge(st, S, exp, known, baseRows, choice === 'keep', I.policy);
         st.decisions.push([`import#${I.n}`, S, kind]);
@@ -1717,7 +1756,7 @@ export class Server {
     R.accepted = false;
     const cf = st.conflicts.get(S);
     // the answer names its item (res-answer `item`) and that item's rev
-    const is = (item: ItemKind, rev: string | undefined) => (this.sw.ignoreItem || R.item === item) && rev !== undefined && rev === R.rev;
+    const is = (item: ItemKind, rev: string | undefined) => (this.sw.ignoreItem || R.item === item) && rev !== undefined && rev === R.rev && !this.withdrawnUnseen(R);
     const heldRev = this.heldOn(st, S, R.arr).listed;
     if (cf !== undefined && (is('figure', cf.rev) || (this.sw.M9 && R.item === 'figure'))) this.answerFigure(st, S, cf, R, policy);
     else if (heldRev.length > 0 && is('held', this.heldRev(heldRev))) this.answerHeld(st, S, R);
@@ -1728,6 +1767,13 @@ export class Server {
     }
     st.decisions.push([`answer ${R.choice}`, S, R.accepted ? 'accepted' : 'STALE']);
     this.emitItems(st, S, R.version);
+  }
+
+  /** Mutant answerStaleAfterWithdrawal only: a revision the answer's device had not seen withdrew or re-revved the item it names. */
+  private withdrawnUnseen(R: Answer): boolean {
+    if (!this.sw.answerStaleAfterWithdrawal) return false;
+    const at = this.arrSeq.get(R.arr) ?? 1e9;
+    return (this.revisions.get(R.fig) ?? []).some((Rv) => R.basis < Rv.seq && Rv.seq < at && Rv.items.has(ITEM(R.item, R.fig)));
   }
 
   private answerFigure(st: Canon, S: string, cf: Card, R: Answer, policy: Policy): void {
