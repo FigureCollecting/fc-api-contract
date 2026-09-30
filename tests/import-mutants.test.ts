@@ -139,6 +139,7 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'the same, a by-hand sale, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late units of one push never excuse each other' },
   { name: 'the same, a knowing filing, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late units of one push never excuse each other, a knowing filing' },
   { name: 'the same, two late sales, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late sales of one push never excuse each other' },
+  { name: 'an item\'s revs recorded only after an import, so a rev the other side has pending only after a knowing edit counts as never pending (a hold too many)', sw: { pendingAtImportsOnly: true }, detector: 'review', mustInclude: 'Reaction clause (c), an item the other side has pending only after a knowing edit' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {

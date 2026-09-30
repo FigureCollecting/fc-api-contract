@@ -13190,6 +13190,100 @@
     "changes": {"H1": "favor_app"},
     "align": {"H1": [{"count": {"should": 1}, "mfc_id": "1144", "status": {"should": "owned"}}]}
    }
+  },
+  {
+   "name": "Reaction clause (c), an item the other side has pending only after a knowing edit: the tablet sold by hand while shown the align-MFC entry, and the phone's late added copy, which gives that entry the same rev once the tablet's sale is in, is applied",
+   "rule": "F3 R8",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP"}, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"},
+    {"op": "edit", "dev": "T", "key": "occ/b1/head", "value": "H1", "t": 550},
+    {"op": "edit", "dev": "T", "key": "occ/b1/status", "value": "owned", "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "occ/b1/head", "outcome": "APPLIED"}, {"key": "occ/b1/status", "outcome": "APPLIED"}]},
+    {"op": "edit", "dev": "P", "key": "occ/a1/head", "value": "H1", "t": 560},
+    {"op": "edit", "dev": "P", "key": "occ/a1/status", "value": "owned", "t": 560},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 0, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"count": {"should": 2}, "mfc_id": "1144", "status": {"should": "owned"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [{"head": "H1", "kind": "favor_app", "writes": [], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "pull", "dev": "T"},
+    {"op": "edit", "dev": "T", "key": "occ/o1/status", "value": "former", "t": 610},
+    {"op": "push", "dev": "T", "t": 611, "expect": [{"key": "occ/o1/status", "outcome": "APPLIED"}]},
+    {"op": "push", "dev": "P", "t": 620, "expect": [{"key": "occ/a1/head", "outcome": "APPLIED"}, {"key": "occ/a1/status", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/a1/head": "H1",
+     "occ/a1/status": "owned",
+     "occ/b1/head": "H1",
+     "occ/b1/status": "owned",
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "former"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {"H1": "favor_app"},
+    "align": {"H1": [{"count": {"should": 2}, "mfc_id": "1144", "status": {"should": "owned"}}]}
+   }
   }
  ]
 }
