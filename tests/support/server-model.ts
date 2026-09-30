@@ -864,6 +864,8 @@ export interface Switches {
   favorRevWithoutImport?: boolean;
   /** An answer is STALE when a revision its device had not seen withdrew the item, even once a later replay gave it back at the same rev. */
   answerStaleAfterWithdrawal?: boolean;
+  /** Round 8's model: a unit's placements put the push's later units before their import, as if not held, so two late units that each withdraw what a device reacted to excuse each other. */
+  laterUnitsReplayed?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1057,13 +1059,16 @@ export class Server {
       e.unit = u;
       units.set(u, [...(units.get(u) ?? []), e]);
     }
-    for (const U of units.values()) {
-      const reason = this.holdReason(U, prev, false);
+    const list = [...units.values()];
+    list.forEach((U, i) => {
+      // the push's later units stand at their arrival while this unit is judged
+      const later = new Set(list.slice(i + 1).flatMap((V) => V.map((e) => e.arr)));
+      const reason = this.holdReason(U, prev, false, later);
       for (const e of U) {
         e.held = reason !== null;
         if (reason !== null) this.heldReason.set(e.arr, reason);
       }
-    }
+    });
   }
 
   /** Mutant holdWithoutArrivedBefore only: hold an earlier unit again on a reaction that arrived after it. */
@@ -1082,7 +1087,7 @@ export class Server {
   }
 
   /** Why unit U is held (HELD (i) to (iii)), or null: it is replayed. */
-  private holdReason(U: readonly Edit[], prev: Canon, allowLater: boolean): HeldReason | null {
+  private holdReason(U: readonly Edit[], prev: Canon, allowLater: boolean, later: ReadonlySet<number> = new Set()): HeldReason | null {
     const figs = new Set(U.flatMap((e) => [...this.figsOf(e, prev)]));
     const first = U[0]!;
     const at = this.arrSeq.get(first.arr) ?? 1e9;
@@ -1114,7 +1119,7 @@ export class Server {
       if (afterAnswer && this.sw.answerHoldWithoutRelevance === true) return 'after_answer';
       if (cands.length > 0 && this.sw.holdWithoutRelevance === true) return 'late_after_knowing';
       if (afterAnswer || cands.length > 0) {
-        const { differs, copies, items, hist } = this.relevant(U, figs);
+        const { differs, copies, items, hist } = this.relevant(U, figs, later);
         if (differs && afterAnswer) return 'after_answer';
         const reaction = (k: Edit) => this.sw.broadReaction === true || this.reacts(k, copies, items, I0);
         if (differs && cands.some(reaction)) return 'late_after_knowing';
@@ -1210,12 +1215,14 @@ export class Server {
 
   /**
    * THE RELEVANCE TEST (HELD (i) and (iii)): would placing the unit's late edits before their import change S's live
-   * copies (each copy's survivor and kind, or out; the unit's own copies included) or S's items? Every other input keeps
-   * its decision; the push's later units are placed as if not held. Returns whether anything differs, the copies whose
-   * live state differs and the item keys that differ.
+   * copies (each copy's survivor and kind, or out; the unit's own copies included) or S's items? Every earlier input
+   * keeps its decision, and the push's later units stand at their arrival, as the result stands, so two late units of
+   * one push never excuse each other. Returns whether anything differs, the copies whose live state differs and the item
+   * keys that differ.
    */
-  private relevant(U: readonly Edit[], figs: Set<string>): { differs: boolean; copies: Set<string>; items: Set<string>; hist: [RevHist, RevHist] } {
+  private relevant(U: readonly Edit[], figs: Set<string>, later: ReadonlySet<number> = new Set()): { differs: boolean; copies: Set<string>; items: Set<string>; hist: [RevHist, RevHist] } {
     const saved = new Set(this.force);
+    const stand = this.sw.laterUnitsReplayed ? [] : [...later];
     const own = new Set(U.map((e) => e.key));
     const ownCopies = new Set(U.filter((e) => e.key.startsWith('occ/')).map((e) => e.key.split('/')[1]!));
     // mutant heldNotSticky: round 5's relevance replay, which reset every other edit's hold
@@ -1223,7 +1230,7 @@ export class Server {
     const out: Record<string, string>[] = [];
     const hist: RevHist[] = [];
     for (const atArrival of [false, true]) {
-      this.force = new Set([...saved, ...(atArrival ? U.map((e) => e.arr) : [])]);
+      this.force = new Set([...saved, ...stand, ...(atArrival ? U.map((e) => e.arr) : [])]);
       const st = this.replay();
       hist.push(this.revHist.get(st) ?? new Map());
       const view: Record<string, string> = {};

@@ -219,12 +219,15 @@
 // is late when an edit of it is late. The RELEVANCE TEST of a late unit: the
 // server replays S both ways, the unit's late edits before their import I and
 // at their arrival, every earlier input as decided and the push's later units
-// as if not held, and compares S's LIVE COPIES (each copy's figure and kind, or
-// out: a former or removed copy is out whatever facets it keeps; the unit's own
-// copies count too) and S's ITEMS (its figure item, change entry and align-MFC
-// entry, each by its rev: an item changes when it appears, ends or takes a new
-// rev, not when it only shows the app's side anew); the unit passes when they
-// differ.
+// at their arrival, as the result stands, and compares S's LIVE COPIES (each
+// copy's figure and kind, or out: a former or removed copy is out whatever
+// facets it keeps; the unit's own copies count too) and S's ITEMS (its figure
+// item, change entry and align-MFC entry, each by its rev: an item changes when
+// it appears, ends or takes a new rev, not when it only shows the app's side
+// anew); the unit passes when they differ. Taken in push order, the units'
+// tests step from the result as it stands to the push's replay, so the late
+// units of one push never excuse each other: what the push would withdraw from
+// a result another device acted on is withdrawn in some unit's test.
 // A REACTION to a result is an edit, made after that result without having seen
 // what withdraws it, that
 //   * writes a copy whose live state the two sides leave different;
