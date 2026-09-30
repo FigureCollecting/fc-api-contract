@@ -1,12 +1,14 @@
 // Each mutant removes one rule from the server model (or the client); the goldens or the property worlds must then
-// fail, and the unmutated model must pass them all. Two mutants are equivalent (shown below): M8, since import.proto 4.4
-// (c2) already keeps every copy the app changed out of MATERIALIZE; and recheckLate, since a late edit is replayed just
-// before an import that decides its figure again, and ending a conflict writes nothing.
+// fail, and the unmutated model must pass them all. Three mutants are equivalent (shown below): M8, since import.proto 4.4
+// (c2) already keeps every copy the app changed out of MATERIALIZE; recheckLate, since a late edit is replayed just
+// before an import that decides its figure again, and ending a conflict writes nothing; and heldLateIsRevision, since a
+// push whose late edits are all held changes nothing, and a revision that changes nothing holds only an edit whose
+// device saw an item the revision withdrew.
 import { describe, expect, it } from 'vitest';
 import { stable, type Switches } from './support/server-model.js';
 import { runScenario } from './support/trace-runner.js';
 import { vectors } from './support/vectors.js';
-import { compoundReactionWorld, itemReactionWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
+import { compoundReactionWorld, crossImportWorld, itemReactionWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
 
 type Client = { staging?: boolean; pullAfterImport?: boolean; resumeFromNext?: boolean };
 const eq = (a: unknown, b: unknown) => stable(a) === stable(b);
@@ -40,7 +42,14 @@ const compoundBreaches = (sw: Switches) => {
   return t.silent + t.silentItem;
 };
 
-type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound';
+// scripts 1 to 3,000 of the cross-import world (they hold both round-8b shapes: an item an earlier import raised, and an
+// edit late for a later import)
+const crossBreaches = (sw: Switches) => {
+  const t = crossImportWorld({ sw, from: 1, to: 3_000 });
+  return t.silent + t.silentItem;
+};
+
+type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross';
 const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detector; mustInclude?: string }[] = [
   { name: 'F1: no marker frame (a figure the import decided without writing gets no frame)', sw: { noMarker: true }, detector: 'world' },
   { name: 'F2: no client staging (a page ending inside an import is shown half applied)', client: { staging: false }, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
@@ -109,8 +118,19 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'a pending divergence keeps its rev when an import finds other values', sw: { divRevKeptOnNewValues: true }, detector: 'review', mustInclude: 'A divergence whose values change between imports takes a new rev' },
   { name: 'a change entry raised again, identical, keeps the old rev', sw: { changeRevWithoutImport: true }, detector: 'review', mustInclude: 'A change entry raised again, identical, after it ended has a new rev' },
   { name: 'a device that saw an item only after it ended counts as having seen it', sw: { sawEndedItem: true }, detector: 'review', mustInclude: 'A device that saw an item only after it ended did not react to it' },
-  { name: 'a push whose late edits are all held is still a revision', sw: { heldLateIsRevision: true }, detector: 'review', mustInclude: 'A push whose late edits are all held is no revision' },
   { name: 'an undo of an applied change realigns the bases', sw: { undoRealigns: true }, detector: 'review', mustInclude: 'An undo moves no base' },
+  // round 8, recheck 1
+  { name: 'reaction clause (c) judged over the whole replay (round 8\'s first cut): an item an earlier import raised and I kept is given by both sides', sw: { seenOverWholeReplay: true }, detector: 'cross' },
+  { name: 'the same, one push, caught by its golden', sw: { seenOverWholeReplay: true }, detector: 'review', mustInclude: 'A compound reaction to an item an earlier import raised, in one push' },
+  { name: 'the same, two pushes, caught by its golden', sw: { seenOverWholeReplay: true }, detector: 'review', mustInclude: 'A compound reaction to an item an earlier import raised, in two pushes' },
+  { name: 'the same, two devices, caught by its golden', sw: { seenOverWholeReplay: true }, detector: 'review', mustInclude: 'A compound reaction to an item an earlier import raised, on two devices' },
+  { name: 'HELD (ii) skips every late edit (round 8\'s first cut), even one knowing for the revision\'s import', sw: { skipLateInRevision: true }, detector: 'cross' },
+  { name: 'the same, a re-own, caught by its golden', sw: { skipLateInRevision: true }, detector: 'review', mustInclude: 'HELD (ii) judges an edit late for a later import' },
+  { name: 'the same, an added copy, caught by its golden', sw: { skipLateInRevision: true }, detector: 'review', mustInclude: 'HELD (ii) judges an added copy late for a later import' },
+  { name: 'reaction clause (b) for every revision point, one that changes nothing included (round 8\'s first cut)', sw: { newCopyAnyRevision: true }, detector: 'review', mustInclude: 'A revision that changes nothing holds no added copy' },
+  { name: 'what a device saw read to the feed\'s head, not its basis', sw: { sawItemAtHead: true }, detector: 'review', mustInclude: 'A device that saw no item did not react to one raised after its edit' },
+  { name: 'a favor_app change entry raised again, identical, keeps the old rev', sw: { favorRevWithoutImport: true }, detector: 'review', mustInclude: 'A favor_app change entry raised again, identical, after it ended has a new rev' },
+  { name: 'an answer is STALE once a revision its device had not seen withdrew the item, though a later replay gave it back at its rev', sw: { answerStaleAfterWithdrawal: true }, detector: 'review', mustInclude: 'An item a replay withdrew and a later replay gives back at the same rev is pending with that rev again' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
@@ -121,6 +141,7 @@ describe('mutants: every rule is load-bearing', () => {
     expect(reactionBreaches({})).toBe(0);
     expect(itemBreaches({})).toBe(0);
     expect(compoundBreaches({})).toBe(0);
+    expect(crossBreaches({})).toBe(0);
     const t = twoDevices();
     expect(t.silentCounts + t.differsShown).toBe(0);
   }, 300_000);
@@ -130,6 +151,7 @@ describe('mutants: every rule is load-bearing', () => {
     if (m.detector === 'world') expect(worldBreaches(sw, m.client?.staging ?? true)).toBeGreaterThan(0);
     else if (m.detector === 'items') expect(itemBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'compound') expect(compoundBreaches(sw)).toBeGreaterThan(0);
+    else if (m.detector === 'cross') expect(crossBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'twoDevices') {
       const t = twoDevices({ sw });
       expect(t.silentCounts + t.differsShown).toBeGreaterThan(0);
@@ -145,6 +167,14 @@ describe('mutants: every rule is load-bearing', () => {
     expect(reviewFailures({ recheckLate: true })).toEqual([]);
     expect(worldBreaches({ recheckLate: true })).toBe(0);
     expect(itemBreaches({ recheckLate: true })).toBe(0);
+  }, 300_000);
+
+  it('a push whose late edits are all held being a revision is equivalent: that push changes nothing, so it holds no added copy, and it withdraws no item a device saw', () => {
+    expect(scenarioFailures({ heldLateIsRevision: true })).toEqual([]);
+    expect(reviewFailures({ heldLateIsRevision: true })).toEqual([]);
+    expect(itemBreaches({ heldLateIsRevision: true })).toBe(0);
+    expect(compoundBreaches({ heldLateIsRevision: true })).toBe(0);
+    expect(crossBreaches({ heldLateIsRevision: true })).toBe(0);
   }, 300_000);
 
   it('M8 (materialize may pick a copy the app changed) is equivalent: no golden and no world case changes', () => {

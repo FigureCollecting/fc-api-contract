@@ -2,7 +2,7 @@
 // path where the phone pushed first (REF) and the offline paths, and compares live copies per (figure, kind) and the
 // pending figure items.
 import { Device } from './replica-client.js';
-import { Server, type Kind, type Row, type Switches } from './server-model.js';
+import { Server, type Choice, type ItemKind, type Json, type Kind, type Row, type Switches } from './server-model.js';
 
 const T = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
 type Op = ['sell' | 'cancel' | 'repoint' | 'arrive', string] | ['add', Kind];
@@ -682,5 +682,278 @@ export function compoundReactionWorld(opts: { sw?: Switches; every: number }): C
                 }
           }
       }
+  return t;
+}
+
+// ------------------------------------------------------------------ world 8: reactions across two imports (HELD (i), (ii))
+// Random scripts (adopted from the round-8 recheck's world 8): the phone makes one late unit before import 1 (late for
+// both imports) or between the imports (late for import 2 only); the tablet and a third device U react between the
+// imports and after import 2 (an answer of any kind, a by-hand sale, re-own, re-add or tag), a reaction made between the
+// imports possibly pushed only after import 2 (so late itself); then the phone, the tablet (possibly in two pushes) and
+// U push in a random order, with pulls between. Each script is compared with pushed-first (the phone pushes its unit
+// just before the next import), every reaction there conditional on what its device shows and allowed only where it
+// fired offline. SILENT: other live counts and nothing shown (no held card, no STALE answer, no item pushed-first lacks).
+// Three differences are not silent, and are counted apart: a by-hand pick the device made among other copies (equal to
+// pushed-first with the same copy taken by name); pushed-first holding another device's late reaction, where the path
+// ends as pushed-first does once that card is answered; and a by-hand status write to the very copy the phone's unit
+// wrote (both devices took out, or re-owned, one copy: plain concurrency).
+type XHand = 'sell-high' | 'sell-low' | 'reown' | 'readd' | 'tag';
+type XStep =
+  | { op: 'import'; n: number }
+  | { op: 'pull'; dev: string }
+  | { op: 'edit'; dev: string; key: string; value: Json }
+  | { op: 'unit'; kind: string; c: string }
+  | { op: 'ans'; dev: string; a: 'undo' | 'dismiss' | 'take' | 'keep' | 'dismiss-align'; id: number }
+  | { op: 'hand'; dev: string; h: XHand; id: number }
+  | { op: 'push'; dev: string; n?: number };
+
+/** A seeded generator (mulberry32). */
+function rng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function crossImportScript(seed: number): { steps: XStep[]; desc: string } {
+  const r = rng(seed);
+  const pick = <X>(xs: readonly X[]): X => xs[Math.floor(r() * xs.length)]!;
+  const policy = pick(['ASK', 'ASK', 'FAVOR_APP', 'FAVOR_MFC']);
+  const n = 1 + Math.floor(r() * 3);
+  const pre = pick(['none', 'none', 'appadd', 'appsell']);
+  const timing = pick(['before', 'between']);
+  const d1 = pick([-1, 0, 1, -2, 2]);
+  const d2 = pick([-1, 0, 0, 1]);
+  const steps: XStep[] = [];
+  let id = 0;
+  steps.push({ op: 'edit', dev: 'T', key: 'pref/mfc/import', value: { import_policy: policy } }, { op: 'push', dev: 'T' });
+  steps.push({ op: 'import', n }, { op: 'pull', dev: 'P' }, { op: 'pull', dev: 'T' }, { op: 'pull', dev: 'U' });
+  if (pre === 'appadd') steps.push({ op: 'edit', dev: 'T', key: 'occ/b1/head', value: 'H1' }, { op: 'edit', dev: 'T', key: 'occ/b1/status', value: 'owned' }, { op: 'push', dev: 'T' });
+  if (pre === 'appsell') steps.push({ op: 'edit', dev: 'T', key: `occ/o${n}/status`, value: 'former' }, { op: 'push', dev: 'T' });
+  const copies = Array.from({ length: n }, (_, i) => `o${i + 1}`).filter((x) => !(pre === 'appsell' && x === `o${n}`));
+  const unit = (): XStep => {
+    const kind = pick(['sell', 'selldisp', 'cancel', 'add', 'reown']);
+    return { op: 'unit', kind, c: kind === 'add' ? 'a1' : pick(copies.length > 0 ? copies : ['o1']) };
+  };
+  if (timing === 'before') steps.push(unit());
+  const c1 = Math.max(0, n + d1);
+  steps.push({ op: 'import', n: c1 });
+  const react = (dev: string, deferPush: boolean) => {
+    if (r() < 0.8) steps.push({ op: 'pull', dev });
+    const k = r();
+    if (k < 0.4 || k >= 0.7) steps.push({ op: 'ans', dev, a: pick(['undo', 'dismiss', 'take', 'keep', 'dismiss-align', 'undo', 'keep'] as const), id: ++id });
+    if (k >= 0.4) steps.push({ op: 'hand', dev, h: pick(['sell-high', 'sell-low', 'reown', 'readd', 'tag', 'sell-high'] as const), id: ++id });
+    if (!deferPush) steps.push({ op: 'push', dev });
+  };
+  if (timing === 'between') steps.push({ op: 'pull', dev: 'P' }, unit());
+  if (r() < 0.5) react('T', r() < 0.5);
+  if (r() < 0.3) react('U', r() < 0.5);
+  steps.push({ op: 'import', n: Math.max(0, c1 + d2) });
+  if (r() < 0.85) react('T', true);
+  if (r() < 0.6) react('U', true);
+  // the pushes in a random order (V8's sort on three items: deterministic for a seed), the tablet possibly split
+  const order = ['P', 'T', 'U'].sort(() => r() - 0.5);
+  for (const d of order) {
+    if (r() < 0.2) steps.push({ op: 'pull', dev: pick(['P', 'T', 'U']) });
+    if (d === 'T' && r() < 0.3) steps.push({ op: 'push', dev: 'T', n: 1 });
+    steps.push({ op: 'push', dev: d });
+  }
+  for (let i = 0; i < 2; i++) for (const d of ['P', 'T', 'U']) steps.push({ op: 'pull', dev: d });
+  return { steps, desc: JSON.stringify({ policy, n, pre, timing, d1, d2 }) };
+}
+
+/** An answer a device gave: the item it named, the choice and the rev it saw. */
+interface XAnswer {
+  item: ItemKind;
+  choice: Choice;
+  rev: string;
+}
+interface XRun {
+  counts: number;
+  items: string;
+  held: number;
+  stale: boolean;
+  fired: Set<number>;
+  picks: Map<number, string>;
+  answers: XAnswer[];
+  unitKind: string;
+  unitCopy: string;
+}
+/**
+ * One script: offline (`ref` false) or pushed-first (the phone pushes its unit just before the next import), with only
+ * the `allow`ed reactions, by-hand sales by name where `byName` says, and at the end each held card answered where
+ * `answerHeld` says, or the `later` answers given again to the items still pending with the rev they named.
+ */
+export function runCrossImport(steps: readonly XStep[], sw: Switches, ref: boolean, allow?: Set<number>, byName?: Map<number, string>, answerHeld?: 'keep' | 'take', later?: readonly XAnswer[]): XRun {
+  const s = new Server({ namer: namer2, switches: sw });
+  const devs: Record<string, Device> = { P: new Device(s, 'P'), T: new Device(s, 'T'), U: new Device(s, 'U') };
+  let t = T('08:00');
+  const fired = new Set<number>();
+  const picks = new Map<number, string>();
+  const answers: XAnswer[] = [];
+  const res: string[] = [];
+  let unitKind = '';
+  let unitCopy = '';
+  let pendingP = false;
+  const push = (d: Device, n?: number) => res.push(...d.push(t, n).map((x) => x.outcome));
+  for (const st of steps) {
+    t++;
+    if (st.op === 'import') {
+      if (pendingP) push(devs.P!);
+      pendingP = false;
+      s.runImport([row('1144', 'H1', 'owned', st.n)], t);
+    } else if (st.op === 'pull') devs[st.dev]!.pull();
+    else if (st.op === 'edit') devs[st.dev]!.edit(st.key, st.value, t);
+    else if (st.op === 'push') push(devs[st.dev]!, st.n);
+    else if (st.op === 'unit') {
+      const P = devs.P!;
+      unitKind = st.kind;
+      unitCopy = st.c;
+      if (st.kind === 'sell' || st.kind === 'selldisp') P.edit(`occ/${st.c}/status`, 'former', t);
+      if (st.kind === 'selldisp') P.edit(`occ/${st.c}/disposal`, { reason: 'sold' }, t);
+      if (st.kind === 'cancel') P.edit(`occ/${st.c}/status`, null, t);
+      if (st.kind === 'reown') P.edit(`occ/${st.c}/status`, 'owned', t);
+      if (st.kind === 'add') {
+        P.edit('occ/a1/head', 'H1', t);
+        P.edit('occ/a1/status', 'owned', t);
+      }
+      pendingP = ref;
+    } else if (allow !== undefined && !allow.has(st.id)) continue;
+    else if (st.op === 'ans') {
+      const d = devs[st.dev]!;
+      const item = st.a === 'dismiss-align' ? 'align' : st.a === 'undo' || st.a === 'dismiss' ? 'change' : 'figure';
+      const shown = d.show(`imp/mfc/${item}/H1`) as { rev: string } | null;
+      if (shown === null) continue;
+      const choice = st.a === 'dismiss-align' ? 'dismiss' : st.a;
+      d.answer('H1', choice, t, {}, {}, item);
+      answers.push({ item, choice, rev: shown.rev });
+      fired.add(st.id);
+    } else {
+      const d = devs[st.dev]!;
+      if (!['figure', 'change', 'align'].some((k) => d.show(`imp/mfc/${k}/H1`) !== null)) continue;
+      const occs = [...new Set([...d.replica.keys(), ...d.outbox.filter((e) => e.type === 'edit').map((e) => e.key)].filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!))].sort();
+      const live = occs.filter((c) => d.show(`occ/${c}/status`) === 'owned' && d.show(`occ/${c}/head`) === 'H1');
+      const removed = occs.filter((c) => d.show(`occ/${c}/status`) === null && d.show(`occ/${c}/head`) === 'H1');
+      if (st.h === 'sell-high' || st.h === 'sell-low') {
+        const o = byName?.get(st.id) ?? (st.h === 'sell-low' ? live[0] : live.at(-1));
+        if (o === undefined) continue;
+        d.edit(`occ/${o}/status`, 'former', t);
+        picks.set(st.id, o);
+      } else if (st.h === 'reown') {
+        const o = removed.at(-1);
+        if (o === undefined) continue;
+        d.edit(`occ/${o}/status`, 'owned', t);
+        picks.set(st.id, `reown:${o}`);
+      } else if (st.h === 'readd') {
+        d.edit(`occ/r${st.id}/head`, 'H1', t);
+        d.edit(`occ/r${st.id}/status`, 'owned', t);
+      } else {
+        if (live[0] === undefined) continue;
+        d.edit(`occ/${live[0]}/tag/t9`, {}, t);
+      }
+      fired.add(st.id);
+    }
+  }
+  if (answerHeld !== undefined) {
+    const X = new Device(s, 'X');
+    for (let i = 0; i < 4; i++) {
+      X.pull();
+      if (X.show('imp/mfc/held/H1') === null) break;
+      t++;
+      X.answer('H1', answerHeld, t, {}, {}, 'held');
+      X.push(t);
+    }
+  }
+  for (const a of later ?? []) {
+    const X = new Device(s, 'X');
+    X.pull();
+    if ((X.show(`imp/mfc/${a.item}/H1`) as { rev: string } | null)?.rev !== a.rev) continue;
+    t++;
+    X.answer('H1', a.choice, t, {}, {}, a.item);
+    X.push(t);
+  }
+  let counts = 0;
+  for (const [k, v] of s.emitted) if (k.endsWith('/status') && v[0] === 'owned' && s.emitted.get(k.replace('/status', '/head'))?.[0] === 'H1') counts++;
+  const items = JSON.stringify({ f: s.figureItems(), c: Object.keys(s.changeEntries()).sort(), a: Object.keys(s.alignEntries()).sort() });
+  return { counts, items, held: Object.values(s.heldCards()).flat().length, stale: res.includes('STALE'), fired, picks, answers, unitKind, unitCopy };
+}
+
+export interface CrossImportTally {
+  runs: number;
+  same: number;
+  sameCountsShown: number;
+  differsShown: number;
+  picks: number;
+  refHeldAnswered: number;
+  /** Ends as pushed-first once the answers the devices gave offline are given to the items pushed-first leaves pending at the same revs. */
+  answeredSameRev: number;
+  collisions: number;
+  silent: number;
+  silentItem: number;
+  first: string[];
+}
+
+/** Scripts `from` to `to` (seeds), each offline and pushed-first; no script may differ silently. */
+export function crossImportWorld(opts: { sw?: Switches; from: number; to: number }): CrossImportTally {
+  const sw = opts.sw ?? {};
+  const t: CrossImportTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, refHeldAnswered: 0, answeredSameRev: 0, collisions: 0, silent: 0, silentItem: 0, first: [] };
+  const EMPTY = '{"f":{},"c":[],"a":[]}';
+  for (let seed = opts.from; seed <= opts.to; seed++) {
+    const { steps, desc } = crossImportScript(seed);
+    const got = runCrossImport(steps, sw, false);
+    const ref = runCrossImport(steps, sw, true, got.fired);
+    t.runs++;
+    if (got.counts === ref.counts && got.items === ref.items && got.held === 0) {
+      t.same++;
+      continue;
+    }
+    const shown = got.held > 0 || got.stale || (got.items !== ref.items && got.items !== EMPTY);
+    const what = `seed ${seed} ${desc} got ${JSON.stringify({ ...got, fired: [...got.fired], picks: [...got.picks] })} ref ${JSON.stringify({ ...ref, fired: [...ref.fired], picks: [...ref.picks] })}`;
+    // an answer accepted offline on an item a replay withdrew and a later replay gave back at the same rev
+    const answeredSameRev = () => {
+      const r3 = runCrossImport(steps, sw, true, got.fired, undefined, undefined, got.answers);
+      return got.held === 0 && r3.counts === got.counts && r3.items === got.items && r3.held === 0;
+    };
+    if (got.counts === ref.counts) {
+      if (shown) t.sameCountsShown++;
+      else if (answeredSameRev()) t.answeredSameRev++;
+      else {
+        t.silentItem++;
+        if (t.first.length < 5) t.first.push(`item: ${what}`);
+      }
+      continue;
+    }
+    if (shown) {
+      t.differsShown++;
+      continue;
+    }
+    const byName = new Map([...got.picks].filter(([, v]) => !v.startsWith('reown:')));
+    const ref2 = runCrossImport(steps, sw, true, got.fired, byName);
+    if (ref2.counts === got.counts && ref2.items === got.items) {
+      t.picks++;
+      continue;
+    }
+    if (ref.held > 0 || ref2.held > 0) {
+      const ends = (['keep', 'take'] as const).flatMap((x) => [runCrossImport(steps, sw, true, got.fired, undefined, x), runCrossImport(steps, sw, true, got.fired, byName, x)]);
+      if (ends.some((e) => e.counts === got.counts)) {
+        t.refHeldAnswered++;
+        continue;
+      }
+    }
+    if (got.unitKind !== 'add' && [...got.picks.values()].some((v) => v === got.unitCopy || v === `reown:${got.unitCopy}`)) {
+      t.collisions++;
+      continue;
+    }
+    if (answeredSameRev()) {
+      t.answeredSameRev++;
+      continue;
+    }
+    t.silent++;
+    if (t.first.length < 5) t.first.push(what);
+  }
   return t;
 }

@@ -2,10 +2,10 @@
 // or across two imports), the end state equals the path where the phone pushed first; and when another device reacted
 // to the import first, the phone's late units are held and shown, never lost silently. FC_PROPERTY_FULL=1 runs the
 // two-import world in full (554,286 path runs) and the compound-reaction world in full (137,682); CI runs every 16th case
-// of the first and every 7th of the second.
+// of the first and every 7th of the second. The cross-import world runs its 20,000 random scripts everywhere.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compoundReactionWorld, itemReactionWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
+import { compoundReactionWorld, crossImportWorld, itemReactionWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
 
 // The tallies go to the console, and to the file FC_PROPERTY_REPORT names when it is set.
 const report = (name: string, t: Tally) => {
@@ -71,6 +71,20 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // see offline; with that copy taken out by name, pushed-first ends the same
     expect(t.picks, t.pickCases.join('\n')).toBe(full ? 10 : 0);
   }, 3_600_000);
+
+  it('reactions across two imports: answers and by-hand edits made after either import, some pushed only after the second (so late themselves), the phone\'s unit late for one import or both (HELD (i), (ii))', () => {
+    const t = crossImportWorld({ from: 1, to: 20_000 });
+    const line =
+      `reactions across two imports: ${t.runs} scripts; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
+      `differs but shown ${t.differsShown}; a by-hand pick ${t.picks}; pushed-first holds and its card's answer ends there ${t.refHeldAnswered}; ` +
+      `an answer to an item given back at its rev ${t.answeredSameRev}; one copy written on both devices ${t.collisions}; silent ${t.silent}; silent, pushed-first has an item ${t.silentItem}`;
+    console.log(line);
+    if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+    expect(t.runs).toBe(20_000);
+    expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
+    // the paths counted apart, each read (none is a loss): pinned so that any change is seen
+    expect({ picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual({ picks: 30, refHeldAnswered: 9, answeredSameRev: 2, collisions: 15 });
+  }, 600_000);
 
   it('two devices, one edit each, both pull the import first (fuzz2_a.py)', () => {
     const t = twoDevices();
