@@ -143,7 +143,8 @@
 //     ordinal: its origin, head and status, in that order.
 // The import never restores a former copy, never writes former or a disposal,
 // and never touches a copy with no base unless the decision counted or paired
-// it.
+// it. A copy stays one an import removed until an import restores it, whatever
+// an answer or a device writes to it meanwhile.
 //
 // ROW MOVED. A row whose base head and new head resolve to different
 // survivors, with no merge between them, was moved by the spine: MFC did not
@@ -219,15 +220,15 @@
 // is late when an edit of it is late. The RELEVANCE TEST of a late unit: the
 // server replays S both ways, the unit's late edits before their import I and
 // at their arrival, every earlier input as decided and the push's later units
-// at their arrival, as the result stands, and compares S's LIVE COPIES (each
-// copy's figure and kind, or out: a former or removed copy is out whatever
-// facets it keeps; the unit's own copies count too) and S's ITEMS (its figure
-// item, change entry and align-MFC entry, each by its rev: an item changes when
-// it appears, ends or takes a new rev, not when it only shows the app's side
-// anew); the unit passes when they differ. Taken in push order, the units'
-// tests step from the result as it stands to the push's replay, so the late
-// units of one push never excuse each other: what the push would withdraw from
-// a result another device acted on is withdrawn in some unit's test.
+// at their arrival, and compares S's LIVE COPIES (each copy's figure and kind,
+// or out: a former or removed copy is out whatever facets it keeps; the unit's
+// own copies count too) and S's ITEMS (its figure item, change entry and
+// align-MFC entry, each by its rev: an item changes when it appears, ends or
+// takes a new rev, not when it only shows the app's side anew); the unit passes
+// when they differ. Taken in push order, the units' tests step from the whole
+// push at its arrival to the push's replay, so the late units of one push never
+// excuse each other: what the push would withdraw from a result another device
+// acted on is withdrawn in some unit's test.
 // A REACTION to a result is an edit, made after that result without having seen
 // what withdraws it, that
 //   * writes a copy whose live state the two sides leave different;
@@ -268,10 +269,11 @@
 //         What a revision changes is what its replayed late edits alone make of
 //         S: S replayed with them, without the push's answers and knowing
 //         edits, against S just before the push, leaving out the late edits'
-//         own writes. So an answer's writes are no revision, even in the push
-//         of a late edit, and a by-hand tag on the copy a replayed sale took
-//         out is applied. An edit that is no reaction (a tag on a copy the
-//         revision left alone, a figure value) is applied;
+//         own writes, facet by facet (another facet of a copy they wrote still
+//         counts). So an answer's writes are no revision, even in the push of a
+//         late edit, and a by-hand tag on the copy a replayed sale took out is
+//         applied. An edit that is no reaction (a tag on a copy the revision
+//         left alone, a figure value) is applied;
 //   (iii) it is late, its basis is before the commit of an answer on S that the
 //         server accepted (to any of S's items; a device that had applied the
 //         answer's transaction made its edit after the answer), and it passes
@@ -295,16 +297,18 @@
 // answer wins. An item a replay withdrew and a later replay gives back at the
 // same rev is pending with that rev again, so an answer naming it is accepted:
 // it answers what the user was asked.
-//   * A conflict. keep: the app's side of every disputed part stands, and what
-//     only MFC changed is still applied. take: MFC's side is made true on the
-//     copies MFC tracks (copies with a live base, and placeholders):
-//     conversions first, arrivals first, lowest occ id; then removals, highest
-//     occ id; then restoring a copy that is out: a tracked one first, one whose
-//     base is the kind first, which can bring back a copy the app sold, then
-//     one an import removed (not tracked: its base is OUT), lowest occ id
-//     first; then new copies, each for the lowest-numbered row of S of the
-//     kind, whatever its Count, at that row's lowest unused ordinal. A copy
-//     with no base is never changed, but for one an import removed, and a
+//   * A conflict. keep: every part the rev lists as disputed stays at the app's
+//     side, even when a knowing edit has since brought it back to its base
+//     (keep does not decide the figure again), and what only MFC changed is
+//     still applied, to the copies the app left unchanged. take: MFC's side is
+//     made true on the copies MFC tracks (copies with a live base, and
+//     placeholders): conversions first, arrivals first, lowest occ id; then
+//     removals, highest occ id; then restoring a copy that is out: a tracked
+//     one first, one whose base is the kind first, which can bring back a copy
+//     the app sold, then one an import removed (not tracked: its base is OUT),
+//     lowest occ id first; then new copies, each for the lowest-numbered row of
+//     S of the kind, whatever its Count, at that row's lowest unused ordinal. A
+//     copy with no base is never changed, but for one an import removed, and a
 //     disputed field takes MFC's value. per_copy: the final statuses listed and
 //     "app" or "mfc" per disputed field, exactly. After a keep, take or
 //     per_copy on a conflict, a take on a divergence, and the undo of a
@@ -323,18 +327,22 @@
 //     undo list, each facet the import wrote back to its value before the
 //     import, while every write still holds the value the import wrote (else
 //     the undo is STALE); a copy the import created keeps its origin and head,
-//     and only its status is tombstoned. A favor_app settlement is taken now.
-//     An undo works against the export of the import that made the entry,
-//     whatever a later import found: that take, and the realignment after it,
-//     use that export's side, and an applied or favor_mfc undo acknowledges
-//     MFC's rows as that export stated them. dismiss: it goes.
+//     and only its status is tombstoned. The undo of a favor_app settlement is
+//     the take its import would have written: the bases the settlement's
+//     realignment moved are put back as they stood before it, MFC's side is
+//     made true against them as take makes it, and the bases realign; like a
+//     take it records the acknowledgement, so the same export raises nothing
+//     again. An undo works against the export of the import that made the
+//     entry, whatever a later import found: that take, and the realignment
+//     after it, use that export's side, and an applied or favor_mfc undo
+//     acknowledges MFC's rows as that export stated them. dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
 //     found, both sides of each (for the counts, the transitions each side left
-//     unmatched), so it carries the app's side of the disputed parts as that
-//     import found it. An import that finds MFC's side unchanged keeps it,
-//     whatever the app did meanwhile.
+//     unmatched, each of the app's naming its copy), so it carries the app's
+//     side of the disputed parts as that import found it. An import that finds
+//     MFC's side unchanged keeps it, whatever the app did meanwhile.
 //   * A divergence: the raising import with both sides' values of the parts
 //     that differ. An import that finds the same values keeps it; other values,
 //     on either side, give a new rev.
@@ -368,13 +376,13 @@
 // answer, an undo that restores the app's side, and a FAVOR_APP settlement
 // ACKNOWLEDGE the figure: the server records MFC's rows and, for each part of
 // the projection that differs, both sides' values, as they stand. A take on a
-// conflict or a divergence and a FAVOR_MFC settlement record them too, with no
-// align-MFC entry, since the user took MFC's side. An import raises nothing for
-// a part acknowledged at its present values, and records MFC's rows as it found
-// them, so a partial catch-up on MFC leaves the rest acknowledged. A part that
-// comes to differ at other values, by a new MFC change or a new app change,
-// re-opens the figure (a new item, with a new rev); an import that finds every
-// part equal ends the acknowledgement.
+// conflict or a divergence, a FAVOR_MFC settlement and the undo of a FAVOR_APP
+// settlement record them too, with no align-MFC entry, since the user took
+// MFC's side. An import raises nothing for a part acknowledged at its present
+// values, and records MFC's rows as it found them, so a partial catch-up on MFC
+// leaves the rest acknowledged. A part that comes to differ at other values, by
+// a new MFC change or a new app change, re-opens the figure (a new item, with a
+// new rev); an import that finds every part equal ends the acknowledgement.
 //
 // ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
 // truth"). For an acknowledged figure that has an MFC id, the server keeps an
