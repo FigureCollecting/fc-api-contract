@@ -1228,3 +1228,319 @@ export function lateUnitsWorld(opts: { sw?: Switches; every?: number; offset?: n
       }
   return t;
 }
+
+// ------------------------------------------------------------------ world 10: compound reactions on two devices, two offline devices
+// Adopted from the round-8 recheck's world 10 (chal10): two offline devices, the phone P with one late unit or two (in one
+// push or two) and Q with one or none; an import under ASK, FAVOR_APP or FAVOR_MFC; the tablet T and a third device U each
+// make a COMPOUND reaction to what they are shown (an answer and a by-hand edit, either first, in one push or two), U
+// pulling before or after T's first push; an optional second import, with the reactions pushed before it, after it (an
+// answer arriving after the second import, the by-hand edits late for it) or mixed; then P, Q, T and U push in a random
+// order. Each offline path is compared with pushed-first (P and Q push at once; T and U keep their relative order), every
+// reaction part allowed only where it fired offline. SILENT: other live counts and nothing shown (no held card, no STALE
+// answer, no figure item pushed-first lacks); silentItem: the same counts and pushed-first's figure item gone, nothing
+// shown. Counted apart, each read: a by-hand pick (pushed-first with the copy taken out by name ends the same), pushed-first
+// holding an edit whose card's answer ends where the offline path ends, a by-hand sale of the very copy a late unit took
+// out, and T and U taking out one copy.
+type W10Answer = 'none' | 'take' | 'keep' | 'undo' | 'dismiss' | 'dismiss-align';
+type W10Hand = 'none' | 'sell-high' | 'sell-low' | 'reown' | 'add' | 'tag';
+interface W10Prog {
+  ans: W10Answer;
+  hand: W10Hand;
+  handFirst: boolean;
+  split: boolean;
+}
+export interface W10Case {
+  policy: string;
+  pre: string;
+  n: number;
+  pUnits: W9Unit[];
+  pSplit: boolean;
+  qUnit: W9Unit | null;
+  d: number;
+  second: number | null;
+  timing: 'before' | 'after' | 'mixed';
+  T: W10Prog;
+  U: W10Prog;
+  uPullAfterT: boolean;
+  order: string[];
+}
+
+/** World 10's case for a seed (the challenger's generator, seed for seed). */
+export function w10Case(seed: number): W10Case {
+  const r = rng(seed);
+  const pick = <X>(xs: readonly X[]): X => xs[Math.floor(r() * xs.length)]!;
+  const policy = pick(['ASK', 'ASK', 'FAVOR_APP', 'FAVOR_MFC']);
+  const pre = pick(['none', 'none', 'appadd', 'appsell']);
+  const n = 1 + Math.floor(r() * 3);
+  const copies = Array.from({ length: n }, (_, i) => `o${i + 1}`).filter((x) => !(pre === 'appsell' && x === `o${n}`));
+  const unit = (who: string): W9Unit => (r() < 0.25 || copies.length === 0 ? ['add', who] : [pick(['sell', 'selldisp', 'cancel']), pick(copies)]);
+  const pUnits: W9Unit[] = [unit('P1')];
+  if (r() < 0.4) {
+    const u = unit('P2');
+    if (u[0] === 'add' || u[1] !== pUnits[0]![1]) pUnits.push(u);
+  }
+  const qUnit = r() < 0.7 ? unit('Q1') : null;
+  let d = pick([-2, -1, 1, 2]);
+  if (n + d < 0) d = 1;
+  const second = pick([null, null, 0, -1, 1]);
+  const timing = pick(['before', 'after', 'mixed'] as const);
+  const prog = (): W10Prog => ({
+    ans: pick(['none', 'take', 'keep', 'undo', 'dismiss', 'dismiss-align'] as const),
+    hand: pick(['none', 'sell-high', 'sell-low', 'reown', 'add', 'tag'] as const),
+    handFirst: r() < 0.4,
+    split: r() < 0.4,
+  });
+  const Tp = prog();
+  const Up = r() < 0.6 ? prog() : { ans: 'none' as W10Answer, hand: 'none' as W10Hand, handFirst: false, split: false };
+  const pool = ['P', 'T', 'U', ...(qUnit ? ['Q'] : [])];
+  const order: string[] = [];
+  while (pool.length > 0) order.push(pool.splice(Math.floor(r() * pool.length), 1)[0]!);
+  return { policy, pre, n, pUnits, pSplit: pUnits.length > 1 && r() < 0.5, qUnit, d, second, timing, T: Tp, U: Up, uPullAfterT: r() < 0.5, order };
+}
+
+interface W10Run {
+  counts: number;
+  items: string;
+  held: number;
+  stale: boolean;
+  fired: Record<string, string>;
+  /** Per answer given: the kind of the item it answered (conflict, divergence, applied, favor_app, favor_mfc, align). */
+  kinds: Record<string, string>;
+  out: string;
+}
+/**
+ * One path of a world-10 case: offline or pushed-first, each reaction part only where `allow` permits it, a by-hand sale
+ * by name where `names` says, an answer only to an item of the kind `kinds` names where it names one, and pushed-first's
+ * held cards answered at the end where `answerHeld` says.
+ */
+export function runCompoundLate(
+  c: W10Case,
+  path: 'REF' | 'OFF',
+  sw: Switches,
+  allow: Record<string, boolean> = {},
+  names: Record<string, string | undefined> = {},
+  answerHeld?: 'keep' | 'take',
+  kinds: Record<string, string> = {},
+): W10Run {
+  const s = new Server({ namer: namer9, switches: sw });
+  const P = new Device(s, 'P');
+  const Q = new Device(s, 'Q');
+  const Tb = new Device(s, 'T');
+  const U = new Device(s, 'U');
+  Tb.edit('pref/mfc/import', { import_policy: c.policy }, 470);
+  Tb.push(471);
+  s.runImport([row('1144', 'H1', 'owned', c.n)], 480);
+  for (const d of [P, Q, Tb, U]) d.pull();
+  if (c.pre === 'appadd') {
+    Tb.edit('occ/b1/head', 'H1', 490);
+    Tb.edit('occ/b1/status', 'owned', 490);
+  }
+  if (c.pre === 'appsell') Tb.edit(`occ/o${c.n}/status`, 'former', 490);
+  Tb.push(491);
+  c.pUnits.forEach((u, i) => w9Unit(P, u, 500 + i));
+  if (c.qUnit) w9Unit(Q, c.qUnit, 505);
+  const k1 = c.pSplit ? (c.pUnits[0]![0] === 'add' || c.pUnits[0]![0] === 'selldisp' ? 2 : 1) : undefined;
+  if (path === 'REF') {
+    P.push(510);
+    Q.push(511);
+  }
+  s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d))], 600);
+  const fired: Record<string, string> = {};
+  const answered: Record<string, string> = {};
+  let stale = false;
+  const res: string[] = [];
+  const pushOf = (name: string, d: Device, t: number, n?: number) => {
+    const out = d.push(t, n).map((x) => x.outcome);
+    // a STALE answer is shown: the client shows the item as it now is
+    if (out.includes('STALE') && (fired[`${name}a`] ?? 'no') !== 'no') stale = true;
+    res.push(...out);
+  };
+  const react = (name: string, d: Device, p: W10Prog, t: number) => {
+    const doAnswer = () => {
+      const key = `${name}a`;
+      if (p.ans === 'none' || allow[key] === false) return void (fired[key] = 'no');
+      const item = p.ans === 'undo' || p.ans === 'dismiss' ? 'change' : p.ans === 'dismiss-align' ? 'align' : 'figure';
+      const shown = d.show(`imp/mfc/${item}/H1`) as { kind?: string } | null;
+      if (shown === null) return void (fired[key] = 'no');
+      const kind = shown.kind ?? item;
+      if (kinds[key] !== undefined && kinds[key] !== kind) return void (fired[key] = 'no');
+      d.answer('H1', p.ans === 'dismiss-align' ? 'dismiss' : p.ans, t, {}, {}, item);
+      fired[key] = p.ans;
+      answered[key] = kind;
+    };
+    const doHand = () => {
+      const key = `${name}h`;
+      const shown = ['figure', 'change', 'align'].some((k) => d.show(`imp/mfc/${k}/H1`) !== null);
+      if (p.hand === 'none' || allow[key] === false || !shown) return void (fired[key] = 'no');
+      const occs = [...new Set([...d.replica.keys(), ...d.outbox.filter((e) => e.type === 'edit').map((e) => e.key)].filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!))].sort();
+      const live = occs.filter((x) => d.show(`occ/${x}/status`) === 'owned' && d.show(`occ/${x}/head`) === 'H1');
+      const removed = occs.filter((x) => d.show(`occ/${x}/status`) === null && d.show(`occ/${x}/head`) === 'H1');
+      if (p.hand === 'sell-high' || p.hand === 'sell-low') {
+        const nm = names[name];
+        // by name only a copy this device shows live here
+        const x = nm !== undefined ? (live.includes(nm) ? nm : undefined) : p.hand === 'sell-low' ? live[0] : live.at(-1);
+        if (x === undefined) return void (fired[key] = 'no');
+        d.edit(`occ/${x}/status`, 'former', t);
+        fired[key] = `sell ${x}`;
+      } else if (p.hand === 'reown') {
+        const x = removed.at(-1);
+        if (x === undefined) return void (fired[key] = 'no');
+        d.edit(`occ/${x}/status`, 'owned', t);
+        fired[key] = `reown ${x}`;
+      } else if (p.hand === 'add') {
+        d.edit(`occ/x${name}/head`, 'H1', t);
+        d.edit(`occ/x${name}/status`, 'owned', t);
+        fired[key] = 'add';
+      } else {
+        if (live[0] === undefined) return void (fired[key] = 'no');
+        d.edit(`occ/${live[0]}/tag/t9`, {}, t);
+        fired[key] = 'tag';
+      }
+    };
+    const parts = p.handFirst ? [doHand, doAnswer] : [doAnswer, doHand];
+    parts[0]!();
+    if (p.split) pushOf(name, d, t + 1);
+    parts[1]!();
+  };
+  Tb.pull();
+  // U pulls before T reacts, or after (T's split push, if any, already went)
+  if (!c.uPullAfterT) U.pull();
+  react('T', Tb, c.T, 610);
+  if (c.uPullAfterT) U.pull();
+  react('U', U, c.U, 615);
+  if (c.second !== null) {
+    if (c.timing === 'before') {
+      pushOf('T', Tb, 620);
+      pushOf('U', U, 621);
+    }
+    if (c.timing === 'mixed') pushOf('T', Tb, 620);
+    s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d + c.second))], 630);
+  }
+  for (const who of c.order) {
+    if (path === 'OFF' && who === 'P') {
+      if (k1 !== undefined) {
+        pushOf('P', P, 700, k1);
+        pushOf('P', P, 701);
+      } else pushOf('P', P, 700);
+    }
+    if (path === 'OFF' && who === 'Q') pushOf('Q', Q, 702);
+    if (who === 'T') pushOf('T', Tb, 703);
+    if (who === 'U') pushOf('U', U, 704);
+  }
+  if (answerHeld !== undefined) {
+    const X = new Device(s, 'X');
+    for (let i = 0; i < 4; i++) {
+      X.pull();
+      if (X.show('imp/mfc/held/H1') === null) break;
+      X.answer('H1', answerHeld, 710 + i, {}, {}, 'held');
+      X.push(710 + i);
+    }
+  }
+  for (let i = 0; i < 2; i++) for (const d of [P, Q, Tb, U]) d.pull();
+  let counts = 0;
+  for (const [k, v] of s.emitted) if (k.endsWith('/status') && v[0] === 'owned' && s.emitted.get(k.replace('/status', '/head'))?.[0] === 'H1') counts++;
+  const items = JSON.stringify({ f: s.figureItems(), c: Object.keys(s.changeEntries()).sort(), a: Object.keys(s.alignEntries()).sort() });
+  return { counts, items, held: Object.values(s.heldCards()).flat().length, stale, fired, kinds: answered, out: res.join(',') };
+}
+
+export interface CompoundLateTally {
+  runs: number;
+  same: number;
+  sameCountsShown: number;
+  differsShown: number;
+  picks: number;
+  refHeldAnswered: number;
+  /** An answer the offline path gave to an item of another kind than pushed-first shows (an undo of an applied change against one of a favor_app settlement): pushed-first without it ends the same. */
+  answerKind: number;
+  collisions: number;
+  tuCollisions: number;
+  silent: number;
+  silentItem: number;
+  first: string[];
+  /** The first paths counted apart, for reading. */
+  apart: string[];
+}
+
+/** World 10's cases for seeds `from` to `to`, every `every`-th one. */
+export function compoundLateWorld(opts: { sw?: Switches; from: number; to: number; every?: number }): CompoundLateTally {
+  const sw = opts.sw ?? {};
+  const every = opts.every ?? 1;
+  const t: CompoundLateTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, refHeldAnswered: 0, answerKind: 0, collisions: 0, tuCollisions: 0, silent: 0, silentItem: 0, first: [], apart: [] };
+  const figOf = (items: string) => JSON.stringify((JSON.parse(items) as { f: unknown }).f);
+  for (let seed = opts.from; seed <= opts.to; seed += every) {
+    const c = w10Case(seed);
+    const got = runCompoundLate(c, 'OFF', sw);
+    const allow = Object.fromEntries(Object.entries(got.fired).map(([k, v]) => [k, v !== 'no']));
+    const ref = runCompoundLate(c, 'REF', sw, allow);
+    t.runs++;
+    const what = (why: string, r: W10Run) => `${why} seed ${seed} ${JSON.stringify(c)} got ${JSON.stringify(got)} ref ${JSON.stringify(r)}`;
+    const apart = (why: string, r: W10Run) => {
+      if (t.apart.length < 30) t.apart.push(what(why, r));
+    };
+    const sameCounts = got.counts === ref.counts;
+    if (sameCounts && got.items === ref.items && got.held === 0) {
+      t.same++;
+      continue;
+    }
+    const shown = got.held > 0 || got.stale || (figOf(got.items) !== figOf(ref.items) && figOf(got.items) !== '{}');
+    if (shown) {
+      if (sameCounts) t.sameCountsShown++;
+      else t.differsShown++;
+      continue;
+    }
+    if (sameCounts && figOf(got.items) === figOf(ref.items)) {
+      t.same++;
+      continue;
+    }
+    const pk = (x: string | undefined) => (x !== undefined && x.startsWith('sell ') ? x.split(' ')[1] : undefined);
+    const names = { T: pk(got.fired.Th), U: pk(got.fired.Uh) };
+    const byName = names.T !== undefined || names.U !== undefined ? runCompoundLate(c, 'REF', sw, allow, names) : undefined;
+    if (byName !== undefined && byName.counts === got.counts && figOf(byName.items) === figOf(got.items)) {
+      t.picks++;
+      apart('pick', byName);
+      continue;
+    }
+    // pushed-first holds an edit, and its card's answer (keep or take) ends at the offline path's counts (as in the
+    // cross-import world), and at its figure item too when the counts were the same
+    if (ref.held > 0 || (byName?.held ?? 0) > 0) {
+      const ends = (['keep', 'take'] as const).flatMap((x) => [runCompoundLate(c, 'REF', sw, allow, {}, x), ...(byName === undefined ? [] : [runCompoundLate(c, 'REF', sw, allow, names, x)])]);
+      const end = ends.find((e) => e.counts === got.counts && (!sameCounts || figOf(e.items) === figOf(got.items)));
+      if (end !== undefined) {
+        t.refHeldAnswered++;
+        apart('pushed-first holds', end);
+        continue;
+      }
+    }
+    // the offline path answered an item of another kind than pushed-first shows: the same answer means another thing
+    // there (an undo of an applied change restores the app's copies, one of a favor_app settlement takes MFC's side)
+    if (Object.entries(got.kinds).some(([k, v]) => ref.kinds[k] !== undefined && ref.kinds[k] !== v)) {
+      const same = runCompoundLate(c, 'REF', sw, allow, {}, undefined, got.kinds);
+      if (same.counts === got.counts && (!sameCounts || figOf(same.items) === figOf(got.items))) {
+        t.answerKind++;
+        apart('answer kind', same);
+        continue;
+      }
+    }
+    if (sameCounts) {
+      t.silentItem++;
+      if (t.first.length < 5) t.first.push(what('item', ref));
+      continue;
+    }
+    // a by-hand sale of the very copy a late unit took out (plain concurrency), or T and U taking out one copy
+    const outs = [...c.pUnits, ...(c.qUnit ? [c.qUnit] : [])].filter((u) => u[0] !== 'add').map((u) => u[1]);
+    const sold = [names.T, names.U].filter((x): x is string => x !== undefined);
+    if (sold.some((x) => outs.includes(x))) {
+      t.collisions++;
+      apart('collision', ref);
+      continue;
+    }
+    if (sold.length === 2 && sold[0] === sold[1]) {
+      t.tuCollisions++;
+      apart('two devices', ref);
+      continue;
+    }
+    t.silent++;
+    if (t.first.length < 5) t.first.push(what('silent', ref));
+  }
+  return t;
+}

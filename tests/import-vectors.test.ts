@@ -134,7 +134,12 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       /A compound reaction on three devices: /, /A revision is what the replayed late edits alone change/, /Reaction clause \(b\) alone/,
       /A divergence whose values change between imports takes a new rev/, /A change entry raised again, identical, after it ended has a new rev/,
       /A push whose late edits are all held is no revision/, /An undo moves no base/, /A device that saw an item only after it ended did not react to it/,
-      /Reaction clause \(c\), an item the two placements end differently/, /HELD \(ii\) applies a figure value made before a revision/])
+      /Reaction clause \(c\), an item the two placements end differently/, /HELD \(ii\) applies a figure value made before a revision/,
+      // round 8, recheck 2
+      /Keep on a conflict follows its rev, in one push: /, /Keep on a conflict follows its rev, in two pushes: /, /Keep on a conflict, the control: /,
+      /MFC lowered the count, ASK: /, /MFC lowered the count, FAVOR_APP: /, /MFC raised the count, ASK: /, /MFC raised the count, FAVOR_APP: /,
+      /works against the export of the import that made it/, /A held-edit card's keep writes knowing edits/, /A held-edit card's rev is the edits it lists/,
+      /A tag is one unit with the push's other edits of its key/, /A revision leaves out only the facets its late edits write/])
       expect(names.join('\n')).toMatch(topic);
     expect(names.join('\n')).not.toMatch(/mfc_only|mfc_change|HOLD/);
   });
@@ -198,6 +203,26 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
     // reaction clause (b) alone holds, and a device that saw an item only after it ended did not react to it
     expect(push('Reaction clause (b) alone', 1)).toEqual(['HELD', 'HELD']);
     expect(push('A device that saw an item only after it ended did not react to it', 1)).toEqual(['APPLIED']);
+  });
+
+  it('pin keep to its rev and the undo of a favor_app settlement to the take its import would have written (round 8, recheck 2)', () => {
+    const named = (prefix: string) => vectors.review.find((c) => c.name.startsWith(prefix))!;
+    const push = (prefix: string, k: number) => named(prefix).steps.filter((s) => s.op === 'push')[k]!.expect!.map((x) => x.outcome);
+    // keep after the tablet's sale brought the counts back to base: the disputed counts stay the app's, in one push or two
+    expect(named('Keep on a conflict follows its rev, in one push: ').expect).toEqual(named('Keep on a conflict follows its rev, in two pushes: ').expect);
+    expect(named('Keep on a conflict follows its rev, in one push: ').expect.facets['occ/o2/status']).toBe('owned');
+    // the FAVOR_APP undo ends where the ASK take ends, MFC lowering the count or raising it, and the same export raises nothing
+    expect(named('MFC lowered the count, FAVOR_APP: ').expect).toEqual(named('MFC lowered the count, ASK: ').expect);
+    expect(named('MFC raised the count, FAVOR_APP: ').expect).toEqual(named('MFC raised the count, ASK: ').expect);
+    for (const p of ['MFC lowered the count, FAVOR_APP: ', 'MFC raised the count, FAVOR_APP: ']) {
+      const last = named(p).steps.filter((s): s is Extract<Step, { op: 'import' }> => s.op === 'import').at(-1)!;
+      expect(last.expect!.review, p).toEqual([]);
+    }
+    // a held card's keep is knowing, its rev is the edits it lists, a tag is a unit per key, a revision's own writes per facet
+    expect(named("A held-edit card's keep writes knowing edits").expect.figure).toEqual({});
+    expect(push("A held-edit card's rev is the edits it lists", 4)).toEqual(['STALE']);
+    expect(push("A tag is one unit with the push's other edits of its key", 1)).toEqual(['HELD', 'HELD']);
+    expect(push('A revision leaves out only the facets its late edits write', 1)).toEqual(['HELD']);
   });
 
   it.each(vectors.review.map((c) => [c.name, c] as const))('%s', (_name, c) => {

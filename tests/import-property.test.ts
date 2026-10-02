@@ -1,12 +1,13 @@
 // THE SERVER DECIDES, as a property: however an offline phone's edits meet an import (pushed after it, pulled first,
 // or across two imports), the end state equals the path where the phone pushed first; and when another device reacted
 // to the import first, the phone's late units are held and shown, never lost silently. FC_PROPERTY_FULL=1 runs the
-// two-import world in full (554,286 path runs), the compound-reaction world in full (137,682) and the late-units world in
-// full (2,710,620); CI runs every 16th case of the first, every 7th of the second and every 101st of the third. The
-// cross-import world runs its 20,000 random scripts everywhere.
+// two-import world in full (554,286 path runs), the compound-reaction world in full (137,682), the late-units world in
+// full (2,710,620) and the two-offline-devices world in full (300,000 cases); CI runs every 16th case of the first, every
+// 7th of the second, every 101st of the third and every 25th of the fourth. The cross-import world runs its 20,000 random
+// scripts everywhere.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
+import { compoundLateWorld, compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
 
 // The tallies go to the console, and to the file FC_PROPERTY_REPORT names when it is set.
 const report = (name: string, t: Tally) => {
@@ -102,6 +103,27 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // paths show, and a by-hand sale of the very copy a late unit took out (two devices recorded one sale); pinned so
     // that any change is seen
     expect({ picks: t.picks, collisions: t.collisions, tuCollisions: t.tuCollisions }, t.apart.join('\n')).toEqual(full ? { picks: 27, collisions: 1_512, tuCollisions: 0 } : { picks: 0, collisions: 13, tuCollisions: 0 });
+  }, 7_200_000);
+
+  it('compound reactions on two devices beside two offline devices: the phone\'s one or two late units and a second device\'s, the tablet and a third device each answering and acting by hand, a second import before, after or between their pushes, every order (HELD (i), (ii), (iii))', () => {
+    const full = process.env.FC_PROPERTY_FULL === '1';
+    const t = compoundLateWorld({ from: 1, to: 300_000, every: full ? 1 : 25 });
+    const line =
+      `two offline devices and compound reactions${full ? ' (full)' : ' (every 25th case)'}: ${t.runs} cases; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
+      `differs but shown ${t.differsShown}; a by-hand pick ${t.picks}; pushed-first holds and its card's answer ends there ${t.refHeldAnswered}; ` +
+      `an answer to an item of another kind pushed-first ${t.answerKind}; one copy taken out by a late unit and by hand ${t.collisions}; one copy taken out on two devices ${t.tuCollisions}; ` +
+      `silent ${t.silent}; silent, pushed-first has an item ${t.silentItem}`;
+    console.log(line);
+    if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+    expect(t.runs).toBe(full ? 300_000 : 12_000);
+    expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
+    // the paths counted apart, each read (none is a loss; t.apart lists the first): a by-hand pick, pushed-first holding
+    // an edit whose card's answer ends at the offline counts, an undo of an applied change offline where pushed-first
+    // shows a favor_app settlement (the same answer, another meaning), and a by-hand sale of the copy a late unit took
+    // out; pinned so that any change is seen
+    expect({ picks: t.picks, refHeldAnswered: t.refHeldAnswered, answerKind: t.answerKind, collisions: t.collisions, tuCollisions: t.tuCollisions }, t.apart.join('\n')).toEqual(
+      full ? { picks: 49, refHeldAnswered: 1, answerKind: 6, collisions: 1, tuCollisions: 0 } : { picks: 3, refHeldAnswered: 0, answerKind: 0, collisions: 0, tuCollisions: 0 },
+    );
   }, 7_200_000);
 
   it('two devices, one edit each, both pull the import first (fuzz2_a.py)', () => {

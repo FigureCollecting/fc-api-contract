@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { stable, type Switches } from './support/server-model.js';
 import { runScenario } from './support/trace-runner.js';
 import { vectors } from './support/vectors.js';
-import { compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
+import { compoundLateWorld, compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world } from './support/worlds.js';
 
 type Client = { staging?: boolean; pullAfterImport?: boolean; resumeFromNext?: boolean };
 const eq = (a: unknown, b: unknown) => stable(a) === stable(b);
@@ -52,7 +52,13 @@ const crossBreaches = (sw: Switches) => {
 // every 499th case of world 9 (two late units of one push meet reactions there, and every policy and order)
 const lateBreaches = (sw: Switches) => lateUnitsWorld({ sw, every: 499 }).silent;
 
-type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross' | 'late';
+// every 101st case of world 10 (two offline devices, compound reactions on two more)
+const w10Breaches = (sw: Switches) => {
+  const t = compoundLateWorld({ sw, from: 1, to: 300_000, every: 101 });
+  return t.silent + t.silentItem;
+};
+
+type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross' | 'late' | 'w10';
 const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detector; mustInclude?: string }[] = [
   { name: 'F1: no marker frame (a figure the import decided without writing gets no frame)', sw: { noMarker: true }, detector: 'world' },
   { name: 'F2: no client staging (a page ending inside an import is shown half applied)', client: { staging: false }, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
@@ -140,6 +146,21 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'the same, a knowing filing, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late units of one push never excuse each other, a knowing filing' },
   { name: 'the same, two late sales, caught by its golden', sw: { laterUnitsReplayed: true }, detector: 'review', mustInclude: 'Two late sales of one push never excuse each other' },
   { name: 'an item\'s revs recorded only after an import, so a rev the other side has pending only after a knowing edit counts as never pending (a hold too many)', sw: { pendingAtImportsOnly: true }, detector: 'review', mustInclude: 'Reaction clause (c), an item the other side has pending only after a knowing edit' },
+  // round 8, recheck 2: world 10 is live
+  { name: 'world 10 catches round 8\'s later units placed before their import', sw: { laterUnitsReplayed: true }, detector: 'w10' },
+  { name: 'world 10 catches round 7\'s answer that hides a by-hand reaction', sw: { answerHidesReaction: true }, detector: 'w10' },
+  // round 8, recheck 2: keep follows the rev; the undo of a favor_app settlement is the import's take
+  { name: 'keep decides the figure again at the answer (round 8), so a disputed part a knowing edit brought back to its base takes MFC\'s side, one push', sw: { keepRedecides: true }, detector: 'review', mustInclude: 'Keep on a conflict follows its rev, in one push' },
+  { name: 'the same, two pushes', sw: { keepRedecides: true }, detector: 'review', mustInclude: 'Keep on a conflict follows its rev, in two pushes' },
+  { name: 'the undo of a favor_app settlement takes against the realigned bases (round 8): MFC lowered the count and nothing is removed', sw: { favorUndoOnRealigned: true }, detector: 'review', mustInclude: 'MFC lowered the count, FAVOR_APP' },
+  { name: 'the same: MFC raised the count and new copies are made where the sold copy comes back', sw: { favorUndoOnRealigned: true }, detector: 'review', mustInclude: 'MFC raised the count, FAVOR_APP' },
+  { name: 'the undo of a favor_app settlement ends the acknowledgement (round 8), so the same export raises a divergence', sw: { favorUndoEndsAck: true }, detector: 'review', mustInclude: 'MFC lowered the count, FAVOR_APP' },
+  { name: 'the undo of a favor_app settlement takes against the latest export, not the entry\'s own', sw: { favorUndoAtLatestExport: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement works against the export of the import that made it' },
+  // round 8, recheck 2: rules stated and observable, pinned now
+  { name: 'a held-edit card\'s keep writes edits that are not knowing, so they never end a conflict whose sides they make agree', sw: { heldKeepNotKnowing: true }, detector: 'review', mustInclude: 'A held-edit card\'s keep writes knowing edits' },
+  { name: 'a held-edit card\'s rev ignores which edits it lists, so a keep of the card a device saw keeps an edit that joined it since', sw: { heldRevIgnoresEdits: true }, detector: 'review', mustInclude: 'A held-edit card\'s rev is the edits it lists' },
+  { name: 'a tag is a unit by itself, not with the push\'s other edits of its key', sw: { tagUnitPerEdit: true }, detector: 'review', mustInclude: 'A tag is one unit with the push\'s other edits of its key' },
+  { name: 'a revision leaves out every facet of a copy its late edits write, not only the facets they write', sw: { ownByCopy: true }, detector: 'review', mustInclude: 'A revision leaves out only the facets its late edits write' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
@@ -152,6 +173,7 @@ describe('mutants: every rule is load-bearing', () => {
     expect(compoundBreaches({})).toBe(0);
     expect(crossBreaches({})).toBe(0);
     expect(lateBreaches({})).toBe(0);
+    expect(w10Breaches({})).toBe(0);
     const t = twoDevices();
     expect(t.silentCounts + t.differsShown).toBe(0);
   }, 300_000);
@@ -163,6 +185,7 @@ describe('mutants: every rule is load-bearing', () => {
     else if (m.detector === 'compound') expect(compoundBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'cross') expect(crossBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'late') expect(lateBreaches(sw)).toBeGreaterThan(0);
+    else if (m.detector === 'w10') expect(w10Breaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'twoDevices') {
       const t = twoDevices({ sw });
       expect(t.silentCounts + t.differsShown).toBeGreaterThan(0);
