@@ -699,7 +699,7 @@ export function compoundReactionWorld(opts: { sw?: Switches; every: number }): C
 // wrote (both devices took out, or re-owned, one copy: plain concurrency).
 type XHand = 'sell-high' | 'sell-low' | 'reown' | 'readd' | 'tag';
 type XStep =
-  | { op: 'import'; n: number }
+  | { op: 'import'; n: number; drop?: boolean }
   | { op: 'pull'; dev: string }
   | { op: 'edit'; dev: string; key: string; value: Json }
   | { op: 'unit'; kind: string; c: string }
@@ -805,7 +805,8 @@ export function runCrossImport(steps: readonly XStep[], sw: Switches, ref: boole
     if (st.op === 'import') {
       if (pendingP) push(devs.P!);
       pendingP = false;
-      s.runImport([row('1144', 'H1', 'owned', st.n)], t);
+      // `drop`: MFC no longer lists the row (the user deleted the entry), so the export lacks it
+      s.runImport(st.drop === true ? [] : [row('1144', 'H1', 'owned', st.n)], t);
     } else if (st.op === 'pull') devs[st.dev]!.pull();
     else if (st.op === 'edit') devs[st.dev]!.edit(st.key, st.value, t);
     else if (st.op === 'push') push(devs[st.dev]!, st.n);
@@ -897,13 +898,23 @@ export interface CrossImportTally {
   first: string[];
 }
 
-/** Scripts `from` to `to` (seeds), each offline and pushed-first; no script may differ silently. */
-export function crossImportWorld(opts: { sw?: Switches; from: number; to: number }): CrossImportTally {
+/**
+ * Scripts `from` to `to` (seeds), each offline and pushed-first; no script may differ silently. With `drop`, only the
+ * scripts whose last (or middle) import states Count 0 run, and that import drops the row instead: the export lacks it.
+ */
+export function crossImportWorld(opts: { sw?: Switches; from: number; to: number; drop?: 'last' | 'middle' }): CrossImportTally {
   const sw = opts.sw ?? {};
   const t: CrossImportTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, refHeldAnswered: 0, answeredSameRev: 0, collisions: 0, silent: 0, silentItem: 0, first: [] };
   const EMPTY = '{"f":{},"c":[],"a":[]}';
   for (let seed = opts.from; seed <= opts.to; seed++) {
-    const { steps, desc } = crossImportScript(seed);
+    const script = crossImportScript(seed);
+    const { desc } = script;
+    let steps = script.steps;
+    if (opts.drop !== undefined) {
+      const at = steps.flatMap((x, i) => (x.op === 'import' ? [i] : []))[opts.drop === 'last' ? 2 : 1]!;
+      if ((steps[at] as { n: number }).n !== 0) continue;
+      steps = steps.map((x, i) => (i === at ? { op: 'import', n: 0, drop: true } : x));
+    }
     const got = runCrossImport(steps, sw, false);
     const ref = runCrossImport(steps, sw, true, got.fired);
     t.runs++;

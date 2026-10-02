@@ -4,7 +4,7 @@
 // two-import world in full (554,286 path runs), the compound-reaction world in full (137,682), the late-units world in
 // full (2,710,620) and the two-offline-devices world in full (300,000 cases); CI runs every 16th case of the first, every
 // 7th of the second, every 101st of the third and every 25th of the fourth. The cross-import world runs its 20,000 random
-// scripts everywhere.
+// scripts everywhere, and again with the last or the middle import dropping the row where it states Count 0.
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { compoundLateWorld, compoundReactionWorld, crossImportWorld, itemReactionWorld, lateUnitsWorld, reactionWorld, twoDevices, world, type Tally } from './support/worlds.js';
@@ -87,6 +87,22 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
     // the paths counted apart, each read (none is a loss): pinned so that any change is seen
     expect({ picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual({ picks: 30, refHeldAnswered: 9, answeredSameRev: 2, collisions: 15 });
+  }, 600_000);
+
+  it('reactions across two imports, one import dropping the row: where the script\'s last (or middle) import states Count 0 it lacks the row instead (the user deleted the entry on MFC), so it decides and frames a figure it may write nothing to (F1)', () => {
+    // the paths counted apart, each read (none is a loss), as in the world without the drop: pinned so that any change is seen
+    const apart = { last: { runs: 3_947, picks: 1, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 }, middle: { runs: 3_914, picks: 16, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 } };
+    for (const drop of ['last', 'middle'] as const) {
+      const t = crossImportWorld({ from: 1, to: 20_000, drop });
+      const line =
+        `reactions across two imports, the ${drop} import dropping the row: ${t.runs} scripts; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
+        `differs but shown ${t.differsShown}; a by-hand pick ${t.picks}; pushed-first holds and its card's answer ends there ${t.refHeldAnswered}; ` +
+        `an answer to an item given back at its rev ${t.answeredSameRev}; one copy written on both devices ${t.collisions}; silent ${t.silent}; silent, pushed-first has an item ${t.silentItem}`;
+      console.log(line);
+      if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
+      expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
+      expect({ runs: t.runs, picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual(apart[drop]);
+    }
   }, 600_000);
 
   it('late units and every reaction: one late unit or two, in one push or two, the tablet and a third device reacting by hand or by an answer to what they are shown, a second import or none, every order (HELD (i), (ii), (iii))', () => {

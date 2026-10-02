@@ -49,6 +49,13 @@ const crossBreaches = (sw: Switches) => {
   return t.silent + t.silentItem;
 };
 
+// the cross-import world's scripts 1 to 20,000 whose last or middle import states Count 0, that import dropping the row
+const crossDropBreaches = (sw: Switches) =>
+  (['last', 'middle'] as const).reduce((n, drop) => {
+    const t = crossImportWorld({ sw, from: 1, to: 20_000, drop });
+    return n + t.silent + t.silentItem;
+  }, 0);
+
 // every 499th case of world 9 (two late units of one push meet reactions there, and every policy and order)
 const lateBreaches = (sw: Switches) => lateUnitsWorld({ sw, every: 499 }).silent;
 
@@ -58,7 +65,7 @@ const w10Breaches = (sw: Switches) => {
   return t.silent + t.silentItem;
 };
 
-type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross' | 'late' | 'w10';
+type Detector = 'scenarios' | 'review' | 'world' | 'twoDevices' | 'items' | 'compound' | 'cross' | 'crossDrop' | 'late' | 'w10';
 const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detector; mustInclude?: string }[] = [
   { name: 'F1: no marker frame (a figure the import decided without writing gets no frame)', sw: { noMarker: true }, detector: 'world' },
   { name: 'F2: no client staging (a page ending inside an import is shown half applied)', client: { staging: false }, detector: 'scenarios', mustInclude: 'J-A1-staged (removal)' },
@@ -192,6 +199,15 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'a row base the export lacks is in a conflict\'s MFC side as a row at Count 0, so a row dropped from Count 0 keeps the rev', sw: { revByMfcRows: true }, detector: 'review', mustInclude: 'A row the export drops from Count 0 gives a conflict a new rev' },
   { name: 'a conflict\'s MFC side leaves out its rows\' field values', sw: { revIgnoresFields: true }, detector: 'review', mustInclude: 'A row\'s field value is part of a conflict\'s MFC side' },
   { name: 'a conflict\'s MFC side includes each row\'s head', sw: { revByRowHeads: true }, detector: 'review', mustInclude: 'A row\'s head is the spine\'s, not part of a conflict\'s MFC side' },
+  // contract-8 close-out, round 1: F1 frames every figure the import decides, and a conflict's rev by MFC's rows as REVS states it
+  { name: 'F1 framed from the row bases the import left: a figure whose last row the export drops, written nothing, gets no frame', sw: { frameAfterImport: true }, detector: 'review', mustInclude: 'An import that drops a figure\'s last row decides and frames it, though it writes nothing there' },
+  { name: 'the same: a figure whose only row the export drops misses the divergence pushed-first raises', sw: { frameAfterImport: true }, detector: 'review', mustInclude: 'An import that drops a figure\'s only row frames that figure' },
+  { name: 'the same, in the cross-import world with the last or middle import dropping the row', sw: { frameAfterImport: true }, detector: 'crossDrop' },
+  { name: 'a row base the export lacks keyed as a row at Count 0: a lacked row listed again at Count 0 keeps the rev', sw: { revByMfcRows: true }, detector: 'review', mustInclude: 'A row the export lacked, listed again at Count 0, gives a conflict a new rev' },
+  { name: 'a conflict\'s MFC side includes each row\'s head: take of the card shown before the spine re-pointed its row is STALE', sw: { revByRowHeads: true }, detector: 'review', mustInclude: 'A row\'s head is the spine\'s' },
+  { name: 'an export row\'s blank field kept apart from one it leaves out, so a blank score gives a conflict a new rev', sw: { rowsKeepBlankFields: true }, detector: 'review', mustInclude: 'A blank field value is no value' },
+  { name: 'a conflict\'s MFC side leaves out its rows\' field values: the note', sw: { revIgnoresFields: true }, detector: 'review', mustInclude: 'A row\'s note is part of a conflict\'s MFC side' },
+  { name: 'the same: the wishability', sw: { revIgnoresFields: true }, detector: 'review', mustInclude: 'A row\'s wishability is part of a conflict\'s MFC side' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
@@ -203,6 +219,7 @@ describe('mutants: every rule is load-bearing', () => {
     expect(itemBreaches({})).toBe(0);
     expect(compoundBreaches({})).toBe(0);
     expect(crossBreaches({})).toBe(0);
+    expect(crossDropBreaches({})).toBe(0);
     expect(lateBreaches({})).toBe(0);
     expect(w10Breaches({})).toBe(0);
     const t = twoDevices();
@@ -215,6 +232,7 @@ describe('mutants: every rule is load-bearing', () => {
     else if (m.detector === 'items') expect(itemBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'compound') expect(compoundBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'cross') expect(crossBreaches(sw)).toBeGreaterThan(0);
+    else if (m.detector === 'crossDrop') expect(crossDropBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'late') expect(lateBreaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'w10') expect(w10Breaches(sw)).toBeGreaterThan(0);
     else if (m.detector === 'twoDevices') {
