@@ -148,6 +148,8 @@ export interface Card {
   import: number;
   /** The MFC ids known to the import that raised it (its rows and row bases), for the projection. */
   known: string[];
+  /** A conflict's MFC side as the import that last raised or kept it found it (the export's rows of S and the row bases it lacks): an import that finds it unchanged keeps the rev. */
+  side?: string;
 }
 /** One MFC row of a figure as the import knows it (THE MFC PROJECTION): an export row, or a row base at Count 0. */
 export interface MfcRow {
@@ -990,6 +992,17 @@ export interface Switches {
   undoKeepsNewRowBases?: boolean;
   /** per_copy takes its field sides only for the fields that conflict when decided again, not for those the rev lists as disputed. */
   perCopyRedecides?: boolean;
+  // round 9, recheck 2
+  /** Round 9's model: an import keeps a conflict's rev when MFC's Counts summed per kind and its rows' field values are unchanged, so Count moved between two rows keeps it. */
+  revByCountSum?: boolean;
+  /** An import keeps a conflict's rev when the export's rows of the figure are unchanged, whatever row bases of it the export lacks. */
+  revByExportRows?: boolean;
+  /** A row base the export lacks is in a conflict's MFC side as a row of its kind at Count 0, so a row the export drops from Count 0 leaves the rev. */
+  revByMfcRows?: boolean;
+  /** A conflict's MFC side leaves out its rows' field values, so an import that finds MFC's score changed keeps the rev. */
+  revIgnoresFields?: boolean;
+  /** A conflict's MFC side includes each row's head, so a row the spine re-points between two heads of the figure gives a new rev. */
+  revByRowHeads?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1814,10 +1827,20 @@ export class Server {
         let rev = `I${I.n}:${stable({ M: d.M, exp: expFields, comps: d.comps })}`;
         let raised = I.n;
         let comps = d.comps;
+        // MFC's side as THE MFC PROJECTION names it, by MFC id: each of the export's rows of S with its kind, Count and
+        // field values, and each row base of S the export lacks (null)
+        const sideOf = (id: string) => {
+          const r = exp.get(id);
+          if (r === undefined) return this.sw.revByMfcRows ? [baseRows.get(id)!.kind, 0, {}] : null;
+          // a row's head is the spine's, not MFC's
+          return [r.kind, r.count, this.sw.revIgnoresFields ? {} : r.fields, ...(this.sw.revByRowHeads ? [r.head] : [])];
+        };
+        const ids = known.filter((id) => exp.has(id) || !this.sw.revByExportRows);
+        const side = this.sw.revByCountSum ? stable({ M: d.M, exp: expFields }) : stable(Object.fromEntries(ids.map((id) => [id, sideOf(id)])));
         // kept with the rev: what the raising import found (the parts keep and per_copy follow), not what this one finds
-        if (cf?.kind === 'conflict' && eq(cf.M, d.M) && cf.expFields === expFields) [rev, raised, comps] = [cf.rev, cf.import, this.sw.cardRefreshedAtImport ? d.comps : cf.comps];
+        if (cf?.kind === 'conflict' && cf.side === side) [rev, raised, comps] = [cf.rev, cf.import, this.sw.cardRefreshedAtImport ? d.comps : cf.comps];
         if (cf?.rev !== rev) stats.conflicts_raised++;
-        st.conflicts.set(S, { kind: 'conflict', rev, exp, expFields, B: d.B, M: d.M, comps, import: raised, known });
+        st.conflicts.set(S, { kind: 'conflict', rev, exp, expFields, side, B: d.B, M: d.M, comps, import: raised, known });
         st.acks.delete(S);
         heldForUser = true;
         st.decisions.push([`import#${I.n}`, S, 'conflict']);
