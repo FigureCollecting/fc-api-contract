@@ -16455,6 +16455,117 @@
     "changes": {},
     "align": {}
    }
+  },
+  {
+   "name": "What keep removes of MFC's change is the import's: the copy it takes out is one an import removed, so MFC's next added copy restores it",
+   "rule": "R3 R7",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {"score": 3}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 8,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "uf/H1/score", "value": 5, "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "uf/H1/score", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {"score": 7}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 610, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 611, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T"},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {"score": 7}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"mfc_id": "1144", "score": {"now": 7, "should": 5}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/o2/status", "value": "owned"}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 1,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    }
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/o2/head": "H1",
+     "occ/o2/origin": "1144#2",
+     "occ/o2/status": "owned",
+     "uf/H1/score": 5
+    },
+    "figure": {},
+    "held": {},
+    "changes": {"H1": "applied"},
+    "align": {"H1": [{"mfc_id": "1144", "score": {"now": 7, "should": 5}}]}
+   }
   }
  ]
 }

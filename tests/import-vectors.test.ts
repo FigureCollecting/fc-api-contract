@@ -144,7 +144,7 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       /Keep follows its rev across an identical import: /, /Keep follows its rev across an identical import, on two devices/, /A conflict's keep preview follows its rev/,
       /Keep leaves a disputed field at the app's side/, /Keep leaves the counts as the app has them when the app has changed them since/,
       /Keep leaves a field the rev found MFC's change alone as the app has it/, /Keep applies a field the rev found MFC's change alone/,
-      /Keep leaves a field the rev found alike/, /Keep leaves the counts the rev found alike/, /What keep applies of MFC's change is the import's/,
+      /Keep leaves a field the rev found alike/, /Keep leaves the counts the rev found alike/, /What keep applies of MFC's change is the import's/, /What keep removes of MFC's change is the import's/,
       /take removes a copy with an origin before one without/, /puts back only the bases its realignment moved, so a copy MFC came to track since/,
       /puts back only the bases its realignment moved, so a hand copy/, /lists as its undo the take its import would have written/,
       /The undo of a favor_app settlement realigns the bases/, /The undo of a favor_app settlement is take, not a divergence's take/,
@@ -253,6 +253,8 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
     expect(end('Keep leaves the counts the rev found alike', 'occ/o2/status')).toBe('owned');
     // a copy keep restores as MFC's change is no longer one an import removed; take removes a copy with an origin first
     expect(end("What keep applies of MFC's change is the import's", 'occ/new:3/status')).toBe('owned');
+    expect(end("What keep removes of MFC's change is the import's", 'occ/o2/status')).toBe('owned');
+    expect(end("What keep removes of MFC's change is the import's", 'occ/new:3/status')).toBeNull();
     expect(end('take removes a copy with an origin before one without', 'occ/y1/status')).toBe('owned');
     // the favor_app undo puts back only the bases its realignment moved, shows its import's take, realigns, and is take
     expect(end('The undo of a favor_app settlement puts back only the bases its realignment moved, so a copy MFC came to track since', 'occ/new:4/status')).toBeNull();
