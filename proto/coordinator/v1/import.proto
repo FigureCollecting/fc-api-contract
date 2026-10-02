@@ -83,8 +83,11 @@
 //   the device had applied when it made the edit (sync.proto SyncEvent.basis).
 //   FRAME (F1): every import writes one marker event last, imp/{site}/import.
 //   For every figure the import decides, whether it writes to it or only moves
-//   its bases, last_seq(I, S) is the marker's position. The server keeps, per
-//   import and decided figure, last_seq(I, S) and S as it stood just before I.
+//   its bases, last_seq(I, S) is the marker's position. An import frames each
+//   figure an export row or a row base belonged to as it began, so a figure
+//   whose last row the export drops is framed though the import writes nothing
+//   to it and leaves it no row base. The server keeps, per import and decided
+//   figure, last_seq(I, S) and S as it stood just before I.
 //   LATE EDIT: a pushed edit to a copy or field of S whose basis is before
 //   last_seq(I, S) for an import I that arrived before it: the device made it
 //   without having seen what I decided for S. Any other edit is KNOWING.
@@ -354,7 +357,13 @@
 //     side of the disputed parts as that import found it. An import that finds
 //     MFC's side unchanged keeps it, whatever the app did meanwhile, and with
 //     it what the raising import found, part by part, which keep, per_copy and
-//     the item's keep preview follow.
+//     the item's keep preview follow. For the rev, MFC's side is MFC's rows by
+//     id: each of the export's rows of S with its kind, Count and the field
+//     values it states (a blank value states none), and each row base of S the
+//     export lacks, as lacked: a row the export lists at Count 0 is not one it
+//     lacks. A row's head is the spine's, not MFC's: a row the spine re-points
+//     to another head of S keeps the rev, and take's new copy for that row
+//     takes the head the row has when the take applies.
 //   * A divergence: the raising import with both sides' values of the parts
 //     that differ. An import that finds the same values keeps it; other values,
 //     on either side, give a new rev.

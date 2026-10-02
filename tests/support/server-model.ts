@@ -423,6 +423,10 @@ export function applyOps(st: Canon, ops: readonly Op[], ver: Version): void {
   }
 }
 
+/** A row's field values without the blank ones: a blank value is no value. */
+export function statedFields(f: Row['fields']): Row['fields'] {
+  return Object.fromEntries(Object.entries(f).filter(([, v]) => v !== null)) as Row['fields'];
+}
 export function rowsFor(st: Canon, S: string, rows: readonly Row[]): Map<string, Row> {
   return new Map(rows.filter((r) => st.surv(r.head) === S).map((r) => [r.id, r]));
 }
@@ -1003,6 +1007,11 @@ export interface Switches {
   revIgnoresFields?: boolean;
   /** A conflict's MFC side includes each row's head, so a row the spine re-points between two heads of the figure gives a new rev. */
   revByRowHeads?: boolean;
+  // contract-8 close-out, round 1
+  /** F1 from the row bases the import left: a figure whose last row the export drops, and that the import writes nothing to, gets no frame. */
+  frameAfterImport?: boolean;
+  /** An export row's blank field (null) is kept as stated, apart from one it leaves out, so a conflict's rev tells them apart. */
+  rowsKeepBlankFields?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -2070,7 +2079,8 @@ export class Server {
     const pref = this.emitted.get(PREF)?.[0] as Partial<Policy> | null | undefined;
     const I: Import = {
       type: 'import',
-      rows: rows.map((r) => ({ ...r, fields: { ...r.fields } })),
+      // a blank value is no value (ROWS): a row lists only the field values it states
+      rows: rows.map((r) => ({ ...r, fields: this.sw.rowsKeepBlankFields ? { ...r.fields } : statedFields(r.fields) })),
       keepIds: [...(opts.keepIds ?? [])],
       t,
       n: this.nImports,
@@ -2085,6 +2095,8 @@ export class Server {
     };
     this.inputs.push(I);
     const n0 = this.feed.length;
+    // the figures the import decides: those of its rows and of the row bases as they stood before it (THE FIGURE DECISION)
+    const before = this.sw.frameAfterImport || this.canon === undefined ? [] : [...this.canon.rowBase.values()].map((b) => b.head);
     for (const [seq, k] of this.recompute(t)) for (const f of this.figsOfKey(k, this.canon!)) I.lastSeq.set(f, Math.max(I.lastSeq.get(f) ?? 0, seq));
     if (!this.sw.noMarker) {
       // F1: the marker, last; a frame for every figure the import decided, written to or not
@@ -2092,7 +2104,7 @@ export class Server {
       const seq = this.feed.length;
       I.markerSeq = seq;
       const st = this.canon!;
-      for (const f of new Set([...I.rows.map((r) => st.surv(r.head)), ...[...st.rowBase.values()].map((b) => st.surv(b.head))]))
+      for (const f of new Set([...[...I.rows, ...before.map((head) => ({ head })), ...st.rowBase.values()].map((r) => st.surv(r.head))]))
         I.lastSeq.set(f, Math.max(I.lastSeq.get(f) ?? 0, seq));
     } else I.markerSeq = this.feed.length;
     this.commit(n0);
