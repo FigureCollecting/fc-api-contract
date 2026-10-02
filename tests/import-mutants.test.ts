@@ -182,6 +182,16 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'the undo of a favor_app settlement takes as a divergence\'s take does', sw: { favorUndoTakeSettled: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement is take, not a divergence\'s take' },
   { name: 'the undo of a favor_app settlement leaves the base its realignment gave a row new to that export', sw: { undoKeepsNewRowBases: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement puts back a row\'s absence' },
   { name: 'per_copy takes its field sides only for fields that conflict when decided again', sw: { perCopyRedecides: true }, detector: 'review', mustInclude: 'per_copy takes its field side for a field the rev lists as disputed, though a knowing edit since brought it back to its base' },
+  // round 9, recheck 2: a conflict's rev follows MFC's rows (THE MFC PROJECTION), not its Counts per kind
+  { name: 'an import keeps a conflict\'s rev when MFC\'s Counts per kind and its rows\' field values are unchanged (round 9\'s model): Count moved between two rows, keep', sw: { revByCountSum: true }, detector: 'review', mustInclude: 'Count moved between two rows of one figure gives a conflict a new rev' },
+  { name: 'the same: Count moved between two rows, take', sw: { revByCountSum: true }, detector: 'review', mustInclude: 'Count moved between two rows of one figure gives a conflict a new rev, take' },
+  { name: 'the same: two rows\' kinds swapped', sw: { revByCountSum: true }, detector: 'review', mustInclude: 'Two rows\' kinds swapped give a conflict a new rev' },
+  { name: 'the same: a row\'s kind at Count 0 changed', sw: { revByCountSum: true }, detector: 'review', mustInclude: 'A row\'s kind at Count 0 is part of a conflict\'s MFC side' },
+  { name: 'the same: a row base the export lacks moved to another figure', sw: { revByCountSum: true }, detector: 'review', mustInclude: 'A row base the export lacks is part of a conflict\'s MFC side' },
+  { name: 'an import keeps a conflict\'s rev when the export\'s rows are unchanged, whatever row bases the export lacks', sw: { revByExportRows: true }, detector: 'review', mustInclude: 'A row base the export lacks is part of a conflict\'s MFC side' },
+  { name: 'a row base the export lacks is in a conflict\'s MFC side as a row at Count 0, so a row dropped from Count 0 keeps the rev', sw: { revByMfcRows: true }, detector: 'review', mustInclude: 'A row the export drops from Count 0 gives a conflict a new rev' },
+  { name: 'a conflict\'s MFC side leaves out its rows\' field values', sw: { revIgnoresFields: true }, detector: 'review', mustInclude: 'A row\'s field value is part of a conflict\'s MFC side' },
+  { name: 'a conflict\'s MFC side includes each row\'s head', sw: { revByRowHeads: true }, detector: 'review', mustInclude: 'A row\'s head is the spine\'s, not part of a conflict\'s MFC side' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
