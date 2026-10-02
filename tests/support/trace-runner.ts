@@ -21,10 +21,19 @@ export type Step =
       fields?: Partial<Record<Field, 'app' | 'mfc'>>;
     }
   | { op: 'push'; dev: string; t: number; n?: number; expect?: { key: string; outcome: string }[] }
-  | { op: 'pull'; dev: string; n?: number; expect?: { shows: Record<string, Json> } }
+  | { op: 'pull'; dev: string; n?: number; expect?: PullExpect }
   | { op: 'replay'; dev: string }
   | { op: 'restart'; dev: string };
 
+/**
+ * What a pull pins, as the device shows it: facet values (`shows`), a figure item's keep and take previews by head
+ * (`previews`, null when none is pending) and a change entry's undo list by head (`undo`, null when none).
+ */
+export interface PullExpect {
+  shows?: Record<string, Json>;
+  previews?: Record<string, Json>;
+  undo?: Record<string, Json>;
+}
 export interface ScenarioEnd {
   facets: Record<string, Json>;
   cards: string[];
@@ -99,8 +108,16 @@ export function runScenario(c: Scenario, switches: Switches = {}, client: { stag
       const res = dev(st.dev).push(st.t, st.n).map((r, i) => ({ key: keys[i]!, outcome: r.outcome }));
       if (st.expect !== undefined) actual.push(res);
     } else if (st.op === 'pull') {
-      dev(st.dev).pull(st.n);
-      if (st.expect !== undefined) actual.push({ shows: shows(dev(st.dev), Object.keys(st.expect.shows)) });
+      const d = dev(st.dev);
+      d.pull(st.n);
+      if (st.expect !== undefined) {
+        const got: PullExpect = {};
+        const part = (kind: string, S: string, k: string): Json => ((d.show(`imp/mfc/${kind}/${S}`) as Record<string, Json> | null)?.[k] ?? null);
+        if (st.expect.shows !== undefined) got.shows = shows(d, Object.keys(st.expect.shows));
+        if (st.expect.previews !== undefined) got.previews = Object.fromEntries(Object.keys(st.expect.previews).map((S) => [S, part('figure', S, 'preview')]));
+        if (st.expect.undo !== undefined) got.undo = Object.fromEntries(Object.keys(st.expect.undo).map((S) => [S, part('change', S, 'undo')]));
+        actual.push(got);
+      }
     } else if (st.op === 'restart') dev(st.dev).restart();
     else dev(st.dev).replayFromEmpty();
   }

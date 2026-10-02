@@ -161,6 +161,26 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'a held-edit card\'s rev ignores which edits it lists, so a keep of the card a device saw keeps an edit that joined it since', sw: { heldRevIgnoresEdits: true }, detector: 'review', mustInclude: 'A held-edit card\'s rev is the edits it lists' },
   { name: 'a tag is a unit by itself, not with the push\'s other edits of its key', sw: { tagUnitPerEdit: true }, detector: 'review', mustInclude: 'A tag is one unit with the push\'s other edits of its key' },
   { name: 'a revision leaves out every facet of a copy its late edits write, not only the facets they write', sw: { ownByCopy: true }, detector: 'review', mustInclude: 'A revision leaves out only the facets its late edits write' },
+  // round 9, recheck 1: keep follows the rev, and what it applies besides the disputed parts
+  { name: 'an import that keeps a conflict\'s rev refreshes what the item holds, so keep follows that import, one device', sw: { cardRefreshedAtImport: true }, detector: 'review', mustInclude: 'Keep follows its rev across an identical import' },
+  { name: 'the same, two devices', sw: { cardRefreshedAtImport: true }, detector: 'review', mustInclude: 'Keep follows its rev across an identical import, on two devices' },
+  { name: 'the card\'s keep preview decides the figure again', sw: { previewRedecides: true }, detector: 'review', mustInclude: 'A conflict\'s keep preview follows its rev' },
+  { name: 'the same, across an identical import on two devices', sw: { previewRedecides: true }, detector: 'review', mustInclude: 'Keep follows its rev across an identical import, on two devices' },
+  { name: 'keep decides the disputed fields again (only the counts follow the rev)', sw: { keepRedecidesFields: true }, detector: 'review', mustInclude: 'Keep leaves a disputed field at the app\'s side though a knowing edit brought it back to its base' },
+  { name: 'keep applies what the rev found MFC\'s change alone though the app has changed it since: the counts', sw: { keepByRevAlone: true }, detector: 'review', mustInclude: 'Keep leaves the counts as the app has them when the app has changed them since the rev found them MFC\'s change alone' },
+  { name: 'the same: a field', sw: { keepByRevAlone: true }, detector: 'review', mustInclude: 'Keep leaves a field the rev found MFC\'s change alone as the app has it when the app has changed it since' },
+  { name: 'keep decides again every part the rev does not list as disputed (round 9\'s first cut): a field', sw: { keepRedecidesUndisputed: true }, detector: 'review', mustInclude: 'Keep leaves a field the rev found alike as the app has it, though a knowing edit since put it back to its base' },
+  { name: 'the same: the counts', sw: { keepRedecidesUndisputed: true }, detector: 'review', mustInclude: 'Keep leaves the counts the rev found alike as the app has them, though a knowing edit since put them back to their base' },
+  { name: 'what keep applies of MFC\'s change leaves the import-removed mark as it was', sw: { keepLeavesImportMark: true }, detector: 'review', mustInclude: 'What keep applies of MFC\'s change is the import\'s' },
+  { name: 'take removes by the highest occ id alone, not a copy with an origin first', sw: { takeRemovesByIdOnly: true }, detector: 'review', mustInclude: 'take removes a copy with an origin before one without, then the highest occ id' },
+  // round 9, recheck 1: the undo of a favor_app settlement
+  { name: 'the undo of a favor_app settlement puts back every base, not only the ones its realignment moved: a copy MFC came to track since', sw: { undoRestoresAllBases: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement puts back only the bases its realignment moved, so a copy MFC came to track since keeps its base' },
+  { name: 'the same: a hand copy MFC came to track since', sw: { undoRestoresAllBases: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement puts back only the bases its realignment moved, so a hand copy MFC came to track since stays tracked' },
+  { name: 'a favor_app entry shows the take against the realigned bases as its undo list (round 8\'s list)', sw: { favorShownOnRealigned: true }, detector: 'review', mustInclude: 'A favor_app change entry lists as its undo the take its import would have written' },
+  { name: 'the undo of a favor_app settlement leaves the bases unrealigned', sw: { favorUndoNoRealign: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement realigns the bases, so MFC\'s later changes are decided against export 2\'s side' },
+  { name: 'the undo of a favor_app settlement takes as a divergence\'s take does', sw: { favorUndoTakeSettled: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement is take, not a divergence\'s take' },
+  { name: 'the undo of a favor_app settlement leaves the base its realignment gave a row new to that export', sw: { undoKeepsNewRowBases: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement puts back a row\'s absence' },
+  { name: 'per_copy takes its field sides only for fields that conflict when decided again', sw: { perCopyRedecides: true }, detector: 'review', mustInclude: 'per_copy takes its field side for a field the rev lists as disputed, though a knowing edit since brought it back to its base' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
@@ -210,6 +230,17 @@ describe('mutants: every rule is load-bearing', () => {
     expect(compoundBreaches({ heldLateIsRevision: true })).toBe(0);
     expect(crossBreaches({ heldLateIsRevision: true })).toBe(0);
   }, 300_000);
+
+  it('world 10 counts an undo of an item of another kind apart only when its intent stands: a lost undo is silent (round 9, recheck 1)', () => {
+    // a mutant that loses an undo in a replay (HELD (iii) for figure items only): the offline undo's statuses do not end
+    // as its device asked, so the path is silent, not an answer to an item of another kind
+    const lost = compoundLateWorld({ sw: { answerHoldFigureOnly: true }, from: 138_723, to: 138_723 });
+    expect({ answerKind: lost.answerKind, silent: lost.silent }).toEqual({ answerKind: 0, silent: 1 });
+    expect(compoundLateWorld({ from: 138_723, to: 138_723 }).silent).toBe(0);
+    // a replay voids the undo, and its statuses end as asked but for o2, which the late unit itself sold: apart
+    const voided = compoundLateWorld({ from: 281_419, to: 281_419 });
+    expect({ answerKind: voided.answerKind, silent: voided.silent }).toEqual({ answerKind: 1, silent: 0 });
+  }, 120_000);
 
   it('M8 (materialize may pick a copy the app changed) is equivalent: no golden and no world case changes', () => {
     expect(scenarioFailures({ M8: true })).toEqual([]);

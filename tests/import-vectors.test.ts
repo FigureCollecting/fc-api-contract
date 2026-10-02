@@ -139,7 +139,16 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       /Keep on a conflict follows its rev, in one push: /, /Keep on a conflict follows its rev, in two pushes: /, /Keep on a conflict, the control: /,
       /MFC lowered the count, ASK: /, /MFC lowered the count, FAVOR_APP: /, /MFC raised the count, ASK: /, /MFC raised the count, FAVOR_APP: /,
       /works against the export of the import that made it/, /A held-edit card's keep writes knowing edits/, /A held-edit card's rev is the edits it lists/,
-      /A tag is one unit with the push's other edits of its key/, /A revision leaves out only the facets its late edits write/])
+      /A tag is one unit with the push's other edits of its key/, /A revision leaves out only the facets its late edits write/,
+      // round 9, recheck 1
+      /Keep follows its rev across an identical import: /, /Keep follows its rev across an identical import, on two devices/, /A conflict's keep preview follows its rev/,
+      /Keep leaves a disputed field at the app's side/, /Keep leaves the counts as the app has them when the app has changed them since/,
+      /Keep leaves a field the rev found MFC's change alone as the app has it/, /Keep applies a field the rev found MFC's change alone/,
+      /Keep leaves a field the rev found alike/, /Keep leaves the counts the rev found alike/, /What keep applies of MFC's change is the import's/,
+      /take removes a copy with an origin before one without/, /puts back only the bases its realignment moved, so a copy MFC came to track since/,
+      /puts back only the bases its realignment moved, so a hand copy/, /lists as its undo the take its import would have written/,
+      /The undo of a favor_app settlement realigns the bases/, /The undo of a favor_app settlement is take, not a divergence's take/,
+      /per_copy takes its field side for a field the rev lists as disputed/, /The undo of a favor_app settlement puts back a row's absence/])
       expect(names.join('\n')).toMatch(topic);
     expect(names.join('\n')).not.toMatch(/mfc_only|mfc_change|HOLD/);
   });
@@ -223,6 +232,34 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
     expect(push("A held-edit card's rev is the edits it lists", 4)).toEqual(['STALE']);
     expect(push("A tag is one unit with the push's other edits of its key", 1)).toEqual(['HELD', 'HELD']);
     expect(push('A revision leaves out only the facets its late edits write', 1)).toEqual(['HELD']);
+  });
+
+  it('pin keep to its rev across imports, what keep applies besides the disputed parts, and the favor_app undo to the bases its realignment moved (round 9, recheck 1)', () => {
+    const named = (prefix: string) => vectors.review.find((c) => c.name.startsWith(prefix))!;
+    const end = (prefix: string, key: string) => named(prefix).expect.facets[key] ?? null;
+    type Pulled = { previews?: Record<string, { keep: unknown[] } | null>; undo?: Record<string, unknown> };
+    const pulled = (prefix: string) => named(prefix).steps.flatMap((s) => (s.op === 'pull' && s.expect !== undefined ? [s.expect as Pulled] : []));
+    // an identical import keeps the rev and what the raising import found: keep leaves the disputed counts, one device or two
+    expect(end('Keep follows its rev across an identical import: ', 'occ/o2/status')).toBe('owned');
+    expect(named('Keep follows its rev across an identical import, on two devices').expect).toEqual(named('Keep follows its rev across an identical import: ').expect);
+    for (const p of ['Keep follows its rev across an identical import, on two devices', "A conflict's keep preview follows its rev"])
+      for (const x of pulled(p)) expect(x.previews!.H1!.keep, p).toEqual([]);
+    // a part the rev found MFC's change alone is applied only where the app has not changed it since; any other part stays the app's
+    expect(end("Keep leaves a disputed field at the app's side", 'uf/H1/score')).toBe(3);
+    expect(end('Keep leaves the counts as the app has them when the app has changed them since', 'occ/o2/status')).toBe('owned');
+    expect(end("Keep leaves a field the rev found MFC's change alone as the app has it", 'uf/H1/score')).toBe(9);
+    expect(end("Keep applies a field the rev found MFC's change alone", 'uf/H1/score')).toBe(7);
+    expect(end('Keep leaves a field the rev found alike', 'uf/H1/score')).toBe(3);
+    expect(end('Keep leaves the counts the rev found alike', 'occ/o2/status')).toBe('owned');
+    // a copy keep restores as MFC's change is no longer one an import removed; take removes a copy with an origin first
+    expect(end("What keep applies of MFC's change is the import's", 'occ/new:3/status')).toBe('owned');
+    expect(end('take removes a copy with an origin before one without', 'occ/y1/status')).toBe('owned');
+    // the favor_app undo puts back only the bases its realignment moved, shows its import's take, realigns, and is take
+    expect(end('The undo of a favor_app settlement puts back only the bases its realignment moved, so a copy MFC came to track since', 'occ/new:4/status')).toBeNull();
+    expect(pulled('A favor_app change entry lists as its undo the take its import would have written')[0]!.undo).toEqual({ H1: [{ key: 'occ/o2/status', value: null }] });
+    expect(end("The undo of a favor_app settlement is take, not a divergence's take", 'uf/H1/note')).toBe('mine');
+    expect(end("The undo of a favor_app settlement puts back a row's absence", 'uf/H1/score')).toBe(7);
+    expect(end('per_copy takes its field side for a field the rev lists as disputed', 'uf/H1/score')).toBe(7);
   });
 
   it.each(vectors.review.map((c) => [c.name, c] as const))('%s', (_name, c) => {
