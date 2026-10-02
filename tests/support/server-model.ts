@@ -430,7 +430,7 @@ export function basesOf(st: Canon, S: string): Bases {
   return {
     copies: st.copiesRel(S).map((c) => [c, st.copyBase.get(c)]),
     rows: [...baseRowsFor(st, S)].map(([id, b]) => [id, { ...b, fields: { ...b.fields } }]),
-    fields: [...st.headsOf(S)].sort().map((h) => [h, [...(st.fieldBase.get(h) ?? new Map<Field, Json>())]]),
+    fields: [...st.fieldBase].filter(([h]) => st.surv(h) === S).sort(([a], [b]) => cmpStr(a, b)).map(([h, m]) => [h, [...m]]),
   };
 }
 /** Put the bases of S back as `b` has them: a copy, row or head `b` lacks has none. */
@@ -439,8 +439,8 @@ export function restoreBases(st: Canon, S: string, b: Bases): void {
   for (const [c, v] of b.copies) if (v !== undefined) st.copyBase.set(c, v);
   for (const id of baseRowsFor(st, S).keys()) st.rowBase.delete(id);
   for (const [id, r] of b.rows) st.rowBase.set(id, { ...r, fields: { ...r.fields } });
-  for (const h of new Set([...st.headsOf(S), ...b.fields.map(([h]) => h)])) st.fieldBase.delete(h);
-  for (const [h, fs] of b.fields) if (fs.length > 0) st.fieldBase.set(h, new Map(fs));
+  for (const h of [...st.fieldBase.keys()]) if (st.surv(h) === S) st.fieldBase.delete(h);
+  for (const [h, fs] of b.fields) st.fieldBase.set(h, new Map(fs));
 }
 function nextOrdinal(st: Canon, rid: string): number {
   const used = new Set<number>();
