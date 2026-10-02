@@ -966,9 +966,11 @@ export function crossImportWorld(opts: { sw?: Switches; from: number; to: number
 // (take, keep, undo, dismiss the align-MFC entry); sometimes a second import follows the reactions (the same Count, one
 // less or one more); then the devices push in every order. Each path is compared with pushed-first plus the same
 // conditional reactions. SILENT: other live counts and nothing shown (no held card, no STALE answer, no figure item that
-// pushed-first lacks). Three differences are counted apart: a by-hand pick the device made among other copies (equal to
-// pushed-first with that copy taken by name), a by-hand sale of the very copy a late unit took out (plain concurrency
-// between the phone and that device), and the tablet and U taking out one copy (plain concurrency between them).
+// pushed-first lacks). Four differences are counted apart: a by-hand pick the device made among other copies (equal to
+// pushed-first with that copy taken by name), an answer the device gave to an item of another kind than pushed-first
+// shows it (an undo of an applied change offline, of a favor_app settlement pushed-first: equal to pushed-first without
+// that answer), a by-hand sale of the very copy a late unit took out (plain concurrency between the phone and that
+// device), and the tablet and U taking out one copy (plain concurrency between them).
 type W9Unit = [string, string];
 type W9React = 'none' | 'sell-high' | 'sell-low' | 'reown' | 'add' | 'tag' | 'take' | 'keep' | 'undo' | 'dismiss-align' | 'sell+add';
 export interface W9Case {
@@ -985,10 +987,20 @@ export interface W9Case {
 }
 const namer9 = (r: string, k: number) => (r === '1144' ? `o${k}` : `n${r}:${k}`);
 
-function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string): string {
+/** The kind of the item an answer of world 9 or 10 names, as its device shows it (conflict, divergence, applied, favor_app, favor_mfc, align). */
+const kindShown = (v: Json, item: string): string => (v !== null && typeof v === 'object' && !Array.isArray(v) && typeof v.kind === 'string' ? v.kind : item);
+
+function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string, kinds?: Record<string, string>, kindOf?: string): string {
   const fig = d.show('imp/mfc/figure/H1');
   const ch = d.show('imp/mfc/change/H1');
   const al = d.show('imp/mfc/align/H1');
+  // an answer only to an item of the kind the offline path answered, where one is named
+  const answers = (v: Json, item: string) => {
+    const k = kindShown(v, item);
+    if (kindOf !== undefined && kindOf !== k) return false;
+    if (kinds !== undefined) kinds[tag] = k;
+    return true;
+  };
   if (r === 'none' || (fig === null && ch === null && al === null)) return 'no';
   const occs = [...new Set([...d.replica.keys()].filter((k) => k.startsWith('occ/')).map((k) => k.split('/')[1]!))].sort();
   const live = occs.filter((c) => d.show(`occ/${c}/status`) === 'owned' && d.show(`occ/${c}/head`) === 'H1');
@@ -1022,16 +1034,16 @@ function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string)
     return 'tag';
   }
   if (r === 'take' || r === 'keep') {
-    if (fig === null) return 'no';
+    if (fig === null || !answers(fig, 'figure')) return 'no';
     d.answer('H1', r, t);
     return r;
   }
   if (r === 'undo') {
-    if (ch === null) return 'no';
+    if (ch === null || !answers(ch, 'change')) return 'no';
     d.answer('H1', 'undo', t, {}, {}, 'change');
     return r;
   }
-  if (al === null) return 'no';
+  if (al === null || !answers(al, 'align')) return 'no';
   d.answer('H1', 'dismiss', t, {}, {}, 'align');
   return r;
 }
@@ -1046,8 +1058,11 @@ function w9Unit(d: Device, [op, x]: W9Unit, t: number): void {
   }
 }
 
-/** One path of a world-9 case; `names` gives a by-hand sale's copy by name (pushed-first with the offline pick). */
-export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names: { T?: string; U?: string } = {}) {
+/**
+ * One path of a world-9 case; `names` gives a by-hand sale's copy by name (pushed-first with the offline pick), and
+ * `kindOf` lets a device answer only an item of the kind the offline path answered.
+ */
+export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names: { T?: string; U?: string } = {}, kindOf: Record<string, string> = {}) {
   const s = new Server({ namer: namer9, switches: sw });
   const P = new Device(s, 'P');
   const Tb = new Device(s, 'T');
@@ -1067,9 +1082,10 @@ export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names
   if (path === 'REF') P.push(510);
   s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d))], 600);
   Tb.pull();
-  const shownT = w9React(Tb, c.rT, 610, 'T', names.T);
+  const kinds: Record<string, string> = {};
+  const shownT = w9React(Tb, c.rT, 610, 'T', names.T, kinds, kindOf.T);
   U.pull();
-  const shownU = w9React(U, c.rU, 615, 'U', names.U);
+  const shownU = w9React(U, c.rU, 615, 'U', names.U, kinds, kindOf.U);
   const res: string[] = [];
   const answered = ['take', 'keep', 'undo', 'dismiss-align'];
   let stale = false;
@@ -1121,7 +1137,7 @@ export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names
       const h = s.emitted.get(k.replace('/status', '/head'))?.[0];
       if (typeof h === 'string') counts[h] = (counts[h] ?? 0) + 1;
     }
-  return { counts: JSON.stringify(counts), figure: JSON.stringify(s.figureItems()), held: Object.values(s.heldCards()).flat().length, stale, reacted: `${shownT}|${shownU}`, out: res.join(',') };
+  return { counts: JSON.stringify(counts), figure: JSON.stringify(s.figureItems()), held: Object.values(s.heldCards()).flat().length, stale, reacted: `${shownT}|${shownU}`, kinds, out: res.join(',') };
 }
 
 export interface LateUnitsTally {
@@ -1130,6 +1146,8 @@ export interface LateUnitsTally {
   sameCountsShown: number;
   differsShown: number;
   picks: number;
+  /** An answer the offline path gave to an item of another kind than pushed-first shows (an undo of an applied change against one of a favor_app settlement): pushed-first without it ends the same. */
+  answerKind: number;
   collisions: number;
   tuCollisions: number;
   silent: number;
@@ -1145,7 +1163,7 @@ export function lateUnitsWorld(opts: { sw?: Switches; every?: number; offset?: n
   const sw = opts.sw ?? {};
   const every = opts.every ?? 1;
   const offset = opts.offset ?? 0;
-  const t: LateUnitsTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, collisions: 0, tuCollisions: 0, silent: 0, silentWithItemInBoth: 0, first: [], apart: [] };
+  const t: LateUnitsTally = { runs: 0, same: 0, sameCountsShown: 0, differsShown: 0, picks: 0, answerKind: 0, collisions: 0, tuCollisions: 0, silent: 0, silentWithItemInBoth: 0, first: [], apart: [] };
   const apart = (why: string, c: W9Case, got: unknown, ref: unknown) => {
     if (t.apart.length < 30) t.apart.push(`${why}: ${JSON.stringify(c)} got ${JSON.stringify(got)} ref ${JSON.stringify(ref)}`);
   };
@@ -1188,6 +1206,17 @@ export function lateUnitsWorld(opts: { sw?: Switches; every?: number; offset?: n
                         if (sameCounts) t.sameCountsShown++;
                         else t.differsShown++;
                         continue;
+                      }
+                      // the offline path answered an item of another kind than pushed-first shows: the same answer means
+                      // another thing there (an undo of an applied change restores the app's copies, an undo of a
+                      // favor_app settlement takes MFC's side); pushed-first without that answer ends the same
+                      if (Object.entries(got.kinds).some(([dv, k]) => ref.kinds[dv] !== undefined && ref.kinds[dv] !== k)) {
+                        const same = runLateUnits(refCase, 'REF', sw, {}, got.kinds);
+                        if (same.counts === got.counts && (!sameCounts || same.figure === got.figure)) {
+                          t.answerKind++;
+                          apart('answer kind', c, got, same);
+                          continue;
+                        }
                       }
                       if (sameCounts) {
                         // the same counts, and pushed-first's figure item gone: counted with the silent paths
@@ -1360,9 +1389,9 @@ export function runCompoundLate(
       const key = `${name}a`;
       if (p.ans === 'none' || allow[key] === false) return void (fired[key] = 'no');
       const item = p.ans === 'undo' || p.ans === 'dismiss' ? 'change' : p.ans === 'dismiss-align' ? 'align' : 'figure';
-      const shown = d.show(`imp/mfc/${item}/H1`) as { kind?: string } | null;
+      const shown = d.show(`imp/mfc/${item}/H1`);
       if (shown === null) return void (fired[key] = 'no');
-      const kind = shown.kind ?? item;
+      const kind = kindShown(shown, item);
       if (kinds[key] !== undefined && kinds[key] !== kind) return void (fired[key] = 'no');
       d.answer('H1', p.ans === 'dismiss-align' ? 'dismiss' : p.ans, t, {}, {}, item);
       fired[key] = p.ans;

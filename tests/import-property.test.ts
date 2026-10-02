@@ -70,8 +70,9 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     expect(t.runs).toBe(full ? 137_682 : 19_694);
     expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
     // pushed-first, the device's pick (the lowest or highest live copy) is the phone's own late copy, which it could not
-    // see offline; with that copy taken out by name, pushed-first ends the same
-    expect(t.picks, t.pickCases.join('\n')).toBe(full ? 10 : 0);
+    // see offline; with that copy taken out by name, pushed-first ends the same (12 since round 9: the undo of a favor_app
+    // settlement now brings back the sold copy, so a pick that once ended alike by chance now ends apart)
+    expect(t.picks, t.pickCases.join('\n')).toBe(full ? 12 : 0);
   }, 3_600_000);
 
   it('reactions across two imports: answers and by-hand edits made after either import, some pushed only after the second (so late themselves), the phone\'s unit late for one import or both (HELD (i), (ii))', () => {
@@ -93,16 +94,19 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     const t = lateUnitsWorld({ every: full ? 1 : 101 });
     const line =
       `late units and every reaction${full ? ' (full)' : ' (every 101st case)'}: ${t.runs} path runs; same as pushed-first ${t.same}; same counts, held or item shown ${t.sameCountsShown}; ` +
-      `differs but shown ${t.differsShown}; a by-hand pick among other copies ${t.picks}; one copy taken out by a late unit and by hand ${t.collisions}; ` +
+      `differs but shown ${t.differsShown}; a by-hand pick among other copies ${t.picks}; an answer to an item of another kind pushed-first ${t.answerKind}; one copy taken out by a late unit and by hand ${t.collisions}; ` +
       `one copy taken out on two devices ${t.tuCollisions}; silent ${t.silent} (${t.silentWithItemInBoth} with a figure item in both)`;
     console.log(line);
     if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
     expect(t.runs).toBe(full ? 2_710_620 : 26_838);
     expect({ silent: t.silent }, t.first.join('\n')).toEqual({ silent: 0 });
     // the paths counted apart, each read (none is a loss; t.apart lists the first): a by-hand pick among copies both
-    // paths show, and a by-hand sale of the very copy a late unit took out (two devices recorded one sale); pinned so
-    // that any change is seen
-    expect({ picks: t.picks, collisions: t.collisions, tuCollisions: t.tuCollisions }, t.apart.join('\n')).toEqual(full ? { picks: 27, collisions: 1_512, tuCollisions: 0 } : { picks: 0, collisions: 13, tuCollisions: 0 });
+    // paths show, an undo the offline path gave to an applied change where pushed-first shows a favor_app settlement
+    // (the same answer, another meaning: pushed-first without it ends the same), and a by-hand sale of the very copy a
+    // late unit took out (two devices recorded one sale); pinned so that any change is seen
+    expect({ picks: t.picks, answerKind: t.answerKind, collisions: t.collisions, tuCollisions: t.tuCollisions }, t.apart.join('\n')).toEqual(
+      full ? { picks: 29, answerKind: 84, collisions: 1_482, tuCollisions: 0 } : { picks: 0, answerKind: 0, collisions: 13, tuCollisions: 0 },
+    );
   }, 7_200_000);
 
   it('compound reactions on two devices beside two offline devices: the phone\'s one or two late units and a second device\'s, the tablet and a third device each answering and acting by hand, a second import before, after or between their pushes, every order (HELD (i), (ii), (iii))', () => {
