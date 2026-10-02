@@ -173,7 +173,7 @@
               "maximum": 10
             },
             "status": {
-              "description": "What the decision found for it: nochange, alike (both changed it alike), apply (only MFC changed it) or conflict.",
+              "description": "What the import that raised the rev found for it (kept with the rev; keep and per_copy follow it): nochange, alike (both changed it alike), apply (only MFC changed it) or conflict.",
               "enum": [
                 "nochange",
                 "alike",
@@ -207,7 +207,7 @@
               "maxLength": 10000
             },
             "status": {
-              "description": "What the decision found for it: nochange, alike (both changed it alike), apply (only MFC changed it) or conflict.",
+              "description": "What the import that raised the rev found for it (kept with the rev; keep and per_copy follow it): nochange, alike (both changed it alike), apply (only MFC changed it) or conflict.",
               "enum": [
                 "nochange",
                 "alike",
@@ -244,7 +244,7 @@
               "maximum": 5
             },
             "status": {
-              "description": "What the decision found for it: nochange, alike (both changed it alike), apply (only MFC changed it) or conflict.",
+              "description": "What the import that raised the rev found for it (kept with the rev; keep and per_copy follow it): nochange, alike (both changed it alike), apply (only MFC changed it) or conflict.",
               "enum": [
                 "nochange",
                 "alike",

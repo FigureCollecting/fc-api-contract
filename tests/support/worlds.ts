@@ -990,7 +990,26 @@ const namer9 = (r: string, k: number) => (r === '1144' ? `o${k}` : `n${r}:${k}`)
 /** The kind of the item an answer of world 9 or 10 names, as its device shows it (conflict, divergence, applied, favor_app, favor_mfc, align). */
 const kindShown = (v: Json, item: string): string => (v !== null && typeof v === 'object' && !Array.isArray(v) && typeof v.kind === 'string' ? v.kind : item);
 
-function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string, kinds?: Record<string, string>, kindOf?: string): string {
+/** The statuses an undo's device saw in the change entry's undo list: what the user asked to have written. */
+type Asked = { key: string; value: Json }[];
+const statusesOf = (v: Json): Asked => {
+  const undo = v !== null && typeof v === 'object' && !Array.isArray(v) && Array.isArray(v.undo) ? (v.undo as Asked) : [];
+  return undo.filter((u) => u.key.endsWith('/status'));
+};
+/**
+ * Whether every status an undo's device asked for ends at that value, or at the status a late unit itself writes to that
+ * copy (another device's own act, which pushed-first applies too): the user's intent stands, and the answer was not lost.
+ */
+const endsAsAsked = (s: Server, asked: Asked, late: readonly W9Unit[]): boolean => {
+  const own = new Map<string, Json>();
+  for (const [op, x] of late) if (op !== 'add') own.set(`occ/${x}/status`, op === 'cancel' ? null : 'former');
+  return asked.every((u) => {
+    const end = s.emitted.get(u.key)?.[0] ?? null;
+    return end === u.value || (own.has(u.key) && end === own.get(u.key));
+  });
+};
+
+function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string, kinds?: Record<string, string>, kindOf?: string, asked?: Record<string, Asked>): string {
   const fig = d.show('imp/mfc/figure/H1');
   const ch = d.show('imp/mfc/change/H1');
   const al = d.show('imp/mfc/align/H1');
@@ -1041,6 +1060,7 @@ function w9React(d: Device, r: W9React, t: number, tag: string, byName?: string,
   if (r === 'undo') {
     if (ch === null || !answers(ch, 'change')) return 'no';
     d.answer('H1', 'undo', t, {}, {}, 'change');
+    if (asked !== undefined) asked[tag] = statusesOf(ch);
     return r;
   }
   if (al === null || !answers(al, 'align')) return 'no';
@@ -1083,9 +1103,10 @@ export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names
   s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d))], 600);
   Tb.pull();
   const kinds: Record<string, string> = {};
-  const shownT = w9React(Tb, c.rT, 610, 'T', names.T, kinds, kindOf.T);
+  const asked: Record<string, Asked> = {};
+  const shownT = w9React(Tb, c.rT, 610, 'T', names.T, kinds, kindOf.T, asked);
   U.pull();
-  const shownU = w9React(U, c.rU, 615, 'U', names.U, kinds, kindOf.U);
+  const shownU = w9React(U, c.rU, 615, 'U', names.U, kinds, kindOf.U, asked);
   const res: string[] = [];
   const answered = ['take', 'keep', 'undo', 'dismiss-align'];
   let stale = false;
@@ -1137,7 +1158,9 @@ export function runLateUnits(c: W9Case, path: 'REF' | 'OFF', sw: Switches, names
       const h = s.emitted.get(k.replace('/status', '/head'))?.[0];
       if (typeof h === 'string') counts[h] = (counts[h] ?? 0) + 1;
     }
-  return { counts: JSON.stringify(counts), figure: JSON.stringify(s.figureItems()), held: Object.values(s.heldCards()).flat().length, stale, reacted: `${shownT}|${shownU}`, kinds, out: res.join(',') };
+  // per undo given: whether every status its device saw in the undo list ends at that value (the user's intent stands)
+  const honoured = Object.fromEntries(Object.entries(asked).map(([dv, a]) => [dv, endsAsAsked(s, a, c.units)]));
+  return { counts: JSON.stringify(counts), figure: JSON.stringify(s.figureItems()), held: Object.values(s.heldCards()).flat().length, stale, reacted: `${shownT}|${shownU}`, kinds, honoured, asked, out: res.join(',') };
 }
 
 export interface LateUnitsTally {
@@ -1146,7 +1169,11 @@ export interface LateUnitsTally {
   sameCountsShown: number;
   differsShown: number;
   picks: number;
-  /** An answer the offline path gave to an item of another kind than pushed-first shows (an undo of an applied change against one of a favor_app settlement): pushed-first without it ends the same. */
+  /**
+   * An undo the offline path gave to a change entry of another kind than pushed-first shows (an applied change against a
+   * favor_app settlement), honoured (every status its device saw in the undo list ends at that value, or at the one a
+   * late unit writes to that copy): pushed-first without it ends the same.
+   */
   answerKind: number;
   collisions: number;
   tuCollisions: number;
@@ -1209,8 +1236,11 @@ export function lateUnitsWorld(opts: { sw?: Switches; every?: number; offset?: n
                       }
                       // the offline path answered an item of another kind than pushed-first shows: the same answer means
                       // another thing there (an undo of an applied change restores the app's copies, an undo of a
-                      // favor_app settlement takes MFC's side); pushed-first without that answer ends the same
-                      if (Object.entries(got.kinds).some(([dv, k]) => ref.kinds[dv] !== undefined && ref.kinds[dv] !== k)) {
+                      // favor_app settlement takes MFC's side); pushed-first without that answer ends the same. Only an undo
+                      // whose statuses end as its device asked (or as a late unit writes them) counts: a lost answer
+                      // would look the same otherwise
+                      const otherKind = Object.keys(got.kinds).filter((dv) => ref.kinds[dv] !== undefined && ref.kinds[dv] !== got.kinds[dv]);
+                      if (otherKind.length > 0 && otherKind.every((dv) => got.honoured[dv] === true)) {
                         const same = runLateUnits(refCase, 'REF', sw, {}, got.kinds);
                         if (same.counts === got.counts && (!sameCounts || same.figure === got.figure)) {
                           t.answerKind++;
@@ -1335,6 +1365,8 @@ interface W10Run {
   fired: Record<string, string>;
   /** Per answer given: the kind of the item it answered (conflict, divergence, applied, favor_app, favor_mfc, align). */
   kinds: Record<string, string>;
+  /** Per undo given: whether every status its device saw in the undo list ends at that value, or at the one a late unit writes to that copy. */
+  honoured: Record<string, boolean>;
   out: string;
 }
 /**
@@ -1376,6 +1408,7 @@ export function runCompoundLate(
   s.runImport([row('1144', 'H1', 'owned', Math.max(0, c.n + c.d))], 600);
   const fired: Record<string, string> = {};
   const answered: Record<string, string> = {};
+  const asked: Record<string, Asked> = {};
   let stale = false;
   const res: string[] = [];
   const pushOf = (name: string, d: Device, t: number, n?: number) => {
@@ -1396,6 +1429,7 @@ export function runCompoundLate(
       d.answer('H1', p.ans === 'dismiss-align' ? 'dismiss' : p.ans, t, {}, {}, item);
       fired[key] = p.ans;
       answered[key] = kind;
+      if (p.ans === 'undo') asked[key] = statusesOf(shown);
     };
     const doHand = () => {
       const key = `${name}h`;
@@ -1469,7 +1503,8 @@ export function runCompoundLate(
   let counts = 0;
   for (const [k, v] of s.emitted) if (k.endsWith('/status') && v[0] === 'owned' && s.emitted.get(k.replace('/status', '/head'))?.[0] === 'H1') counts++;
   const items = JSON.stringify({ f: s.figureItems(), c: Object.keys(s.changeEntries()).sort(), a: Object.keys(s.alignEntries()).sort() });
-  return { counts, items, held: Object.values(s.heldCards()).flat().length, stale, fired, kinds: answered, out: res.join(',') };
+  const honoured = Object.fromEntries(Object.entries(asked).map(([k, a]) => [k, endsAsAsked(s, a, [...c.pUnits, ...(c.qUnit ? [c.qUnit] : [])])]));
+  return { counts, items, held: Object.values(s.heldCards()).flat().length, stale, fired, kinds: answered, honoured, out: res.join(',') };
 }
 
 export interface CompoundLateTally {
@@ -1479,7 +1514,11 @@ export interface CompoundLateTally {
   differsShown: number;
   picks: number;
   refHeldAnswered: number;
-  /** An answer the offline path gave to an item of another kind than pushed-first shows (an undo of an applied change against one of a favor_app settlement): pushed-first without it ends the same. */
+  /**
+   * An undo the offline path gave to a change entry of another kind than pushed-first shows (an applied change against a
+   * favor_app settlement), honoured (every status its device saw in the undo list ends at that value, or at the one a
+   * late unit writes to that copy): pushed-first without it ends the same.
+   */
   answerKind: number;
   collisions: number;
   tuCollisions: number;
@@ -1541,8 +1580,11 @@ export function compoundLateWorld(opts: { sw?: Switches; from: number; to: numbe
       }
     }
     // the offline path answered an item of another kind than pushed-first shows: the same answer means another thing
-    // there (an undo of an applied change restores the app's copies, one of a favor_app settlement takes MFC's side)
-    if (Object.entries(got.kinds).some(([k, v]) => ref.kinds[k] !== undefined && ref.kinds[k] !== v)) {
+    // there (an undo of an applied change restores the app's copies, one of a favor_app settlement takes MFC's side).
+    // Only an undo whose statuses end as its device asked (or as a late unit writes them) counts: a lost answer would look
+    // the same otherwise
+    const otherKind = Object.keys(got.kinds).filter((k) => ref.kinds[k] !== undefined && ref.kinds[k] !== got.kinds[k]);
+    if (otherKind.length > 0 && otherKind.every((k) => got.honoured[k] === true)) {
       const same = runCompoundLate(c, 'REF', sw, allow, {}, undefined, got.kinds);
       if (same.counts === got.counts && (!sameCounts || figOf(same.items) === figOf(got.items))) {
         t.answerKind++;

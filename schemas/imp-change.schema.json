@@ -158,7 +158,7 @@
       }
     },
     "undo": {
-      "description": "What undo would write: the values before, or for favor_app what take writes now.",
+      "description": "What undo would write: the values before, or for favor_app the take its import would have written.",
       "type": "object",
       "additionalProperties": false,
       "required": [

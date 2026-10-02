@@ -144,7 +144,9 @@
 // The import never restores a former copy, never writes former or a disposal,
 // and never touches a copy with no base unless the decision counted or paired
 // it. A copy stays one an import removed until an import restores it, whatever
-// an answer or a device writes to it meanwhile.
+// an answer or a device writes to it meanwhile. What a keep or per_copy applies
+// of MFC's change alone (ITEMS AND ANSWERS) is the import's: a copy it removes
+// is one an import removed, and one it restores is no longer.
 //
 // ROW MOVED. A row whose base head and new head resolve to different
 // survivors, with no merge between them, was moved by the spine: MFC did not
@@ -299,27 +301,33 @@
 // it answers what the user was asked.
 //   * A conflict. keep: every part the rev lists as disputed stays at the app's
 //     side, even when a knowing edit has since brought it back to its base
-//     (keep does not decide the figure again), and what only MFC changed is
-//     still applied, to the copies the app left unchanged. take: MFC's side is
-//     made true on the copies MFC tracks (copies with a live base, and
+//     (keep does not decide the figure again). A part the rev found only MFC
+//     changed is applied where the app has not changed it since: decided again
+//     it is still MFC's change alone (MFC's transitions on the copies the app
+//     left unchanged, MFC's value on a field the app holds at its base). Every
+//     other part stays as the app has it: one MFC did not change, one the rev
+//     found alike or matched, and one the app has changed since. take: MFC's
+//     side is made true on the copies MFC tracks (copies with a live base, and
 //     placeholders): conversions first, arrivals first, lowest occ id; then
-//     removals, highest occ id; then restoring a copy that is out: a tracked
-//     one first, one whose base is the kind first, which can bring back a copy
-//     the app sold, then one an import removed (not tracked: its base is OUT),
-//     lowest occ id first; then new copies, each for the lowest-numbered row of
-//     S of the kind, whatever its Count, at that row's lowest unused ordinal. A
-//     copy with no base is never changed, but for one an import removed, and a
-//     disputed field takes MFC's value. per_copy: the final statuses listed and
-//     "app" or "mfc" per disputed field, exactly. After a keep, take or
-//     per_copy on a conflict, a take on a divergence, and the undo of a
-//     favor_app settlement, the bases REALIGN to MFC's side: the row bases
-//     become the export's rows, the field bases MFC's values, and per kind the
-//     live copies with the lowest occ ids, up to MFC's Count, get that base;
-//     other copies get base OUT, and MFC's Counts beyond the app's copies
-//     become placeholders. A keep on a divergence and the undo of an applied or
-//     favor_mfc change move no base: they acknowledge the app's side, which
-//     stays an app change against MFC's, so a later MFC change that meets it is
-//     a conflict. A dismiss and a held-edit card's answer move none either.
+//     removals, a copy with an origin before one without, then the highest occ
+//     id; then restoring a copy that is out: a tracked one first, one whose
+//     base is the kind first, which can bring back a copy the app sold, then
+//     one an import removed (not tracked: its base is OUT), lowest occ id
+//     first; then new copies, each for the lowest-numbered row of S of the
+//     kind, whatever its Count, at that row's lowest unused ordinal. A copy
+//     with no base is never changed, but for one an import removed, and a
+//     disputed field takes MFC's value. per_copy: what only MFC changed as keep
+//     applies it, then the final statuses listed and "app" or "mfc" per
+//     disputed field, exactly. After a keep, take or per_copy on a conflict, a
+//     take on a divergence, and the undo of a favor_app settlement, the bases
+//     REALIGN to MFC's side: the row bases become the export's rows, the field
+//     bases MFC's values, and per kind the live copies with the lowest occ ids,
+//     up to MFC's Count, get that base; other copies get base OUT, and MFC's
+//     Counts beyond the app's copies become placeholders. A keep on a
+//     divergence and the undo of an applied or favor_mfc change move no base:
+//     they acknowledge the app's side, which stays an app change against MFC's,
+//     so a later MFC change that meets it is a conflict. A dismiss and a
+//     held-edit card's answer move none either.
 //   * A divergence. keep ("MFC is behind") acknowledges it; take makes MFC's
 //     side true as for a conflict.
 //   * A held-edit card: keep or take, as HELD says.
@@ -329,20 +337,24 @@
 //     the undo is STALE); a copy the import created keeps its origin and head,
 //     and only its status is tombstoned. The undo of a favor_app settlement is
 //     the take its import would have written: the bases the settlement's
-//     realignment moved are put back as they stood before it, MFC's side is
-//     made true against them as take makes it, and the bases realign; like a
-//     take it records the acknowledgement, so the same export raises nothing
-//     again. An undo works against the export of the import that made the
-//     entry, whatever a later import found: that take, and the realignment
-//     after it, use that export's side, and an applied or favor_mfc undo
-//     acknowledges MFC's rows as that export stated them. dismiss: it goes.
+//     realignment moved are put back as they stood before it (any other base
+//     stays as later steps left it, so a copy MFC came to track since stays
+//     tracked), MFC's side is made true against them as take makes it, and the
+//     bases realign; like a take it records the acknowledgement, so the same
+//     export raises nothing again. An undo works against the export of the
+//     import that made the entry, whatever a later import found: that take, and
+//     the realignment after it, use that export's side, and an applied or
+//     favor_mfc undo acknowledges MFC's rows as that export stated them.
+//     dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
 //     found, both sides of each (for the counts, the transitions each side left
 //     unmatched, each of the app's naming its copy), so it carries the app's
 //     side of the disputed parts as that import found it. An import that finds
-//     MFC's side unchanged keeps it, whatever the app did meanwhile.
+//     MFC's side unchanged keeps it, whatever the app did meanwhile, and with
+//     it what the raising import found, part by part, which keep, per_copy and
+//     the item's keep preview follow.
 //   * A divergence: the raising import with both sides' values of the parts
 //     that differ. An import that finds the same values keeps it; other values,
 //     on either side, give a new rev.

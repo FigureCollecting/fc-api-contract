@@ -142,6 +142,7 @@ export interface Card {
   expFields: string;
   B: Counts;
   M: Counts;
+  /** What the import that raised the rev found, part by part (kept with the rev): keep and per_copy follow it. */
   comps: Record<string, unknown>;
   /** The import that raised this rev. */
   import: number;
@@ -201,8 +202,9 @@ export interface Change {
   writes: { key: string; value: Json }[];
   undo: { key: string; value: Json }[];
   exp: Map<string, Row>;
-  /** favor_app: the figure's bases as they stood before the settlement's realignment, which its undo puts back first. */
+  /** favor_app: the figure's bases as they stood before the settlement's realignment, and right after it: its undo puts back the ones the realignment moved. */
   pre?: Bases;
+  post?: Bases;
 }
 /** A figure's bases (server-internal): each copy's, each row's and each head's field bases. */
 export interface Bases {
@@ -442,6 +444,40 @@ export function restoreBases(st: Canon, S: string, b: Bases): void {
   for (const h of [...st.fieldBase.keys()]) if (st.surv(h) === S) st.fieldBase.delete(h);
   for (const [h, fs] of b.fields) st.fieldBase.set(h, new Map(fs));
 }
+/** Put back as `pre` has them the bases of S that differ between `pre` and `post` (what a realignment moved); the rest stay. */
+export function restoreMoved(st: Canon, pre: Bases, post: Bases, sw: Switches = {}): void {
+  const same = (a: unknown, b: unknown) => stable(a ?? null) === stable(b ?? null);
+  const pc = new Map(pre.copies);
+  const qc = new Map(post.copies);
+  for (const c of new Set([...pc.keys(), ...qc.keys()])) {
+    const a = pc.get(c);
+    if (same(a, qc.get(c))) continue;
+    if (a === undefined) st.copyBase.delete(c);
+    else st.copyBase.set(c, a);
+  }
+  const pr = new Map(pre.rows);
+  const qr = new Map(post.rows);
+  for (const id of new Set([...pr.keys(), ...qr.keys()])) {
+    const a = pr.get(id);
+    if (same(a, qr.get(id))) continue;
+    if (a === undefined) {
+      if (!sw.undoKeepsNewRowBases) st.rowBase.delete(id);
+    } else st.rowBase.set(id, { ...a, fields: { ...a.fields } });
+  }
+  const pf = new Map(pre.fields.map(([h, fs]) => [h, new Map(fs)]));
+  const qf = new Map(post.fields.map(([h, fs]) => [h, new Map(fs)]));
+  for (const h of new Set([...pf.keys(), ...qf.keys()])) {
+    const a = pf.get(h) ?? new Map<Field, Json>();
+    const b = qf.get(h) ?? new Map<Field, Json>();
+    for (const f of new Set([...a.keys(), ...b.keys()])) {
+      if (a.has(f) === b.has(f) && same(a.get(f), b.get(f))) continue;
+      const m = st.fieldBase.get(h) ?? new Map<Field, Json>();
+      if (a.has(f)) m.set(f, a.get(f)!);
+      else m.delete(f);
+      st.fieldBase.set(h, m);
+    }
+  }
+}
 function nextOrdinal(st: Canon, rid: string): number {
   const used = new Set<number>();
   for (const c of st.copies()) {
@@ -505,7 +541,7 @@ export function decide(st: Canon, S: string, exp: Map<string, Row>, sw: Switches
     for (const [c, , y] of matched) ops.push(['cbase', c, S, y]);
     const raKinds = kindsOf(RA.map((t) => [t[1], t[2]] as const));
     if (RM.length === 0) comps.counts = RA.length === 0 ? 'matched' : 'matched+app-only';
-    else if (RA.length > 0 && [...kindsOf(RM)].some((k) => raKinds.has(k))) {
+    else if (RA.length > 0 && [...kindsOf(RM)].some((k) => raKinds.has(k)) && !sw.countsConflictAsApply) {
       comps.counts = 'conflict';
       comps.counts_detail = { mfc_unmatched: RM, app_unmatched: RA };
     } else {
@@ -691,8 +727,8 @@ export function answerOps(
     for (const k of KINDS) {
       while (sur[k] > 0) {
         const c = L[k].reduce((best, c) => {
-          const a: [number, string] = [st.hasOrigin(c) ? 1 : 0, st.rank(c)];
-          const b: [number, string] = [st.hasOrigin(best) ? 1 : 0, st.rank(best)];
+          const a: [number, string] = [st.hasOrigin(c) && !sw.takeRemovesByIdOnly ? 1 : 0, st.rank(c)];
+          const b: [number, string] = [st.hasOrigin(best) && !sw.takeRemovesByIdOnly ? 1 : 0, st.rank(best)];
           return a[0] > b[0] || (a[0] === b[0] && a[1] > b[1]) ? c : best;
         });
         L[k].splice(L[k].indexOf(c), 1);
@@ -725,10 +761,25 @@ export function answerOps(
     }
     for (const f of FIELDS) if (d.comps[f] === 'apply' || d.comps[f] === 'conflict') fieldWrite(f);
   } else {
-    // what only MFC changed is still applied, to the copies the app left unchanged; a disputed part stays the app's
-    if (card.counts !== 'conflict' && d.comps.counts !== 'conflict') ops.push(...d.ops.filter((op) => ['status', 'create', 'irem_add', 'irem_del'].includes(op[0])));
+    // a disputed part stays the app's (per_copy: as it lists). A part the rev found only MFC changed is applied where
+    // the app has not changed it since: decided again, it is still MFC's change alone. Any other part stays as the app has it.
+    const byRev = (p: Part): boolean => (sw.keepRedecidesUndisputed ? card[p] !== 'conflict' : card[p] === 'apply');
+    const mfcOnly = (p: Part): boolean => byRev(p) && (d.comps[p] === 'apply' || (sw.keepByRevAlone === true && card[p] === 'apply'));
+    if (mfcOnly('counts')) {
+      // mutant keepByRevAlone: MFC's transitions on the copies the app left unchanged, though the app has changed the counts since
+      let dc = d;
+      if (d.comps.counts !== 'apply')
+        try {
+          dc = decide(st, S, exp, { ...sw, countsConflictAsApply: true });
+        } catch {
+          dc = d;
+        }
+      const kinds = sw.keepLeavesImportMark ? ['status', 'create'] : ['status', 'create', 'irem_add', 'irem_del'];
+      ops.push(...dc.ops.filter((op) => kinds.includes(op[0])));
+    }
     for (const [c, v] of Object.entries(copies)) ops.push(['status', c, v === 'removed' ? null : v]);
-    for (const f of FIELDS) if (card[f] === 'conflict' ? (fields[f] ?? 'app') === 'mfc' : d.comps[f] === 'apply') fieldWrite(f);
+    const fcard = sw.keepRedecidesFields || sw.perCopyRedecides ? d.comps : card;
+    for (const f of FIELDS) if (fcard[f] === 'conflict' ? (fields[f] ?? 'app') === 'mfc' : sw.keepRedecidesFields ? d.comps[f] === 'apply' : mfcOnly(f)) fieldWrite(f);
   }
   return ops;
 }
@@ -910,6 +961,35 @@ export interface Switches {
   tagUnitPerEdit?: boolean;
   /** A revision leaves out every facet of a copy its late edits write, not only the facets they write. */
   ownByCopy?: boolean;
+  // round 9, recheck 1
+  /** An import that keeps a conflict's rev refreshes what the item holds, so keep follows what that import found, not the rev. */
+  cardRefreshedAtImport?: boolean;
+  /** Round 9's first cut: keep decides again every part the rev does not list as disputed (one the app made MFC's change on, then undid, takes MFC's side). */
+  keepRedecidesUndisputed?: boolean;
+  /** keep applies what the rev found only MFC changed though the app has changed that part since (MFC's transitions on the copies left unchanged, MFC's field value over the app's). */
+  keepByRevAlone?: boolean;
+  /** Internal to keepByRevAlone: decide the counts as MFC's change alone where they conflict. */
+  countsConflictAsApply?: boolean;
+  /** keep and per_copy decide the disputed fields again (only the counts follow the rev). */
+  keepRedecidesFields?: boolean;
+  /** What keep applies of MFC's changes leaves a copy's import-removed mark as it was. */
+  keepLeavesImportMark?: boolean;
+  /** take removes by the highest occ id alone, not a copy with an origin first. */
+  takeRemovesByIdOnly?: boolean;
+  /** The undo of a favor_app settlement puts back every base of the figure as it stood before the realignment, not only the ones the realignment moved. */
+  undoRestoresAllBases?: boolean;
+  /** A favor_app change entry shows the take against the realigned bases as its undo list (the undo itself unchanged). */
+  favorShownOnRealigned?: boolean;
+  /** The undo of a favor_app settlement leaves the bases as its take leaves them, with no realignment. */
+  favorUndoNoRealign?: boolean;
+  /** The undo of a favor_app settlement takes as a divergence's take does: every field MFC settled that the app shows otherwise too. */
+  favorUndoTakeSettled?: boolean;
+  /** The card's keep preview decides the figure again (the answer itself follows the rev). */
+  previewRedecides?: boolean;
+  /** The undo of a favor_app settlement leaves the base the realignment gave a row new to that export. */
+  undoKeepsNewRowBases?: boolean;
+  /** per_copy takes its field sides only for the fields that conflict when decided again, not for those the rev lists as disputed. */
+  perCopyRedecides?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1404,7 +1484,7 @@ export class Server {
       return { occ: c, ...(s === null ? {} : { status: s }), tracked: st.baseKind(c, S) !== OUT };
     });
     const mfcRows = [...cf.exp.values()].sort((a, b) => byNum(a.id, b.id)).map((r) => ({ mfc_id: r.id, kind: r.kind, count: r.count }));
-    const keep = cf.kind === 'conflict' ? this.writesOf(st, S, answerOps(st, S, cf.exp, 'keep', this.sw, {}, {}, cf.comps)) : [];
+    const keep = cf.kind === 'conflict' ? this.writesOf(st, S, answerOps(st, S, cf.exp, 'keep', this.sw, {}, {}, this.sw.previewRedecides ? undefined : cf.comps)) : [];
     const takeOps = cf.kind === 'divergence' ? this.takeSettled(st, S, cf.exp) : answerOps(st, S, cf.exp, 'take', this.sw);
     const take = this.writesOf(st, S, takeOps);
     return JSON.parse(stable({ rev: cf.rev, kind: cf.kind, import: cf.import, counts, fields, copies, mfc_rows: mfcRows, preview: { keep, take } })) as Json;
@@ -1733,9 +1813,11 @@ export class Server {
         // that find MFC's side unchanged: a knowing edit, or a late edit that changes neither side, never re-revs it
         let rev = `I${I.n}:${stable({ M: d.M, exp: expFields, comps: d.comps })}`;
         let raised = I.n;
-        if (cf?.kind === 'conflict' && eq(cf.M, d.M) && cf.expFields === expFields) [rev, raised] = [cf.rev, cf.import];
+        let comps = d.comps;
+        // kept with the rev: what the raising import found (the parts keep and per_copy follow), not what this one finds
+        if (cf?.kind === 'conflict' && eq(cf.M, d.M) && cf.expFields === expFields) [rev, raised, comps] = [cf.rev, cf.import, this.sw.cardRefreshedAtImport ? d.comps : cf.comps];
         if (cf?.rev !== rev) stats.conflicts_raised++;
-        st.conflicts.set(S, { kind: 'conflict', rev, exp, expFields, B: d.B, M: d.M, comps: d.comps, import: raised, known });
+        st.conflicts.set(S, { kind: 'conflict', rev, exp, expFields, B: d.B, M: d.M, comps, import: raised, known });
         st.acks.delete(S);
         heldForUser = true;
         st.decisions.push([`import#${I.n}`, S, 'conflict']);
@@ -1748,10 +1830,12 @@ export class Server {
         const pre = basesOf(st, S);
         const takeNow = choice === 'keep' && !this.sw.favorUndoOnRealigned ? this.writesOf(st, S, answerOps(st, S, exp, 'take', this.sw)) : [];
         applyOps(st, realign(st, S, exp), I.version);
+        const post = basesOf(st, S);
         const { writes: w, undo } = this.diff(st, before);
         const kind = choice === 'keep' ? 'favor_app' : 'favor_mfc';
-        const shown = choice !== 'keep' ? undo : this.sw.favorUndoOnRealigned ? this.writesOf(st, S, this.takeSettled(st, S, exp)) : takeNow;
-        st.changes.set(S, { kind, rev: `C${this.sw.favorRevWithoutImport ? '' : I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp, ...(choice === 'keep' ? { pre } : {}) });
+        const onRealigned = this.sw.favorUndoOnRealigned || this.sw.favorShownOnRealigned;
+        const shown = choice !== 'keep' ? undo : onRealigned ? this.writesOf(st, S, this.takeSettled(st, S, exp)) : takeNow;
+        st.changes.set(S, { kind, rev: `C${this.sw.favorRevWithoutImport ? '' : I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp, ...(choice === 'keep' ? { pre, post } : {}) });
         st.conflicts.delete(S);
         this.acknowledge(st, S, exp, known, baseRows, choice === 'keep', I.policy);
         st.decisions.push([`import#${I.n}`, S, kind]);
@@ -1874,16 +1958,17 @@ export class Server {
     }
     if (R.choice !== 'undo') return;
     if (ch.kind === 'favor_app') {
-      // the take the import would have written: the bases put back as they stood before the settlement's realignment,
-      // MFC's side of the entry's export made true against them, the bases realigned, the acknowledgement recorded
+      // the take the import would have written: the bases the settlement's realignment moved put back as they stood
+      // before it, MFC's side of the entry's export made true against them, the bases realigned, the acknowledgement recorded
       const exp = this.sw.favorUndoAtLatestExport ? new Map([...baseRowsFor(st, S)].map(([id, b]) => [id, { id, ...b, fields: { ...b.fields } }])) : ch.exp;
       if (this.sw.favorUndoOnRealigned) applyOps(st, this.takeSettled(st, S, exp), R.version);
       else {
-        restoreBases(st, S, ch.pre!);
-        applyOps(st, answerOps(st, S, exp, 'take', this.sw), R.version);
+        if (this.sw.undoRestoresAllBases) restoreBases(st, S, ch.pre!);
+        else restoreMoved(st, ch.pre!, ch.post!, this.sw);
+        applyOps(st, this.sw.favorUndoTakeSettled ? this.takeSettled(st, S, exp) : answerOps(st, S, exp, 'take', this.sw), R.version);
       }
       const baseRows = baseRowsFor(st, S);
-      applyOps(st, realign(st, S, exp), R.version);
+      if (!this.sw.favorUndoNoRealign) applyOps(st, realign(st, S, exp), R.version);
       if (this.sw.favorUndoEndsAck) st.acks.delete(S);
       else this.acknowledge(st, S, exp, [...new Set([...exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, false, policy);
     } else {
