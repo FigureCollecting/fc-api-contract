@@ -18468,6 +18468,329 @@
     "changes": {},
     "align": {}
    }
+  },
+  {
+   "name": "The undo of an applied change acknowledges MFC's rows as that export stated them: a row it dropped is one at Count 0, so the align-MFC entry asks for it back",
+   "rule": "R3 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1b", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1b", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1b", "choice": "undo", "t": 610, "item": "change"},
+    {"op": "push", "dev": "T", "t": 611, "expect": [{"key": "res/mfc/H1b", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T"},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1b", "actions": [{"count": {"should": 1}, "mfc_id": "900", "status": {"should": "owned"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"}
+   ],
+   "expect": {
+    "facets": {"occ/o1/head": "H1", "occ/o1/origin": "1144#1", "occ/o1/status": "owned", "occ/p1/head": "H1b", "occ/p1/origin": "900#1", "occ/p1/status": "owned"},
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1b": [{"count": {"should": 1}, "mfc_id": "900", "status": {"should": "owned"}}]}
+   }
+  },
+  {
+   "name": "The undo of an applied change acknowledges MFC's rows as that export stated them, a row listed at Count 0",
+   "rule": "R3 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1b", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1b", "kind": "owned", "count": 0, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1b", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 1,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1b", "choice": "undo", "t": 610, "item": "change"},
+    {"op": "push", "dev": "T", "t": 611, "expect": [{"key": "res/mfc/H1b", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T"},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1b", "kind": "owned", "count": 0, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1b", "actions": [{"count": {"should": 1}, "mfc_id": "900", "status": {"should": "owned"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 2,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"}
+   ],
+   "expect": {
+    "facets": {"occ/o1/head": "H1", "occ/o1/origin": "1144#1", "occ/o1/status": "owned", "occ/p1/head": "H1b", "occ/p1/origin": "900#1", "occ/p1/status": "owned"},
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1b": [{"count": {"should": 1}, "mfc_id": "900", "status": {"should": "owned"}}]}
+   }
+  },
+  {
+   "name": "The undo of a favor_mfc change acknowledges MFC's rows as that export stated them: a row it dropped is one at Count 0, so the align-MFC entry asks for it back",
+   "rule": "R5 R8",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_MFC"}, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1b", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/y1/head", "value": "H1b", "t": 550},
+    {"op": "edit", "dev": "T", "key": "occ/y1/status", "value": "owned", "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "occ/y1/head", "outcome": "APPLIED"}, {"key": "occ/y1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1b", "kind": "favor_mfc", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1b", "choice": "undo", "t": 610, "item": "change"},
+    {"op": "push", "dev": "T", "t": 611, "expect": [{"key": "res/mfc/H1b", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T"},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1b", "actions": [{"count": {"should": 2}, "mfc_id": "900", "status": {"should": "owned"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1b",
+     "occ/p1/origin": "900#1",
+     "occ/p1/status": "owned",
+     "occ/y1/head": "H1b",
+     "occ/y1/status": "owned"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1b": [{"count": {"should": 2}, "mfc_id": "900", "status": {"should": "owned"}}]}
+   }
   }
  ]
 }

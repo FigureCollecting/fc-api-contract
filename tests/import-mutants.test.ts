@@ -208,6 +208,8 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'an export row\'s blank field kept apart from one it leaves out, so a blank score gives a conflict a new rev', sw: { rowsKeepBlankFields: true }, detector: 'review', mustInclude: 'A blank field value is no value' },
   { name: 'a conflict\'s MFC side leaves out its rows\' field values: the note', sw: { revIgnoresFields: true }, detector: 'review', mustInclude: 'A row\'s note is part of a conflict\'s MFC side' },
   { name: 'the same: the wishability', sw: { revIgnoresFields: true }, detector: 'review', mustInclude: 'A row\'s wishability is part of a conflict\'s MFC side' },
+  { name: 'the undo of an applied change acknowledges the row bases the figure has at the undo, not MFC\'s rows as that export stated them (a row it dropped is left out)', sw: { undoAckByBases: true }, detector: 'review', mustInclude: 'The undo of an applied change acknowledges MFC\'s rows as that export stated them' },
+  { name: 'the same: the undo of a favor_mfc change', sw: { undoAckByBases: true }, detector: 'review', mustInclude: 'The undo of a favor_mfc change acknowledges MFC\'s rows as that export stated them' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
