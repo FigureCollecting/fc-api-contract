@@ -8,8 +8,9 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       // Everything the package ships: the barrel plus the generated codecs the
       // round-trip tests drive. Measuring only hand-written code would report
-      // a near-vacuous 100% over a file of re-exports.
-      include: ['src/**/*.ts'],
+      // a near-vacuous 100% over a file of re-exports. The scripts that guard
+      // the contract (schema growth) are measured too.
+      include: ['src/**/*.ts', 'scripts/**/*.ts'],
       thresholds: {
         lines: 85,
         branches: 85,

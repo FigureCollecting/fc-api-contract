@@ -55,6 +55,11 @@ jobs:
         # immutable npm version exists.
         run: npm run breaking
 
+      - name: Schema growth (against the previous release tag)
+        # buf cannot see a payload schema. A published schema never gains a
+        # property (sync.proto rule 6); same baseline tag as the breaking check.
+        run: npm run schema-growth
+
       - name: Codegen drift — committed output must match the protos
         run: |
           # src/gen is committed so wire-type changes are reviewable in a diff.

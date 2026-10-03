@@ -14,10 +14,12 @@ published to GitHub Packages as `@figurecollecting/fc-api-contract`.
 
 The package ships a few **hand-written helpers**, and only for grammars that are part of the wire
 contract: the `version` token (`parseVersion`, `compareVersion`, `canonicalInstant`,
-`canonicalVersion`, and the `Hlc` that mints tokens) and the user-owned facet keys
-(`parseUserFacetKey`, `userFacetKey`). The coordinator and every client must order and validate
-these identically, so they live next to the protos with a shared test file,
-`golden/version-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
+`canonicalVersion`, and the `Hlc` that mints tokens) and the facet keys (`parseUserFacetKey`,
+`parseServerFacetKey`, `buildFacetKey` and one builder per family, `parseCollectionRef`, and the
+MFC import's `canonicalMfcId`, `mfcImportOccName` and `importOccIdFromMac`). The coordinator and
+every client must order and validate these identically, so they live next to the protos with
+shared test files, `golden/version-vectors.json`, `golden/key-vectors.json` and
+`golden/import-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
 
 ## The compatibility rule
 
@@ -37,6 +39,16 @@ So the breaking check here runs buf's strictest category, `FILE`, which adds `FI
 checks. (`WIRE_JSON` waves through a field or enum-value deletion once the number is reserved,
 which is exactly how a careful author retires one.) The rule above is not a convention anyone has
 to remember; CI enforces it.
+
+The payload JSON Schemas get the same treatment, because `buf` cannot see them: a published schema
+never gains a property (a new attribute is a new facet key, since every write replaces the whole
+payload). `scripts/schema-growth.ts` (`npm run schema-growth`, in the contract job and before every
+publish) compares each schema the previous `v*` tag published with the working tree: every keyword
+must be unchanged at every depth except the annotations (`title`, `description`, `$comment`,
+`examples`), which no validator reads, and `enum`, which may only grow. An `enum` gained where there
+was none narrows what the schema accepts, so it is flagged too. So no property, pattern property or
+subschema is added or removed, a closed object stays closed, and no type, bound, pattern or format
+changes. A schema is removed only by retiring it by name in the script's `RETIRED_SCHEMAS`.
 
 **The gate of record is the contract job on the PR**, where a break is cheap to fix. The publish
 workflow re-runs the same check as belt and braces, because a tag can be cut from any commit and
@@ -69,9 +81,13 @@ proto/coordinator/v1/import.proto    ImportMfcExport
 src/gen/                             generated TypeScript — COMMITTED, never hand-edited
 src/index.ts                         re-export barrel
 src/version.ts, src/hlc.ts           version grammar, comparator, HLC
-src/sync-vocabulary.ts               user-owned facet keys, holding states, REJECTED reason codes
+src/sync-vocabulary.ts               facet-key grammar and builders, occurrence statuses, REJECTED reason codes
 golden/version-vectors.json          version cases every implementation tests against
-schemas/                             JSON Schemas for the four user-owned facet payloads
+golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
+golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
+schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
+scripts/buf-breaking.sh              buf breaking against the previous v* tag
+scripts/schema-growth.ts             no published payload schema gains a property
 tests/                               codec round-trips and the invariants the comments claim
 ```
 
@@ -121,6 +137,30 @@ A grammar change passes `buf breaking`, so it is a semantic break buf cannot see
 `SyncService` consumer exists. The grammar is frozen from here: extend it only by a further
 fixed-width suffix, never by a separate field.
 
+## Facet keys and payloads
+
+`sync.proto` rule 6 is the key table. A user's collection is **per copy**: each copy is an
+occurrence (`occ/{occ}/head`, `/status`, `/collection`, `/disposal`, `/tag/{tag}`), a quantity is
+the count of live copies, figure-level fields and tags live under `uf/{head_id}/…`, and
+collections and tags have name facets (`coll/{kind}/{cid|default}/name`, `tag/{tag}/name`). The
+server owns `occ/{occ}/origin` and the import's items (`imp/{site}/figure|held|change|align/{head_id}`
+and the marker `imp/{site}/import`); a user answers an item with `res/{site}/{head_id}` and keeps the
+import's preferences in `pref/{site}/import`. **The server decides** (`import.proto` THE SERVER
+DECIDES): every pushed event carries the basis it was made on, a late edit is replayed where it
+belongs, a change only MFC made is applied and listed with its undo, and conflicts, divergences,
+held edits and what to change on MFC by hand come back as items the client shows right after the
+import, once it has pulled the import's transaction. A late edit another device has already reacted to is held, a copy's head,
+status, filing and disposal together, until the user keeps or drops it. Copies the import creates
+get occ ids keyed by a secret only the coordinator holds. Every payload schema is closed and stays closed:
+a new attribute is a new facet key, never a new property, because every write replaces the whole
+payload and an older writer would drop a property it does not know.
+
+A key change passes `buf breaking` too. **0.3.0 made one**: it retired 0.2.x's per-figure
+`holding/{head_id}/status|count` grain for per-copy occurrences (a Push of a `holding/*` key is now
+REJECTED `facet_key_not_user_owned`). It is safe only because no device had installed 0.2.x and no
+import had run; 0.2.x is deprecated. `golden/key-vectors.json` and the vocabulary tests guard the
+grammar: every valid key parses to exactly one family and builds back to itself.
+
 ## Two doctrines the messages encode
 
 **The coordinator passes the spine's answer through; it does not re-derive it.**
@@ -143,6 +183,7 @@ only signal a client gets that the spine changed how a verdict is derived.
 npm ci
 npm run lint        # buf lint (STANDARD, no exceptions)
 npm run breaking    # buf breaking vs the PREVIOUS v* tag; skips cleanly when there is none
+npm run schema-growth  # no payload schema that tag published changed beyond annotations and enum growth
 npm run generate    # regenerate src/gen from proto/ — commit the result
 npm run typecheck
 npm run build       # tsc -> dist/

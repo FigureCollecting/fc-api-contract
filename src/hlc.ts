@@ -131,10 +131,9 @@ export class Hlc {
    * Fold in a token seen from elsewhere (a Delta event) so the next tick
    * beats it. Never clamped: clamping here would mint an edit below its base.
    * Every version the server emits, in Delta or as `current`, is at most
-   * server_now + 5 minutes when emitted: a pushed one by the check order, the
-   * import by min(export_date, server_now), and every other server write,
-   * server-owned facets included, at most server_now. The Hlc folds tokens
-   * unclamped, so the bound depends on this.
+   * server_now + 5 minutes when emitted: a pushed one by the check order, and
+   * every server write, the import and server-owned facets included, at most
+   * server_now. The Hlc folds tokens unclamped, so the bound depends on this.
    */
   observe(version: string): void {
     const parsed = parseVersion(version);
