@@ -18791,6 +18791,140 @@
     "changes": {},
     "align": {"H1b": [{"count": {"should": 2}, "mfc_id": "900", "status": {"should": "owned"}}]}
    }
+  },
+  {
+   "name": "An import that drops a merged figure's only row frames the figure by its survivor: the phone's re-own made before that import is late and STALE",
+   "rule": "F1",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "900", "head": "H1b", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "redirect", "head": "H1b", "survivor": "H1", "t": 545},
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/p1/status", "value": "former", "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "occ/p1/status", "outcome": "APPLIED"}]},
+    {"op": "edit", "dev": "P", "key": "occ/p1/status", "value": "owned", "t": 560},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "push", "dev": "P", "t": 610, "expect": [{"key": "occ/p1/status", "outcome": "STALE"}]},
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"}
+   ],
+   "expect": {"facets": {"occ/p1/head": "H1b", "occ/p1/origin": "900#1"}, "figure": {}, "held": {}, "changes": {"H1": "applied"}, "align": {}}
+  },
+  {
+   "name": "An import that drops a merged figure's only row frames the figure by its survivor (pushed first): the phone's re-own stands, and that import removes p1 and lists it",
+   "rule": "F1",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "900", "head": "H1b", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "redirect", "head": "H1b", "survivor": "H1", "t": 545},
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/p1/status", "value": "former", "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "occ/p1/status", "outcome": "APPLIED"}]},
+    {"op": "edit", "dev": "P", "key": "occ/p1/status", "value": "owned", "t": 560},
+    {"op": "push", "dev": "P", "t": 561, "expect": [{"key": "occ/p1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "pull", "dev": "T"}
+   ],
+   "expect": {"facets": {"occ/p1/head": "H1b", "occ/p1/origin": "900#1"}, "figure": {}, "held": {}, "changes": {"H1": "applied"}, "align": {}}
   }
  ]
 }
