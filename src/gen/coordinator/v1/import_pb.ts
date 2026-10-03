@@ -347,8 +347,9 @@
 //     export raises nothing again. An undo works against the export of the
 //     import that made the entry, whatever a later import found: that take, and
 //     the realignment after it, use that export's side, and an applied or
-//     favor_mfc undo acknowledges MFC's rows as that export stated them.
-//     dismiss: it goes.
+//     favor_mfc undo acknowledges MFC's rows as that export stated them (each
+//     row base it lacked at Count 0, though the change's import dropped that
+//     base). dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it

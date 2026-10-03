@@ -204,6 +204,9 @@ export interface Change {
   writes: { key: string; value: Json }[];
   undo: { key: string; value: Json }[];
   exp: Map<string, Row>;
+  /** MFC's rows of the figure as the entry's import found them: its export's rows and the row bases of S that export lacked (THE MFC PROJECTION). */
+  known: readonly string[];
+  baseRows: Map<string, RowBase>;
   /** favor_app: the figure's bases as they stood before the settlement's realignment, and right after it: its undo puts back the ones the realignment moved. */
   pre?: Bases;
   post?: Bases;
@@ -427,6 +430,7 @@ export function applyOps(st: Canon, ops: readonly Op[], ver: Version): void {
 export function statedFields(f: Row['fields']): Row['fields'] {
   return Object.fromEntries(Object.entries(f).filter(([, v]) => v !== null)) as Row['fields'];
 }
+const copyRows = (m: Map<string, RowBase>) => new Map([...m].map(([id, b]) => [id, { ...b, fields: { ...b.fields } }]));
 export function rowsFor(st: Canon, S: string, rows: readonly Row[]): Map<string, Row> {
   return new Map(rows.filter((r) => st.surv(r.head) === S).map((r) => [r.id, r]));
 }
@@ -1012,6 +1016,8 @@ export interface Switches {
   frameAfterImport?: boolean;
   /** An export row's blank field (null) is kept as stated, apart from one it leaves out, so a conflict's rev tells them apart. */
   rowsKeepBlankFields?: boolean;
+  /** The undo of an applied or favor_mfc change acknowledges the export's rows and the row bases S has at the undo, not MFC's rows as that export stated them (a row it dropped is left out). */
+  undoAckByBases?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1867,7 +1873,7 @@ export class Server {
         const kind = choice === 'keep' ? 'favor_app' : 'favor_mfc';
         const onRealigned = this.sw.favorUndoOnRealigned || this.sw.favorShownOnRealigned;
         const shown = choice !== 'keep' ? undo : onRealigned ? this.writesOf(st, S, this.takeSettled(st, S, exp)) : takeNow;
-        st.changes.set(S, { kind, rev: `C${this.sw.favorRevWithoutImport ? '' : I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp, ...(choice === 'keep' ? { pre, post } : {}) });
+        st.changes.set(S, { kind, rev: `C${this.sw.favorRevWithoutImport ? '' : I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp, known, baseRows: copyRows(baseRows), ...(choice === 'keep' ? { pre, post } : {}) });
         st.conflicts.delete(S);
         this.acknowledge(st, S, exp, known, baseRows, choice === 'keep', I.policy);
         st.decisions.push([`import#${I.n}`, S, kind]);
@@ -1877,7 +1883,7 @@ export class Server {
         if (cf !== undefined && cf.kind !== 'divergence' && !this.sw.keepStaleItem) st.conflicts.delete(S);
         if (writes && baseRows.size > 0) {
           const { writes: w, undo } = this.diff(st, before);
-          st.changes.set(S, { kind: 'applied', rev: `C${this.sw.changeRevWithoutImport ? '' : I.n}:applied:${stable(w)}`, import: I.n, writes: w, undo, exp });
+          st.changes.set(S, { kind: 'applied', rev: `C${this.sw.changeRevWithoutImport ? '' : I.n}:applied:${stable(w)}`, import: I.n, writes: w, undo, exp, known, baseRows: copyRows(baseRows) });
         }
         this.diverge(st, S, exp, known, baseRows, I.n);
         st.decisions.push([`import#${I.n}`, S, d.status]);
@@ -2007,8 +2013,11 @@ export class Server {
       if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
       for (const u of ch.undo) st.set(u.key, u.value, R.version);
       if (this.sw.undoRealigns) applyOps(st, realign(st, S, ch.exp), R.version);
-      const baseRows = baseRowsFor(st, S);
-      this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
+      // MFC's rows as that export stated them: a row base it lacked is one at Count 0, though the settlement dropped it
+      if (this.sw.undoAckByBases) {
+        const baseRows = baseRowsFor(st, S);
+        this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
+      } else this.acknowledge(st, S, ch.exp, ch.known, ch.baseRows, true, policy);
     }
     st.changes.delete(S);
     R.accepted = true;
