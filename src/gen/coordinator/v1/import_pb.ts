@@ -352,10 +352,10 @@
 //     favor_mfc undo acknowledges MFC's rows as they stand at the undo
 //     (ACKNOWLEDGED): S's row bases, each as the last import that settled its
 //     row took it from MFC (a later import that settled S has moved them), so
-//     the next import of an unchanged export finds the rows it recorded. A row
-//     the change's import dropped has no row base, so it is none of MFC's rows,
-//     and a copy only it held is richness; a row that import listed at Count 0
-//     keeps its row base, and is one. dismiss: it goes.
+//     an import of the export that last settled S finds the rows it recorded.
+//     A row the change's import dropped has no row base, so it is none of MFC's
+//     rows, and a copy only it held is richness; a row that import listed at
+//     Count 0 keeps its row base, and is one. dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
