@@ -204,7 +204,7 @@ export interface Change {
   writes: { key: string; value: Json }[];
   undo: { key: string; value: Json }[];
   exp: Map<string, Row>;
-  /** MFC's rows of the figure as the entry's import found them: its export's rows and the row bases of S that export lacked (THE MFC PROJECTION). */
+  /** Mutant undoAckAtImport only: MFC's rows of the figure as the entry's import found them, its export's rows and the row bases of S that export lacked. */
   known: readonly string[];
   baseRows: Map<string, RowBase>;
   /** favor_app: the figure's bases as they stood before the settlement's realignment, and right after it: its undo puts back the ones the realignment moved. */
@@ -1016,8 +1016,11 @@ export interface Switches {
   frameAfterImport?: boolean;
   /** An export row's blank field (null) is kept as stated, apart from one it leaves out, so a conflict's rev tells them apart. */
   rowsKeepBlankFields?: boolean;
-  /** The undo of an applied or favor_mfc change acknowledges the export's rows and the row bases S has at the undo, not MFC's rows as that export stated them (a row it dropped is left out). */
-  undoAckByBases?: boolean;
+  // contract-8 close-out, fix round 1
+  /** The undo of an applied or favor_mfc change acknowledges MFC's rows as the change's import found them, a row base it dropped at Count 0, not S's row bases as they stand at the undo. */
+  undoAckAtImport?: boolean;
+  /** The same, with the change's export rows and the row bases S has at the undo: a row a later import dropped from Count 0 is still one of MFC's rows. */
+  undoAckExportRows?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -2013,11 +2016,12 @@ export class Server {
       if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
       for (const u of ch.undo) st.set(u.key, u.value, R.version);
       if (this.sw.undoRealigns) applyOps(st, realign(st, S, ch.exp), R.version);
-      // MFC's rows as that export stated them: a row base it lacked is one at Count 0, though the settlement dropped it
-      if (this.sw.undoAckByBases) {
-        const baseRows = baseRowsFor(st, S);
-        this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
-      } else this.acknowledge(st, S, ch.exp, ch.known, ch.baseRows, true, policy);
+      // MFC's rows as they stand at the undo (ACKNOWLEDGED): S's row bases, as the next import of an unchanged export
+      // finds them, so a row the change's import dropped is none of them
+      const baseRows = baseRowsFor(st, S);
+      if (this.sw.undoAckAtImport) this.acknowledge(st, S, ch.exp, ch.known, ch.baseRows, true, policy);
+      else if (this.sw.undoAckExportRows) this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
+      else this.acknowledge(st, S, new Map([...baseRows].map(([id, b]) => [id, { id, ...b, fields: { ...b.fields } }])), [...baseRows.keys()], baseRows, true, policy);
     }
     st.changes.delete(S);
     R.accepted = true;

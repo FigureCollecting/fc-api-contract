@@ -40,7 +40,9 @@
 // blank means 1; Count 0 states no copies, and the row still states its
 // figure values. Owned, Ordered and Wished map to the kinds owned, ordered
 // and wished. A row's figure values are uf/{head_id}/score ("N/10"), note
-// and wishability (1..5; 0 or blank is no value).
+// and wishability (1..5; 0 is no value). A blank figure value, empty or only
+// whitespace, is no value: the row states none for it, so a blank note is no
+// note, never an empty one.
 //
 // OCCURRENCE IDS. A copy the import creates at ordinal k gets
 //
@@ -346,10 +348,14 @@
 //     bases realign; like a take it records the acknowledgement, so the same
 //     export raises nothing again. An undo works against the export of the
 //     import that made the entry, whatever a later import found: that take, and
-//     the realignment after it, use that export's side, and an applied or
-//     favor_mfc undo acknowledges MFC's rows as that export stated them (each
-//     row base it lacked at Count 0, though the change's import dropped that
-//     base). dismiss: it goes.
+//     the realignment after it, use that export's side. An applied or
+//     favor_mfc undo acknowledges MFC's rows as they stand at the undo
+//     (ACKNOWLEDGED): S's row bases, each as the last import that settled its
+//     row took it from MFC (a later import that settled S has moved them), so
+//     the next import of an unchanged export finds the rows it recorded. A row
+//     the change's import dropped has no row base, so it is none of MFC's rows,
+//     and a copy only it held is richness; a row that import listed at Count 0
+//     keeps its row base, and is one. dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
