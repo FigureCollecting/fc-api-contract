@@ -348,21 +348,22 @@
 //     bases realign; like a take it records the acknowledgement, so the same
 //     export raises nothing again. An undo works against the export of the
 //     import that made the entry, whatever a later import found: that take, and
-//     the realignment after it, use that export's side. An applied or
-//     favor_mfc undo acknowledges MFC's rows as they stand at the undo
-//     (ACKNOWLEDGED): S's row bases, each as the last import that settled S, or
-//     the last answer that realigned its bases, took it from MFC (one after the
-//     change's import has moved them), so an import of the export they were
-//     last taken from finds the rows the undo recorded. A row is one of MFC's
-//     rows exactly when it has a row base at the undo: a row the change's
-//     import dropped is one again if a later import that settled S listed it,
-//     at any Count, and a row that import listed, even at Count 0, is none if a
-//     later import that settled S dropped it. A copy whose row (by its origin)
-//     has no row base is counted by THE ALIGN PLAN like any other: another row
-//     of S takes it where the plan allows, and it is richness where no row can.
-//     The undo is the user's choice to differ from MFC, so no align-MFC entry
-//     asks MFC to list that row again (Ross, 2026-10-05); a full discrepancy
-//     report still lists the copy (FULL DISCREPANCY REPORT). dismiss: it goes.
+//     the realignment after it, use that export's side. An applied or favor_mfc
+//     undo acknowledges MFC's rows as they stand at the undo (ACKNOWLEDGED):
+//     S's row bases, each as the last import that settled its row, or the last
+//     answer that realigned it, took it from MFC (one after the change's import
+//     has moved them), so an import of the export that last settled S, by an
+//     import or by such an answer, finds the rows the undo recorded. A row is
+//     one of MFC's rows exactly when it has a row base at the undo: a row the
+//     change's import dropped is one again if a later import that settled S
+//     listed it, at any Count, and a row that import listed, even at Count 0,
+//     is none if a later import that settled S dropped it. A copy whose row (by
+//     its origin) has no row base is counted by THE ALIGN PLAN like any other:
+//     another row of S takes it where the plan allows, and it is richness where
+//     no row can. The undo is the user's choice to differ from MFC, so no
+//     align-MFC entry asks MFC to list that row again (Ross, 2026-10-05); a
+//     full discrepancy report still lists the copy (FULL DISCREPANCY REPORT).
+//     dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it

@@ -2019,8 +2019,8 @@ export class Server {
       if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
       for (const u of ch.undo) st.set(u.key, u.value, R.version);
       if (this.sw.undoRealigns) applyOps(st, realign(st, S, ch.exp), R.version);
-      // MFC's rows as they stand at the undo (ACKNOWLEDGED): S's row bases, as an import of the export they were last taken
-      // from finds them, so a row with no row base at the undo is none of them
+      // MFC's rows as they stand at the undo (ACKNOWLEDGED): S's row bases, as an import of the export that last settled S
+      // finds them, so a row with no row base at the undo is none of them
       const baseRows = baseRowsFor(st, S);
       if (this.sw.undoAckAtImport) this.acknowledge(st, S, ch.exp, ch.known, ch.baseRows, true, policy);
       else if (this.sw.undoAckExportRows) this.acknowledge(st, S, ch.exp, [...new Set([...ch.exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, true, policy);
