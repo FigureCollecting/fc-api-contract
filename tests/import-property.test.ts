@@ -94,7 +94,12 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // (contract-8 close-out h1: picks 1 -> 6 and 16 -> 17, all FAVOR_APP settlements of the drop: their acknowledgement no longer
     // asks MFC to list the dropped row, so no device reacts to that entry and nothing is held; what still differs is a by-hand
     // sale of the highest live copy the device saw, equal to pushed-first with that copy taken by name)
-    const apart = { last: { runs: 3_947, picks: 6, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 }, middle: { runs: 3_914, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 } };
+    // (contract-8 close-out h2: same, sameCountsShown and differsShown pinned too, so a change that moves a script between
+    // them is seen; recheck h2 found 54 middle-drop scripts had left 'same' at h1 unseen, 32 of them FAVOR_MFC)
+    const apart = {
+      last: { runs: 3_947, same: 2_723, sameCountsShown: 361, differsShown: 846, picks: 6, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 },
+      middle: { runs: 3_914, same: 2_627, sameCountsShown: 421, differsShown: 836, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 },
+    };
     for (const drop of ['last', 'middle'] as const) {
       const t = crossImportWorld({ from: 1, to: 20_000, drop });
       const line =
@@ -104,7 +109,7 @@ describe('property: the offline path ends where the pushed-first path ends', () 
       console.log(line);
       if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
       expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
-      expect({ runs: t.runs, picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual(apart[drop]);
+      expect({ runs: t.runs, same: t.same, sameCountsShown: t.sameCountsShown, differsShown: t.differsShown, picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual(apart[drop]);
     }
   }, 600_000);
 
