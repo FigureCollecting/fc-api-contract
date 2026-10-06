@@ -166,16 +166,19 @@
 // THE MFC PROJECTION (R2). MFC keeps one entry per item id: one status (Owned,
 // Ordered or Wished), a Count, and the score, note and wishability. MFC's side
 // of a figure S is its MFC ROWS: the export's rows of S, and each row base of S
-// the export lacks, at Count 0, each with the field values it states. The app's
-// side, as MFC could state it, is what THE ALIGN PLAN (ALIGN-MFC) makes of those
-// rows for the app's live copies per kind and its displayed score, note and
+// the export lacks, at Count 0, each with the field values it states. An import
+// compares the two sides against the row bases as they stood before its
+// decision, so a row its export drops is there at Count 0; an acknowledgement
+// records MFC's rows once the bases have moved (ACKNOWLEDGED). The app's side,
+// as MFC could state it, is what THE ALIGN PLAN (ALIGN-MFC) makes of those rows
+// for the app's live copies per kind and its displayed score, note and
 // wishability. The two sides are compared part by part, the rows' kinds and
 // Counts and each field, and a part differs exactly when the plan would change
-// it on some row. What no row can take is APP-ONLY RICHNESS MFC cannot
-// express: a wished or ordered copy beside owned ones when no row is free for
-// its kind (a one-row figure, or merged rows all in use), former copies and
-// their dispositions, filings and tags. Richness never raises an item or an
-// align-MFC entry by itself.
+// it on some row. What no row can take is APP-ONLY RICHNESS MFC cannot express:
+// a wished or ordered copy beside owned ones when no row is free for its kind
+// (a one-row figure, or merged rows all in use), former copies and their
+// dispositions, filings and tags. Richness never raises an item or an align-MFC
+// entry by itself.
 //
 // WHAT AN IMPORT DOES WITH A DECISION. The user's preferences pref/{site}/import
 // (sync.proto rule 6) are read when the import starts.
@@ -357,13 +360,15 @@
 //     one of MFC's rows exactly when it has a row base at the undo: a row the
 //     change's import dropped is one again if a later import that settled S
 //     listed it, at any Count, and a row that import listed, even at Count 0,
-//     is none if a later import that settled S dropped it. A copy whose row (by
-//     its origin) has no row base is counted by THE ALIGN PLAN like any other:
-//     another row of S takes it where the plan allows, and it is richness where
-//     no row can. The undo is the user's choice to differ from MFC, so no
-//     align-MFC entry asks MFC to list that row again (Ross, 2026-10-05); a
-//     full discrepancy report still lists the copy (FULL DISCREPANCY REPORT).
-//     dismiss: it goes.
+//     is none if a later import that settled S dropped it. A copy the undo
+//     restores whose row (by its origin) has no row base is a copy kept against
+//     MFC's removal (A COPY KEPT AGAINST MFC'S REMOVAL). An undo answers the
+//     change entry alone: a divergence its import left pending stays beside the
+//     undo's align-MFC entry until an answer or an import ends it (an import
+//     that finds it acknowledged at its values does), and a conflict a later
+//     import raised stays pending beside that entry, which the conflict's
+//     answer replaces with its own acknowledgement and an import that keeps the
+//     conflict ends (ACKNOWLEDGED). dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
@@ -411,14 +416,36 @@
 // ACKNOWLEDGED (R4, R7). A keep on a conflict or a divergence, a per_copy
 // answer, an undo that restores the app's side, and a FAVOR_APP settlement
 // ACKNOWLEDGE the figure: the server records MFC's rows and, for each part of
-// the projection that differs, both sides' values, as they stand. A take on a
-// conflict or a divergence, a FAVOR_MFC settlement and the undo of a FAVOR_APP
-// settlement record them too, with no align-MFC entry, since the user took
-// MFC's side. An import raises nothing for a part acknowledged at its present
-// values, and records MFC's rows as it found them, so a partial catch-up on MFC
-// leaves the rest acknowledged. A part that comes to differ at other values, by
-// a new MFC change or a new app change, re-opens the figure (a new item, with a
-// new rev); an import that finds every part equal ends the acknowledgement.
+// the projection that differs, both sides' values, as they stand once the
+// answer or settlement has moved its bases: MFC's rows are then S's row bases,
+// which a realignment, or the import that raised or kept a divergence, made the
+// export's rows of S, so a row that export lacks is none of them (an applied or
+// favor_mfc undo, which moves no base, takes S's row bases at the undo: ITEMS
+// AND ANSWERS). A take on a conflict or a divergence, a FAVOR_MFC settlement
+// and the undo of a FAVOR_APP settlement record them too, with no align-MFC
+// entry, since the user took MFC's side. An import raises nothing for a part
+// acknowledged at its present values, and records MFC's rows as its decision
+// leaves them, the export's rows of S, so a partial catch-up on MFC leaves the
+// rest acknowledged. A part that comes to differ at other values, by a new MFC
+// change or a new app change, re-opens the figure (a new item, with a new rev);
+// an import that finds every part equal ends the acknowledgement, and so does
+// one that raises a conflict on S or keeps one.
+//
+// A COPY KEPT AGAINST MFC'S REMOVAL (Ross, 2026-10-05). When an export drops a
+// row (the user deleted the entry on MFC), the import presents the removal: it
+// removes and lists a copy of the row's kind that the app left unchanged (a
+// change entry, with its undo), or shows the app's side as a conflict or a
+// divergence. Keeping the copy there, by that undo, a keep or per_copy on that
+// item, or a FAVOR_APP settlement, is the user's choice to differ from MFC: the
+// dropped row is none of the MFC rows the acknowledgement records, so no
+// align-MFC entry asks MFC to list it again. THE ALIGN PLAN counts the kept
+// copy like any other live copy of its kind: another row of S takes it where
+// the plan allows (it grows a row of that kind, or takes into that kind a row
+// out of the collection, one at Count 0 or one the plan leaves with none), and
+// it is richness where no row can. An export that lists the row again, even at
+// Count 0, makes it one of MFC's rows again, and the next decision compares the
+// copy with it. A full discrepancy report lists the copy (FULL DISCREPANCY
+// REPORT).
 //
 // ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
 // truth"). For an acknowledged figure that has an MFC id, the server keeps an
@@ -462,11 +489,15 @@
 // FULL DISCREPANCY REPORT (Ross, 2026-10-05). 0.3.0 defines no report that
 // compares the whole collection with MFC's latest export on demand: the review
 // set shows only what is pending. A full discrepancy report, when the contract
-// adds one, MUST list as a difference every live copy brought back by the undo
-// of the change that removed it whose row (by its origin) MFC's latest export
-// lacks: that undo is the user's choice to differ from MFC (ITEMS AND
-// ANSWERS), so it raises no item and no align-MFC entry asks MFC to list the
-// row again, yet MFC does not hold the copy. Its goldens must pin such a copy.
+// adds one, MUST list as a difference every live copy MFC's latest export
+// cannot account for, whatever kept it (an undo, a keep, per_copy, a FAVOR_APP
+// settlement, an acknowledged or dismissed item, richness): per figure S and
+// kind, the app's live copies of that kind beyond the export's Counts of it on
+// S's rows, those whose row (by its origin) the export lacks or lists at Count
+// 0 first. So a copy kept against MFC's removal is listed until MFC counts it
+// (A COPY KEPT AGAINST MFC'S REMOVAL), and one MFC has come to count on another
+// row, as an align-MFC entry asked, is not. Its goldens must pin such a copy,
+// kept and then counted.
 //
 // FILING. Whenever the import upserts a copy's status to a kind its filing is
 // not of, it writes occ/{occ}/collection {"collection": "{status}/default"}

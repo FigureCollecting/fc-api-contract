@@ -1024,6 +1024,13 @@ export interface Switches {
   // contract-8 close-out, fix round 2
   /** The undo of an applied or favor_mfc change leaves out of MFC's rows a row its import dropped, even when a later import that settled the figure listed it again. */
   undoAckLeavesDropped?: boolean;
+  // contract-8 close-out h1
+  /** A realigning answer or settlement, and a keep on a divergence, acknowledge MFC's rows as they stood before the answer's own base moves: a row the export dropped at Count 0. */
+  ackBeforeRealign?: boolean;
+  /** An import that finds a figure acknowledged at its values records MFC's rows as it found them: a row the export dropped at Count 0. */
+  importAckRowsAsFound?: boolean;
+  /** The undo of an applied or favor_mfc change acknowledges a row with the kind the change's export stated, where that export lists it, not its row base's. */
+  undoAckKindFromExport?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1659,6 +1666,12 @@ export class Server {
   }
 
 
+  /** MFC's rows of S as they stand (ACKNOWLEDGED): S's row bases, which a settlement or a realignment makes the export's rows of S. */
+  private rowsNow(st: Canon, S: string): [string[], Map<string, RowBase>] {
+    const rows = baseRowsFor(st, S);
+    return [[...rows.keys()].sort(byNum), rows];
+  }
+
   private acknowledge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, align: boolean, policy: Policy): void {
     if (this.sw.noAck) return;
     const rows = this.mfcRows(exp, known, baseRows);
@@ -1729,7 +1742,7 @@ export class Server {
     if (ack !== undefined && (this.sw.wholeAck ? PARTS.every(acked) : differ.every(acked))) {
       // acknowledged at these values: MFC's rows as they now stand, the parts that still differ
       if (item?.kind === 'divergence') st.conflicts.delete(S);
-      ack.rows = rows;
+      ack.rows = this.sw.importAckRowsAsFound ? rows : rows.filter((r) => exp.has(r.id));
       return;
     }
     st.acks.delete(S);
@@ -1881,7 +1894,8 @@ export class Server {
         const shown = choice !== 'keep' ? undo : onRealigned ? this.writesOf(st, S, this.takeSettled(st, S, exp)) : takeNow;
         st.changes.set(S, { kind, rev: `C${this.sw.favorRevWithoutImport ? '' : I.n}:${kind}:${stable(w)}`, import: I.n, writes: w, undo: shown, exp, known, baseRows: copyRows(baseRows), ...(choice === 'keep' ? { pre, post } : {}) });
         st.conflicts.delete(S);
-        this.acknowledge(st, S, exp, known, baseRows, choice === 'keep', I.policy);
+        const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
+        this.acknowledge(st, S, exp, ackKnown, ackRows, choice === 'keep', I.policy);
         st.decisions.push([`import#${I.n}`, S, kind]);
       } else {
         const before = this.snapshot(st);
@@ -1965,7 +1979,8 @@ export class Server {
     const known = [...new Set([...cf.exp.keys(), ...baseRows.keys(), ...cf.known])].sort(byNum);
     if (cf.kind === 'divergence' && R.choice === 'keep') {
       st.conflicts.delete(S);
-      this.acknowledge(st, S, cf.exp, known, baseRows, true, policy);
+      const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
+      this.acknowledge(st, S, cf.exp, dk, dr, true, policy);
       R.accepted = true;
       return;
     }
@@ -1973,7 +1988,8 @@ export class Server {
     else if (R.choice === 'take') applyOps(st, this.takeSettled(st, S, cf.exp), R.version);
     applyOps(st, realign(st, S, cf.exp), R.version);
     st.conflicts.delete(S);
-    this.acknowledge(st, S, cf.exp, known, baseRows, R.choice !== 'take', policy);
+    const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
+    this.acknowledge(st, S, cf.exp, ackKnown, ackRows, R.choice !== 'take', policy);
     R.accepted = true;
   }
 
@@ -2014,7 +2030,10 @@ export class Server {
       const baseRows = baseRowsFor(st, S);
       if (!this.sw.favorUndoNoRealign) applyOps(st, realign(st, S, exp), R.version);
       if (this.sw.favorUndoEndsAck) st.acks.delete(S);
-      else this.acknowledge(st, S, exp, [...new Set([...exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows, false, policy);
+      else {
+        const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [[...new Set([...exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows] : this.rowsNow(st, S);
+        this.acknowledge(st, S, exp, ackKnown, ackRows, false, policy);
+      }
     } else {
       if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
       for (const u of ch.undo) st.set(u.key, u.value, R.version);
@@ -2027,7 +2046,8 @@ export class Server {
       else {
         const dropped = (id: string) => this.sw.undoAckLeavesDropped === true && ch.baseRows.has(id) && !ch.exp.has(id);
         const known = [...baseRows.keys()].filter((id) => !dropped(id));
-        this.acknowledge(st, S, new Map([...baseRows].map(([id, b]) => [id, { id, ...b, fields: { ...b.fields } }])), known, baseRows, true, policy);
+        const kind = (id: string, b: RowBase) => (this.sw.undoAckKindFromExport === true ? (ch.exp.get(id)?.kind ?? b.kind) : b.kind);
+        this.acknowledge(st, S, new Map([...baseRows].map(([id, b]) => [id, { id, ...b, kind: kind(id, b), fields: { ...b.fields } }])), known, baseRows, true, policy);
       }
     }
     st.changes.delete(S);
