@@ -1031,6 +1031,11 @@ export interface Switches {
   importAckRowsAsFound?: boolean;
   /** The undo of an applied or favor_mfc change acknowledges a row with the kind the change's export stated, where that export lists it, not its row base's. */
   undoAckKindFromExport?: boolean;
+  // contract-8 close-out h2
+  /** An import that finds a figure acknowledged at its values keeps the parts as it found them, a row its export dropped at Count 0, beside MFC's rows as its decision leaves them. */
+  importAckPartsAsFound?: boolean;
+  /** A keep on a divergence acknowledges S's row bases as MFC's rows, with the divergence's export values: a row base an answer since brought back is there at Count 0. */
+  divergenceKeepAckBases?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1672,15 +1677,20 @@ export class Server {
     return [[...rows.keys()].sort(byNum), rows];
   }
 
-  private acknowledge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, align: boolean, policy: Policy): void {
-    if (this.sw.noAck) return;
-    const rows = this.mfcRows(exp, known, baseRows);
+  /** The parts an acknowledgement records against MFC's rows `rows`: each part that differs, both sides' values. */
+  private ackParts(st: Canon, S: string, rows: readonly MfcRow[]): Partial<Record<Part, string>> {
     const ps = this.parts(st, S, rows);
     const parts: Partial<Record<Part, string>> = {};
     for (const p of PARTS) if (ps[p].mfc !== ps[p].app || this.sw.wholeAck) parts[p] = stable(ps[p]);
+    return parts;
+  }
+
+  private acknowledge(st: Canon, S: string, exp: Map<string, Row>, known: readonly string[], baseRows: Map<string, RowBase>, align: boolean, policy: Policy): void {
+    if (this.sw.noAck) return;
+    const rows = this.mfcRows(exp, known, baseRows);
     st.acks.set(S, {
       rows,
-      parts,
+      parts: this.ackParts(st, S, rows),
       align,
       ...(policy.disposition_list === undefined ? {} : { list: policy.disposition_list }),
       ...(this.sw.alignFromAck ? { appAt: this.appNow(st, S) } : {}),
@@ -1743,6 +1753,8 @@ export class Server {
       // acknowledged at these values: MFC's rows as they now stand, the parts that still differ
       if (item?.kind === 'divergence') st.conflicts.delete(S);
       ack.rows = this.sw.importAckRowsAsFound ? rows : rows.filter((r) => exp.has(r.id));
+      // and the parts as those rows leave them, so the next import of this export finds them acknowledged
+      if (!this.sw.importAckPartsAsFound) ack.parts = this.ackParts(st, S, ack.rows);
       return;
     }
     st.acks.delete(S);
@@ -1979,7 +1991,8 @@ export class Server {
     const known = [...new Set([...cf.exp.keys(), ...baseRows.keys(), ...cf.known])].sort(byNum);
     if (cf.kind === 'divergence' && R.choice === 'keep') {
       st.conflicts.delete(S);
-      const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
+      // MFC's rows: the export's rows of S as the divergence shows them, whatever an answer since did to the bases
+      const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.sw.divergenceKeepAckBases ? this.rowsNow(st, S) : [[...cf.exp.keys()].sort(byNum), baseRows];
       this.acknowledge(st, S, cf.exp, dk, dr, true, policy);
       R.accepted = true;
       return;
