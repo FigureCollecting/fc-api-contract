@@ -350,12 +350,19 @@
 //     import that made the entry, whatever a later import found: that take, and
 //     the realignment after it, use that export's side. An applied or
 //     favor_mfc undo acknowledges MFC's rows as they stand at the undo
-//     (ACKNOWLEDGED): S's row bases, each as the last import that settled its
-//     row took it from MFC (a later import that settled S has moved them), so
-//     an import of the export that last settled S finds the rows it recorded.
-//     A row the change's import dropped has no row base, so it is none of MFC's
-//     rows, and a copy only it held is richness; a row that import listed at
-//     Count 0 keeps its row base, and is one. dismiss: it goes.
+//     (ACKNOWLEDGED): S's row bases, each as the last import that settled S, or
+//     the last answer that realigned its bases, took it from MFC (one after the
+//     change's import has moved them), so an import of the export they were
+//     last taken from finds the rows the undo recorded. A row is one of MFC's
+//     rows exactly when it has a row base at the undo: a row the change's
+//     import dropped is one again if a later import that settled S listed it,
+//     at any Count, and a row that import listed, even at Count 0, is none if a
+//     later import that settled S dropped it. A copy whose row (by its origin)
+//     has no row base is counted by THE ALIGN PLAN like any other: another row
+//     of S takes it where the plan allows, and it is richness where no row can.
+//     The undo is the user's choice to differ from MFC, so no align-MFC entry
+//     asks MFC to list that row again (Ross, 2026-10-05); a full discrepancy
+//     report still lists the copy (FULL DISCREPANCY REPORT). dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
@@ -450,6 +457,15 @@
 // reacting to. What the user skips stays pending on every device and is
 // badged, and an answered or acknowledged item never recurs on an import of an
 // unchanged row.
+//
+// FULL DISCREPANCY REPORT (Ross, 2026-10-05). 0.3.0 defines no report that
+// compares the whole collection with MFC's latest export on demand: the review
+// set shows only what is pending. A full discrepancy report, when the contract
+// adds one, MUST list as a difference every live copy brought back by the undo
+// of the change that removed it whose row (by its origin) MFC's latest export
+// lacks: that undo is the user's choice to differ from MFC (ITEMS AND
+// ANSWERS), so it raises no item and no align-MFC entry asks MFC to list the
+// row again, yet MFC does not hold the copy. Its goldens must pin such a copy.
 //
 // FILING. Whenever the import upserts a copy's status to a kind its filing is
 // not of, it writes occ/{occ}/collection {"collection": "{status}/default"}
