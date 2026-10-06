@@ -216,6 +216,9 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'the same, on a lone figure before a later import lists that row on another figure: the entry stays, stale', sw: { undoAckAtImport: true }, detector: 'review', mustInclude: 'The undo of an applied change on a figure whose only row its import dropped, before a later import lists that row on another figure' },
   { name: 'the undo acknowledges its change\'s export rows with the row bases at the undo: a row a later import dropped from Count 0 is still one of MFC\'s rows', sw: { undoAckExportRows: true }, detector: 'review', mustInclude: 'The undo of an applied change after a later import dropped a row at Count 0 and wrote nothing' },
   { name: 'the same: a row base a later import moved is read as the change\'s export stated it, so the entry misstates MFC\'s Count', sw: { undoAckExportRows: true }, detector: 'review', mustInclude: 'The undo of an applied change after a later import moved the row bases' },
+  // contract-8 close-out, fix round 2: a row the change's import dropped is one of MFC's rows again once a later import that settled the figure lists it
+  { name: 'the undo leaves out of MFC\'s rows a row its import dropped, though a later import listed it again at Count 0: no align-MFC entry, then a divergence at the next import of that export', sw: { undoAckLeavesDropped: true }, detector: 'review', mustInclude: 'The undo of an applied change after a later import listed the dropped row again at Count 0' },
+  { name: 'the same, the later import listing it at Count 1 beside a copy re-added by hand', sw: { undoAckLeavesDropped: true }, detector: 'review', mustInclude: 'The undo of an applied change after a later import listed the dropped row again at Count 1, the app having re-added a copy by hand' },
 ];
 
 describe('mutants: every rule is load-bearing', () => {
