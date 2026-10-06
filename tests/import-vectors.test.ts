@@ -148,7 +148,11 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       /take removes a copy with an origin before one without/, /puts back only the bases its realignment moved, so a copy MFC came to track since/,
       /puts back only the bases its realignment moved, so a hand copy/, /lists as its undo the take its import would have written/,
       /The undo of a favor_app settlement realigns the bases/, /The undo of a favor_app settlement is take, not a divergence's take/,
-      /per_copy takes its field side for a field the rev lists as disputed/, /The undo of a favor_app settlement puts back a row's absence/])
+      /per_copy takes its field side for a field the rev lists as disputed/, /The undo of a favor_app settlement puts back a row's absence/,
+      // contract-8 close-out h1
+      /A keep on the conflict MFC's drop of a lone figure's only row raised/, /A keep on the conflict MFC's drop of a row raised, on a merged figure/,
+      /A take on the conflict MFC's drop of a row raised/, /A keep on the divergence an import raised when it dropped a row/,
+      /records MFC's rows as its decision leaves them/, /while a later import's conflict on the figure is pending/])
       expect(names.join('\n')).toMatch(topic);
     expect(names.join('\n')).not.toMatch(/mfc_only|mfc_change|HOLD/);
   });

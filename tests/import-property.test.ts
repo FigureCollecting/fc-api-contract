@@ -91,7 +91,10 @@ describe('property: the offline path ends where the pushed-first path ends', () 
 
   it('reactions across two imports, one import dropping the row: where the script\'s last (or middle) import states Count 0 it lacks the row instead (the user deleted the entry on MFC), so it decides and frames a figure it may write nothing to (F1)', () => {
     // the paths counted apart, each read (none is a loss), as in the world without the drop: pinned so that any change is seen
-    const apart = { last: { runs: 3_947, picks: 1, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 }, middle: { runs: 3_914, picks: 16, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 } };
+    // (contract-8 close-out h1: picks 1 -> 6 and 16 -> 17, all FAVOR_APP settlements of the drop: their acknowledgement no longer
+    // asks MFC to list the dropped row, so no device reacts to that entry and nothing is held; what still differs is a by-hand
+    // sale of the highest live copy the device saw, equal to pushed-first with that copy taken by name)
+    const apart = { last: { runs: 3_947, picks: 6, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 }, middle: { runs: 3_914, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 } };
     for (const drop of ['last', 'middle'] as const) {
       const t = crossImportWorld({ from: 1, to: 20_000, drop });
       const line =

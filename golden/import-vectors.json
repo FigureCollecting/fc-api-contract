@@ -20635,6 +20635,2085 @@
     "changes": {},
     "align": {"H1": [{"count": {"now": 2, "should": 1}, "mfc_id": "1144", "status": {"now": "owned", "should": "wished"}}]}
    }
+  },
+  {
+   "name": "A keep on the conflict MFC's drop of a lone figure's only row raised: MFC's rows as the keep's realignment leaves them lack that row, so no align-MFC entry asks MFC to list it again, before or after the next import of that export",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 625, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/p1/head": "H1", "occ/p1/origin": "900#1", "occ/p1/status": "wished", "occ/z1/head": "H1", "occ/z1/status": "wished"},
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "A FAVOR_APP settlement of the conflict MFC's drop of a lone figure's only row raised: no align-MFC entry asks MFC to list that row again, before or after the next import of that export",
+   "rule": "R5 R8",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP"}, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1", "kind": "favor_app", "writes": [], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 2,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/p1/head": "H1", "occ/p1/origin": "900#1", "occ/p1/status": "wished", "occ/z1/head": "H1", "occ/z1/status": "wished"},
+    "figure": {},
+    "held": {},
+    "changes": {"H1": "favor_app"},
+    "align": {}
+   }
+  },
+  {
+   "name": "A keep on the conflict MFC's drop of a row raised, on a merged figure: MFC's rows as the keep's realignment leaves them lack that row, so no align-MFC entry asks MFC to list it again, before or after the next import of that export",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 625, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/p1/status": "wished",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "wished"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "A FAVOR_APP settlement of the conflict MFC's drop of a row raised, on a merged figure: no align-MFC entry asks MFC to list that row again, before or after the next import of that export",
+   "rule": "R5 R8",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP"}, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1", "kind": "favor_app", "writes": [], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 2,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/p1/status": "wished",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "wished"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {"H1": "favor_app"},
+    "align": {}
+   }
+  },
+  {
+   "name": "A per_copy answer to the conflict MFC's drop of a row raised: the align-MFC entry asks only for the app's note on the row MFC still lists, and the next import of that export keeps it",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "edit", "dev": "T", "key": "uf/H1/note", "value": "mine", "t": 545},
+    {
+     "op": "push",
+     "dev": "T",
+     "t": 546,
+     "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}, {"key": "uf/H1/note", "outcome": "APPLIED"}]
+    },
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "per_copy", "t": 625, "item": "figure", "copies": {"p1": "wished", "z1": "wished"}},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "rev": "A:[{\"mfc_id\":\"1144\",\"note\":{\"should\":\"mine\"}}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "rev": "A:[{\"mfc_id\":\"1144\",\"note\":{\"should\":\"mine\"}}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/p1/status": "wished",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "wished",
+     "uf/H1/note": "mine"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1": [{"mfc_id": "1144", "note": {"should": "mine"}}]}
+   }
+  },
+  {
+   "name": "A take on the conflict MFC's drop of a row raised, the app holding a hand copy and a note: the acknowledgement records MFC's rows as the take's realignment leaves them, so the next import of that export raises no divergence",
+   "rule": "R4 R7",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "edit", "dev": "T", "key": "uf/H1/note", "value": "mine", "t": 545},
+    {
+     "op": "push",
+     "dev": "T",
+     "t": 546,
+     "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}, {"key": "uf/H1/note", "outcome": "APPLIED"}]
+    },
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "take", "t": 625, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "wished",
+     "uf/H1/note": "mine"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "A FAVOR_MFC settlement of the conflict MFC's drop of a row raised, the app holding a hand copy and a note: the next import of that export raises no divergence",
+   "rule": "R5 R7",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_MFC"}, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "edit", "dev": "T", "key": "uf/H1/note", "value": "mine", "t": 545},
+    {
+     "op": "push",
+     "dev": "T",
+     "t": 546,
+     "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}, {"key": "uf/H1/note", "outcome": "APPLIED"}]
+    },
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1", "kind": "favor_mfc", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 1,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "wished",
+     "uf/H1/note": "mine"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {"H1": "favor_mfc"},
+    "align": {}
+   }
+  },
+  {
+   "name": "The undo of a FAVOR_APP settlement of the conflict MFC's drop of a row raised: the acknowledgement records MFC's rows as the undo's realignment leaves them, so the next import of that export raises no divergence",
+   "rule": "R5 R7",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "pref/mfc/import", "value": {"import_policy": "FAVOR_APP"}, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "pref/mfc/import", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "wished", "t": 545},
+    {"op": "edit", "dev": "T", "key": "uf/H1/note", "value": "mine", "t": 545},
+    {
+     "op": "push",
+     "dev": "T",
+     "t": 546,
+     "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}, {"key": "uf/H1/note", "outcome": "APPLIED"}]
+    },
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [{"head": "H1", "kind": "favor_app", "writes": [], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "undo", "t": 625, "item": "change"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "wished",
+     "uf/H1/note": "mine"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "A keep on the divergence an import raised when it dropped a row of a merged figure: MFC's rows as they stand lack that row, so no align-MFC entry asks MFC to list it for the app's hand copy, before or after the next import",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "ordered", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "divergence", "items": [{"head": "H1", "answers": ["keep", "take"]}], "bulk": ["keep", "take"]}],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 1,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 1,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 625, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "ordered"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {"H1": "applied"},
+    "align": {}
+   }
+  },
+  {
+   "name": "A keep on the divergence an import raised when it dropped a lone figure's only row: no align-MFC entry asks MFC to list that row again; an export that lists the row again at Count 0 raises the divergence anew",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "ordered", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "divergence", "items": [{"head": "H1", "answers": ["keep", "take"]}], "bulk": ["keep", "take"]}],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 1,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 625, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/align/H1": null, "imp/mfc/figure/H1": null}}},
+    {
+     "op": "import",
+     "t": 690,
+     "rows": [{"id": "900", "head": "H1", "kind": "wished", "count": 0, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "divergence", "items": [{"head": "H1", "answers": ["keep", "take"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 1,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 2,
+       "conflicts_pending": 0,
+       "divergences_pending": 1,
+       "align_pending": 0,
+       "import_number": 4
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": null,
+       "imp/mfc/figure/H1": {
+        "copies": [{"occ": "p1", "tracked": false}, {"occ": "z1", "status": "ordered", "tracked": false}],
+        "counts": {"ordered": {"app": 1, "base": 0, "mfc": 0}, "owned": {"app": 0, "base": 0, "mfc": 0}, "wished": {"app": 0, "base": 0, "mfc": 0}},
+        "fields": {"note": {"status": "nochange"}, "score": {"status": "nochange"}, "wishability": {"status": "nochange"}},
+        "import": 4,
+        "kind": "divergence",
+        "mfc_rows": [{"count": 0, "kind": "wished", "mfc_id": "900"}],
+        "preview": {"keep": [], "take": []},
+        "rev": "D4:[[\"counts\",{\"app\":\"[[\\\"900\\\",\\\"ordered\\\",1]]\",\"mfc\":\"[]\"}]]"
+       }
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/p1/head": "H1", "occ/p1/origin": "900#1", "occ/z1/head": "H1", "occ/z1/status": "ordered"},
+    "figure": {"H1": "divergence"},
+    "held": {},
+    "changes": {"H1": "applied"},
+    "align": {}
+   }
+  },
+  {
+   "name": "An import that finds a figure acknowledged at its values while it drops a row at Count 0 records MFC's rows as its decision leaves them: a hand copy added after asks nothing of the dropped row",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "ordered", "count": 0, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "uf/H1/note", "value": "mine", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "uf/H1/note", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 570,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "ordered", "count": 0, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "divergence", "items": [{"head": "H1", "answers": ["keep", "take"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 2,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 2,
+       "conflicts_pending": 0,
+       "divergences_pending": 1,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 575, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 576, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "rev": "A:[{\"mfc_id\":\"1144\",\"note\":{\"should\":\"mine\"}}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 605},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "ordered", "t": 605},
+    {"op": "push", "dev": "T", "t": 606, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "rev": "A:[{\"mfc_id\":\"1144\",\"note\":{\"should\":\"mine\"}}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 4
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"mfc_id": "1144", "note": {"should": "mine"}}], "rev": "A:[{\"mfc_id\":\"1144\",\"note\":{\"should\":\"mine\"}}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/o1/head": "H1", "occ/o1/origin": "1144#1", "occ/o1/status": "owned", "occ/z1/head": "H1", "occ/z1/status": "ordered", "uf/H1/note": "mine"},
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1": [{"mfc_id": "1144", "note": {"should": "mine"}}]}
+   }
+  },
+  {
+   "name": "A keep on the conflict MFC's drop of a row raised, when another row of the figure has the kept copy's kind: that row takes the copy, so the align-MFC entry asks it for every copy, and the next import of that export keeps it",
+   "rule": "R4 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/z1/head", "value": "H1", "t": 545},
+    {"op": "edit", "dev": "T", "key": "occ/z1/status", "value": "owned", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/z1/head", "outcome": "APPLIED"}, {"key": "occ/z1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "keep", "t": 625, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"count": {"now": 1, "should": 3}, "mfc_id": "1144"}], "rev": "A:[{\"count\":{\"now\":1,\"should\":3},\"mfc_id\":\"1144\"}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"count": {"now": 1, "should": 3}, "mfc_id": "1144"}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"count": {"now": 1, "should": 3}, "mfc_id": "1144"}], "rev": "A:[{\"count\":{\"now\":1,\"should\":3},\"mfc_id\":\"1144\"}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/p1/status": "owned",
+     "occ/z1/head": "H1",
+     "occ/z1/status": "owned"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1": [{"count": {"now": 1, "should": 3}, "mfc_id": "1144"}]}
+   }
+  },
+  {
+   "name": "The undo of an applied change, a row its import dropped, after the app sold another row's only copy: the row the plan empties takes the restored copy's kind, so the align-MFC entry asks to change its status, beside the divergence that import left, which the next import ends",
+   "rule": "R3 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {"op": "edit", "dev": "T", "key": "occ/o1/status", "value": "former", "t": 545},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "occ/o1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "divergence", "items": [{"head": "H1", "answers": ["keep", "take"]}], "bulk": ["keep", "take"]}],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 1,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 4,
+       "conflicts_pending": 0,
+       "divergences_pending": 1,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "undo", "t": 625, "item": "change"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {
+        "actions": [{"mfc_id": "1144", "status": {"now": "owned", "should": "wished"}}],
+        "rev": "A:[{\"mfc_id\":\"1144\",\"status\":{\"now\":\"owned\",\"should\":\"wished\"}}]"
+       },
+       "imp/mfc/figure/H1": {
+        "copies": [{"occ": "o1", "status": "former", "tracked": true}, {"occ": "p1", "status": "wished", "tracked": false}],
+        "counts": {"ordered": {"app": 0, "base": 0, "mfc": 0}, "owned": {"app": 0, "base": 1, "mfc": 1}, "wished": {"app": 1, "base": 0, "mfc": 0}},
+        "fields": {"note": {"status": "nochange"}, "score": {"status": "nochange"}, "wishability": {"status": "nochange"}},
+        "import": 2,
+        "kind": "divergence",
+        "mfc_rows": [{"count": 1, "kind": "owned", "mfc_id": "1144"}],
+        "preview": {"keep": [], "take": [{"key": "occ/o1/status", "value": "owned"}]},
+        "rev": "D2:[[\"counts\",{\"app\":\"[]\",\"mfc\":\"[[\\\"1144\\\",\\\"owned\\\",1]]\"}]]"
+       }
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"mfc_id": "1144", "status": {"now": "owned", "should": "wished"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 1,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 2,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {
+        "actions": [{"mfc_id": "1144", "status": {"now": "owned", "should": "wished"}}],
+        "rev": "A:[{\"mfc_id\":\"1144\",\"status\":{\"now\":\"owned\",\"should\":\"wished\"}}]"
+       },
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/o1/head": "H1", "occ/o1/origin": "1144#1", "occ/o1/status": "former", "occ/p1/head": "H1", "occ/p1/origin": "900#1", "occ/p1/status": "wished"},
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1": [{"mfc_id": "1144", "status": {"now": "owned", "should": "wished"}}]}
+   }
+  },
+  {
+   "name": "The undo of an applied change, a row its import dropped, beside a row MFC lists at Count 0: that row takes the restored copy into the collection, so the align-MFC entry asks for it",
+   "rule": "R3 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [
+      {"id": "777", "head": "H1", "kind": "owned", "count": 0, "fields": {}},
+      {"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}},
+      {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}
+     ],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 3,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "777", "head": "H1", "kind": "owned", "count": 0, "fields": {}}, {"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 2,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "undo", "t": 625, "item": "change"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {
+        "actions": [{"count": {"should": 1}, "mfc_id": "777", "status": {"should": "wished"}}],
+        "rev": "A:[{\"count\":{\"should\":1},\"mfc_id\":\"777\",\"status\":{\"should\":\"wished\"}}]"
+       },
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "777", "head": "H1", "kind": "owned", "count": 0, "fields": {}}, {"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"count": {"should": 1}, "mfc_id": "777", "status": {"should": "wished"}}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 2,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 3
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {
+        "actions": [{"count": {"should": 1}, "mfc_id": "777", "status": {"should": "wished"}}],
+        "rev": "A:[{\"count\":{\"should\":1},\"mfc_id\":\"777\",\"status\":{\"should\":\"wished\"}}]"
+       },
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/o1/head": "H1", "occ/o1/origin": "1144#1", "occ/o1/status": "owned", "occ/p1/head": "H1", "occ/p1/origin": "900#1", "occ/p1/status": "wished"},
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1": [{"count": {"should": 1}, "mfc_id": "777", "status": {"should": "wished"}}]}
+   }
+  },
+  {
+   "name": "The undo of an applied change while a later import's conflict on the figure is pending: its align-MFC entry shows beside the conflict, and the next import, which keeps the conflict, ends the acknowledgement and the entry",
+   "rule": "R3 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [{"head": "H1", "kind": "applied", "writes": [{"key": "occ/p1/status", "value": null}], "answers": ["undo", "dismiss"]}],
+      "counters": {
+       "added": 0,
+       "moved": 1,
+       "unchanged": 0,
+       "removed": 1,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 1,
+       "conflicts_raised": 0,
+       "facets_written": 3,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "edit", "dev": "T", "key": "occ/o1/status", "value": "former", "t": 605},
+    {"op": "push", "dev": "T", "t": 606, "expect": [{"key": "occ/o1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 620,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 1,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "undo", "t": 625, "item": "change"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {
+        "actions": [{"mfc_id": "1144", "status": {"now": "owned", "should": "wished"}}],
+        "rev": "A:[{\"mfc_id\":\"1144\",\"status\":{\"now\":\"owned\",\"should\":\"wished\"}}]"
+       },
+       "imp/mfc/figure/H1": {
+        "copies": [{"occ": "o1", "status": "former", "tracked": true}, {"occ": "p1", "status": "wished", "tracked": false}],
+        "counts": {"ordered": {"app": 0, "base": 0, "mfc": 0}, "owned": {"app": 0, "base": 1, "mfc": 2}, "wished": {"app": 1, "base": 0, "mfc": 0}},
+        "fields": {"note": {"status": "nochange"}, "score": {"status": "nochange"}, "wishability": {"status": "nochange"}},
+        "import": 3,
+        "kind": "conflict",
+        "mfc_rows": [{"count": 2, "kind": "owned", "mfc_id": "1144"}],
+        "preview": {
+         "keep": [],
+         "take": [
+          {"key": "occ/o1/status", "value": "owned"},
+          {"key": "occ/o2/head", "value": "H1"},
+          {"key": "occ/o2/origin", "value": "1144#2"},
+          {"key": "occ/o2/status", "value": "owned"}
+         ]
+        },
+        "rev": "I3:{\"M\":{\"ordered\":0,\"owned\":2,\"wished\":0},\"comps\":{\"counts\":\"conflict\",\"counts_detail\":{\"app_unmatched\":[[\"o1\",\"owned\",\"out\"]],\"mfc_unmatched\":[[\"out\",\"owned\"]]},\"note\":\"nochange\",\"score\":\"nochange\",\"wishability\":\"nochange\"},\"exp\":\"{\\\"1144\\\":{}}\"}"
+       }
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 1,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 2,
+       "conflicts_pending": 1,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 4
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": null,
+       "imp/mfc/figure/H1": {
+        "copies": [{"occ": "o1", "status": "former", "tracked": true}, {"occ": "p1", "status": "wished", "tracked": false}],
+        "counts": {"ordered": {"app": 0, "base": 0, "mfc": 0}, "owned": {"app": 0, "base": 1, "mfc": 2}, "wished": {"app": 1, "base": 0, "mfc": 0}},
+        "fields": {"note": {"status": "nochange"}, "score": {"status": "nochange"}, "wishability": {"status": "nochange"}},
+        "import": 3,
+        "kind": "conflict",
+        "mfc_rows": [{"count": 2, "kind": "owned", "mfc_id": "1144"}],
+        "preview": {
+         "keep": [],
+         "take": [
+          {"key": "occ/o1/status", "value": "owned"},
+          {"key": "occ/o2/head", "value": "H1"},
+          {"key": "occ/o2/origin", "value": "1144#2"},
+          {"key": "occ/o2/status", "value": "owned"}
+         ]
+        },
+        "rev": "I3:{\"M\":{\"ordered\":0,\"owned\":2,\"wished\":0},\"comps\":{\"counts\":\"conflict\",\"counts_detail\":{\"app_unmatched\":[[\"o1\",\"owned\",\"out\"]],\"mfc_unmatched\":[[\"out\",\"owned\"]]},\"note\":\"nochange\",\"score\":\"nochange\",\"wishability\":\"nochange\"},\"exp\":\"{\\\"1144\\\":{}}\"}"
+       }
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {"occ/o1/head": "H1", "occ/o1/origin": "1144#1", "occ/o1/status": "former", "occ/p1/head": "H1", "occ/p1/origin": "900#1", "occ/p1/status": "wished"},
+    "figure": {"H1": "conflict"},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "The undo of an applied change after a later import moved a row's kind base the app already held: the acknowledgement records the row with that kind, so the align-MFC entry asks only for the Count",
+   "rule": "R3 R8",
+   "steps": [
+    {
+     "op": "import",
+     "t": 540,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}, {"id": "900", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 2,
+       "moved": 0,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 2,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 7,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 1
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"},
+    {
+     "op": "import",
+     "t": 600,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}, {"id": "900", "head": "H1", "kind": "owned", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [
+       {
+        "head": "H1",
+        "kind": "applied",
+        "writes": [{"key": "occ/o2/head", "value": "H1"}, {"key": "occ/o2/origin", "value": "1144#2"}, {"key": "occ/o2/status", "value": "owned"}],
+        "answers": ["undo", "dismiss"]
+       }
+      ],
+      "counters": {
+       "added": 0,
+       "moved": 2,
+       "unchanged": 0,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 1,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 5,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 2
+      }
+     }
+    },
+    {"op": "edit", "dev": "T", "key": "occ/p1/status", "value": "wished", "t": 605},
+    {"op": "push", "dev": "T", "t": 606, "expect": [{"key": "occ/p1/status", "outcome": "APPLIED"}]},
+    {
+     "op": "import",
+     "t": 620,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 2,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 0,
+       "import_number": 3
+      }
+     }
+    },
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "undo", "t": 625, "item": "change"},
+    {"op": "push", "dev": "T", "t": 626, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"count": {"now": 2, "should": 1}, "mfc_id": "1144"}], "rev": "A:[{\"count\":{\"now\":2,\"should\":1},\"mfc_id\":\"1144\"}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {
+     "op": "import",
+     "t": 660,
+     "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 2, "fields": {}}, {"id": "900", "head": "H1", "kind": "wished", "count": 1, "fields": {}}],
+     "by": "T",
+     "expect": {
+      "review": [
+       {
+        "kind": "align_mfc",
+        "items": [{"head": "H1", "actions": [{"count": {"now": 2, "should": 1}, "mfc_id": "1144"}], "answers": ["dismiss"]}],
+        "bulk": ["dismiss"]
+       }
+      ],
+      "applied": [],
+      "counters": {
+       "added": 0,
+       "moved": 0,
+       "unchanged": 2,
+       "removed": 0,
+       "kept_newer": 0,
+       "occurrences_added": 0,
+       "occurrences_status_changed": 0,
+       "occurrences_removed": 0,
+       "conflicts_raised": 0,
+       "facets_written": 1,
+       "conflicts_pending": 0,
+       "divergences_pending": 0,
+       "align_pending": 1,
+       "import_number": 4
+      }
+     }
+    },
+    {
+     "op": "pull",
+     "dev": "T",
+     "expect": {
+      "shows": {
+       "imp/mfc/align/H1": {"actions": [{"count": {"now": 2, "should": 1}, "mfc_id": "1144"}], "rev": "A:[{\"count\":{\"now\":2,\"should\":1},\"mfc_id\":\"1144\"}]"},
+       "imp/mfc/figure/H1": null
+      }
+     }
+    },
+    {"op": "pull", "dev": "P"}
+   ],
+   "expect": {
+    "facets": {
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "occ/o2/head": "H1",
+     "occ/o2/origin": "1144#2",
+     "occ/p1/head": "H1",
+     "occ/p1/origin": "900#1",
+     "occ/p1/status": "wished"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {"H1": [{"count": {"now": 2, "should": 1}, "mfc_id": "1144"}]}
+   }
   }
  ]
 }
