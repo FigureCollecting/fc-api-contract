@@ -351,24 +351,29 @@
 //     bases realign; like a take it records the acknowledgement, so the same
 //     export raises nothing again. An undo works against the export of the
 //     import that made the entry, whatever a later import found: that take, and
-//     the realignment after it, use that export's side. An applied or favor_mfc
-//     undo acknowledges MFC's rows as they stand at the undo (ACKNOWLEDGED):
-//     S's row bases, each as the last import that settled its row, or the last
-//     answer that realigned it, took it from MFC (one after the change's import
-//     has moved them), so an import of the export that last settled S, by an
-//     import or by such an answer, finds the rows the undo recorded. A row is
-//     one of MFC's rows exactly when it has a row base at the undo: a row the
-//     change's import dropped is one again if a later import that settled S
-//     listed it, at any Count, and a row that import listed, even at Count 0,
-//     is none if a later import that settled S dropped it. A copy the undo
-//     restores whose row (by its origin) has no row base is a copy kept against
-//     MFC's removal (A COPY KEPT AGAINST MFC'S REMOVAL). An undo answers the
-//     change entry alone: a divergence its import left pending stays beside the
-//     undo's align-MFC entry until an answer or an import ends it (an import
-//     that finds it acknowledged at its values does), and a conflict a later
-//     import raised stays pending beside that entry, which the conflict's
-//     answer replaces with its own acknowledgement and an import that keeps the
-//     conflict ends (ACKNOWLEDGED). dismiss: it goes.
+//     the realignment after it, use that export's side. A divergence a later
+//     import left pending on S compared the sides before that take, against the
+//     bases that import left, so the undo ends it (an answer to it is then
+//     STALE), and the next import compares again; a conflict a later import
+//     raised stays pending, and its answer realigns the bases to its own
+//     export. An applied or favor_mfc undo acknowledges MFC's rows as they
+//     stand at the undo (ACKNOWLEDGED): S's row bases, each as the last import
+//     that settled its row, or the last answer that realigned it, took it from
+//     MFC (one after the change's import has moved them), so an import of the
+//     export that last settled S, by an import or by such an answer, finds the
+//     rows the undo recorded. A row is one of MFC's rows exactly when it has a
+//     row base at the undo: a row the change's import dropped is one again if a
+//     later import that settled S listed it, at any Count, and a row that
+//     import listed, even at Count 0, is none if a later import that settled S
+//     dropped it. A copy the undo restores whose row (by its origin) has no row
+//     base is a copy kept against MFC's removal (A COPY KEPT AGAINST MFC'S
+//     REMOVAL). Such an undo answers the change entry alone: a divergence its
+//     import left pending stays beside the undo's align-MFC entry until an
+//     answer or an import ends it (an import that finds it acknowledged at its
+//     values does), and a conflict a later import raised stays pending beside
+//     that entry, which the conflict's answer replaces with its own
+//     acknowledgement and an import that keeps the conflict ends
+//     (ACKNOWLEDGED). dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
 //   * A conflict: the raising import with MFC's side and the disputed parts it
@@ -397,12 +402,13 @@
 // its replay changes what the raising import found. An item ends by an answer
 // naming it and its rev, when a later import finds MFC back at the base or the
 // two sides agreeing, when a knowing edit makes the sides of a conflict agree,
-// or at a spine merge (WHAT AN IMPORT DOES). The sides of a conflict agree
-// when, decided again against the export that raised it, every part of the
-// figure is one MFC did not change or one the app now holds at MFC's value (for
-// the counts, as many live copies of each kind as MFC's Counts). The item then
-// ends and nothing else happens: nothing is written, no base moves, and the
-// next import decides the figure. A knowing edit that leaves the sides
+// when the undo of an older FAVOR_APP settlement ends a divergence (ITEMS AND
+// ANSWERS), or at a spine merge (WHAT AN IMPORT DOES). The sides of a conflict
+// agree when, decided again against the export that raised it, every part of
+// the figure is one MFC did not change or one the app now holds at MFC's value
+// (for the counts, as many live copies of each kind as MFC's Counts). The item
+// then ends and nothing else happens: nothing is written, no base moves, and
+// the next import decides the figure. A knowing edit that leaves the sides
 // differing leaves the conflict standing, and a late edit leaves it to the
 // import it is replayed before. A replay re-derives items like the rest of S: a
 // late edit replayed before the import that raised an item can withdraw the
@@ -417,25 +423,25 @@
 // answer, an undo that restores the app's side, and a FAVOR_APP settlement
 // ACKNOWLEDGE the figure: the server records MFC's rows and, for each part of
 // the projection that differs, both sides' values, as they stand once the
-// answer or settlement has moved its bases. MFC's rows are then the export's
-// rows of S, so a row that export lacks is none of them: after a realignment,
-// S's row bases, which it made that export's rows; for a keep on a divergence,
-// which moves no base, the rows of the last import that raised or kept the
-// divergence, even when an answer since has moved the bases (the undo of an
-// older FAVOR_APP settlement realigns them to its own export). An applied or
-// favor_mfc undo, which moves no base either, takes S's row bases at the undo
-// (ITEMS AND ANSWERS). A take on a conflict or a divergence, a FAVOR_MFC
-// settlement and the undo of a FAVOR_APP settlement record them too, with no
-// align-MFC entry, since the user took MFC's side. An import raises nothing for
-// a part acknowledged at its present values, and records again, as its decision
-// leaves them, MFC's rows (the export's rows of S) and each part that differs
-// against them, including one that differs only because a row the export
-// dropped is gone; so the next import of that export, nothing changed
-// meanwhile, finds every part that differs acknowledged, and a partial catch-up
-// on MFC leaves the rest acknowledged. A part that comes to differ at other
-// values, by a new MFC change or a new app change, re-opens the figure (a new
-// item, with a new rev); an import that finds every part equal ends the
-// acknowledgement, and so does one that raises a conflict on S or keeps one.
+// answer or settlement has moved its bases. MFC's rows are then S's row bases,
+// which a realignment, or the import that raised or kept a divergence, made the
+// export's rows of S, so a row that export lacks is none of them; while a
+// divergence is pending, only an answer that ends it moves those bases (a take
+// on it, or the undo of an older FAVOR_APP settlement, which realigns them to
+// its own export: ITEMS AND ANSWERS). An applied or favor_mfc undo, which moves
+// no base, takes S's row bases at the undo (ITEMS AND ANSWERS). A take on a
+// conflict or a divergence, a FAVOR_MFC settlement and the undo of a FAVOR_APP
+// settlement record them too, with no align-MFC entry, since the user took
+// MFC's side. An import raises nothing for a part acknowledged at its present
+// values, and records again, as its decision leaves them, MFC's rows (the
+// export's rows of S) and each part that differs against them, including one
+// that differs only because a row the export dropped is gone; so the next
+// import of that export, nothing changed meanwhile, finds every part that
+// differs acknowledged, and a partial catch-up on MFC leaves the rest
+// acknowledged. A part that comes to differ at other values, by a new MFC
+// change or a new app change, re-opens the figure (a new item, with a new rev);
+// an import that finds every part equal ends the acknowledgement, and so does
+// one that raises a conflict on S or keeps one.
 //
 // A COPY KEPT AGAINST MFC'S REMOVAL (Ross, 2026-10-05). When an export drops a
 // row (the user deleted the entry on MFC), the import presents the removal: it

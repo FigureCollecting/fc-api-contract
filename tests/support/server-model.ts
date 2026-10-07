@@ -1034,8 +1034,8 @@ export interface Switches {
   // contract-8 close-out h2
   /** An import that finds a figure acknowledged at its values keeps the parts as it found them, a row its export dropped at Count 0, beside MFC's rows as its decision leaves them. */
   importAckPartsAsFound?: boolean;
-  /** A keep on a divergence acknowledges S's row bases as MFC's rows, with the divergence's export values: a row base an answer since brought back is there at Count 0. */
-  divergenceKeepAckBases?: boolean;
+  /** The undo of a FAVOR_APP settlement leaves pending a divergence a later import raised, compared before the undo's take and realignment. */
+  favorUndoKeepsDivergence?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1991,8 +1991,9 @@ export class Server {
     const known = [...new Set([...cf.exp.keys(), ...baseRows.keys(), ...cf.known])].sort(byNum);
     if (cf.kind === 'divergence' && R.choice === 'keep') {
       st.conflicts.delete(S);
-      // MFC's rows: the export's rows of S as the divergence shows them, whatever an answer since did to the bases
-      const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.sw.divergenceKeepAckBases ? this.rowsNow(st, S) : [[...cf.exp.keys()].sort(byNum), baseRows];
+      // MFC's rows: S's row bases, as the import that raised or kept the divergence left them (an answer that would move
+      // them meanwhile, the undo of an older FAVOR_APP settlement, ends the divergence)
+      const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
       this.acknowledge(st, S, cf.exp, dk, dr, true, policy);
       R.accepted = true;
       return;
@@ -2042,6 +2043,9 @@ export class Server {
       }
       const baseRows = baseRowsFor(st, S);
       if (!this.sw.favorUndoNoRealign) applyOps(st, realign(st, S, exp), R.version);
+      // a divergence a later import raised compared the sides before this take, against bases this realignment moved: it
+      // ends, and the next import compares again
+      if (!this.sw.favorUndoKeepsDivergence && st.conflicts.get(S)?.kind === 'divergence') st.conflicts.delete(S);
       if (this.sw.favorUndoEndsAck) st.acks.delete(S);
       else {
         const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [[...new Set([...exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows] : this.rowsNow(st, S);
