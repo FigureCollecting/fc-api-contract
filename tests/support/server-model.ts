@@ -1036,6 +1036,13 @@ export interface Switches {
   importAckPartsAsFound?: boolean;
   /** The undo of a FAVOR_APP settlement leaves pending a divergence a later import raised, compared before the undo's take and realignment. */
   favorUndoKeepsDivergence?: boolean;
+  // contract-8 close-out i1
+  /** The undo of a FAVOR_APP settlement that ends a divergence a later import raised acknowledges, as a take does, each part its take leaves differing: the next import of that export raises none of them. */
+  favorUndoAcksEndedDivergence?: boolean;
+  /** An import that finds a figure acknowledged merges the parts it finds into those recorded: a part it finds equal stays acknowledged at its old values. */
+  importAckPartsMerged?: boolean;
+  /** An import that finds a figure acknowledged records the parts again only when it leaves a row out of MFC's rows (a row its export dropped at Count 0). */
+  importAckPartsOnDropOnly?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1753,8 +1760,10 @@ export class Server {
       // acknowledged at these values: MFC's rows as they now stand, the parts that still differ
       if (item?.kind === 'divergence') st.conflicts.delete(S);
       ack.rows = this.sw.importAckRowsAsFound ? rows : rows.filter((r) => exp.has(r.id));
-      // and the parts as those rows leave them, so the next import of this export finds them acknowledged
-      if (!this.sw.importAckPartsAsFound) ack.parts = this.ackParts(st, S, ack.rows);
+      // and the parts as those rows leave them, so the next import of this export finds them acknowledged; a part it finds
+      // equal is acknowledged no more
+      if (!this.sw.importAckPartsAsFound && (!this.sw.importAckPartsOnDropOnly || ack.rows.length !== rows.length))
+        ack.parts = this.sw.importAckPartsMerged ? { ...ack.parts, ...this.ackParts(st, S, ack.rows) } : this.ackParts(st, S, ack.rows);
       return;
     }
     st.acks.delete(S);
@@ -2043,10 +2052,12 @@ export class Server {
       }
       const baseRows = baseRowsFor(st, S);
       if (!this.sw.favorUndoNoRealign) applyOps(st, realign(st, S, exp), R.version);
-      // a divergence a later import raised compared the sides before this take, against bases this realignment moved: it
-      // ends, and the next import compares again
-      if (!this.sw.favorUndoKeepsDivergence && st.conflicts.get(S)?.kind === 'divergence') st.conflicts.delete(S);
-      if (this.sw.favorUndoEndsAck) st.acks.delete(S);
+      // a divergence a later import raised compared the sides before this take, against the bases that import left: it
+      // ends, and the undo acknowledges nothing, since the user answered none of what still differs: the next import
+      // compares again
+      const ends = !this.sw.favorUndoKeepsDivergence && st.conflicts.get(S)?.kind === 'divergence';
+      if (ends) st.conflicts.delete(S);
+      if (this.sw.favorUndoEndsAck || (ends && !this.sw.favorUndoAcksEndedDivergence)) st.acks.delete(S);
       else {
         const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [[...new Set([...exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows] : this.rowsNow(st, S);
         this.acknowledge(st, S, exp, ackKnown, ackRows, false, policy);

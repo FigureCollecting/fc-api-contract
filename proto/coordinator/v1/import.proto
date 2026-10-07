@@ -193,11 +193,12 @@
 //     listed with its undo as a change entry of kind "applied" (R3; Ross, CT4
 //     (a)). A figure new to the import (no row base) is added, counted in
 //     `added` and never listed.
-//   * Every other decision settles. Then, when a part of the projection
-//     differs and is not acknowledged at its present values (ACKNOWLEDGED), the
+//   * Every other decision settles. Then, when a part of the projection differs
+//     and is not acknowledged at its present values (ACKNOWLEDGED), the
 //     difference is the app's: MFC has not caught up with it. It writes nothing
 //     and is one figure item of kind "divergence" (R4), which an import of the
-//     same export neither raises again nor duplicates.
+//     same export neither duplicates while it is pending nor raises again once
+//     it is answered (ACKNOWLEDGED).
 // The items are server-owned facets keyed by the survivor's head_id: a figure
 // item, a held-edit card imp/{site}/held/{S}, a change entry and an align-MFC
 // entry imp/{site}/align/{S}. Their payload schemas are closed
@@ -349,12 +350,16 @@
 //     stays as later steps left it, so a copy MFC came to track since stays
 //     tracked), MFC's side is made true against them as take makes it, and the
 //     bases realign; like a take it records the acknowledgement, so the same
-//     export raises nothing again. An undo works against the export of the
-//     import that made the entry, whatever a later import found: that take, and
-//     the realignment after it, use that export's side. A divergence a later
-//     import left pending on S compared the sides before that take, against the
-//     bases that import left, so the undo ends it (an answer to it is then
-//     STALE), and the next import compares again; a conflict a later import
+//     export raises nothing again, but for an undo that ends a divergence
+//     (below). An undo works against the export of the import that made the
+//     entry, whatever a later import found: that take, and the realignment
+//     after it, use that export's side. A divergence a later import left
+//     pending on S compared the sides before that take, against the bases that
+//     import left, so the undo ends it (an answer to it is then STALE) and
+//     records no acknowledgement, since the user has answered none of what
+//     still differs: the next import compares again and raises what still
+//     differs after its decision, such as the counts of a hand copy the take
+//     leaves or a value the user changed since; a conflict a later import
 //     raised stays pending, and its answer realigns the bases to its own
 //     export. An applied or favor_mfc undo acknowledges MFC's rows as they
 //     stand at the undo (ACKNOWLEDGED): S's row bases, each as the last import
@@ -426,22 +431,26 @@
 // answer or settlement has moved its bases. MFC's rows are then S's row bases,
 // which a realignment, or the import that raised or kept a divergence, made the
 // export's rows of S, so a row that export lacks is none of them; while a
-// divergence is pending, only an answer that ends it moves those bases (a take
-// on it, or the undo of an older FAVOR_APP settlement, which realigns them to
-// its own export: ITEMS AND ANSWERS). An applied or favor_mfc undo, which moves
-// no base, takes S's row bases at the undo (ITEMS AND ANSWERS). A take on a
-// conflict or a divergence, a FAVOR_MFC settlement and the undo of a FAVOR_APP
-// settlement record them too, with no align-MFC entry, since the user took
-// MFC's side. An import raises nothing for a part acknowledged at its present
-// values, and records again, as its decision leaves them, MFC's rows (the
-// export's rows of S) and each part that differs against them, including one
-// that differs only because a row the export dropped is gone; so the next
-// import of that export, nothing changed meanwhile, finds every part that
-// differs acknowledged, and a partial catch-up on MFC leaves the rest
-// acknowledged. A part that comes to differ at other values, by a new MFC
-// change or a new app change, re-opens the figure (a new item, with a new rev);
-// an import that finds every part equal ends the acknowledgement, and so does
-// one that raises a conflict on S or keeps one.
+// divergence is pending, only an answer that ends it (a take on it, or the undo
+// of an older FAVOR_APP settlement, which realigns them to its own export:
+// ITEMS AND ANSWERS), or an import that moves a row of S to another figure (ROW
+// MOVED), moves those bases. An applied or favor_mfc undo, which moves no base,
+// takes S's row bases at the undo (ITEMS AND ANSWERS). A take on a conflict or
+// a divergence, a FAVOR_MFC settlement and the undo of a FAVOR_APP settlement
+// record them too, with no align-MFC entry, since the user took MFC's side; an
+// undo that ends a divergence records none (ITEMS AND ANSWERS). An import
+// raises nothing for a part acknowledged at its present values, and records
+// again, as its decision leaves them, MFC's rows (the export's rows of S) and
+// each part that differs against them, including one that differs only because
+// a row the export dropped is gone; so the next import of that export, nothing
+// changed meanwhile, finds every part that differs acknowledged, and a partial
+// catch-up on MFC leaves the rest acknowledged. A part an import finds equal is
+// acknowledged no more, as when every part is equal: should it come to differ
+// again, even at the values it had, it re-opens the figure. A part that comes
+// to differ at other values, by a new MFC change or a new app change, re-opens
+// the figure (a new item, with a new rev); an import that finds every part
+// equal ends the acknowledgement, and so does one that raises a conflict on S
+// or keeps one.
 //
 // A COPY KEPT AGAINST MFC'S REMOVAL (Ross, 2026-10-05). When an export drops a
 // row (the user deleted the entry on MFC), the import presents the removal: it
@@ -574,9 +583,10 @@ message ImportMfcExportResponse {
 
   // Feed events this import produced, its marker and the server-owned items
   // included. A re-import of the same export produces the marker and nothing
-  // else, bar the items it clears; it may also give a new rev to a divergence
-  // the previous import raised while it dropped a row (that import compared the
-  // sides with the row at Count 0, this one without it).
+  // else, bar the items it clears and what it raises again after the undo of a
+  // FAVOR_APP settlement ended a divergence; it may also give a new rev to a
+  // divergence the previous import raised while it dropped a row (that import
+  // compared the sides with the row at Count 0, this one without it).
   uint32 facets_written = 7;
 
   // Resolved rows, not added, of a figure whose decision is a conflict this
