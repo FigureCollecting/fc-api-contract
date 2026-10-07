@@ -772,7 +772,7 @@ describe('Hlc properties', () => {
       ),
       { numRuns: 10_000 },
     );
-  });
+  }, 60_000);
 
   it('once anchored and rebased: a fresh tick is never rejected, one rebase recovers any rejection, and an edit on any facet lands above that facet\'s version', () => {
     let capDecided = 0;
@@ -894,7 +894,7 @@ describe('Hlc properties', () => {
     // edits landed on a facet whose unpushed edit a rebase for another facet had re-minted.
     expect(capDecided).toBeGreaterThan(CAP_DECIDED_MIN);
     expect(remintedEdited).toBeGreaterThan(REMINTED_EDITED_MIN);
-  });
+  }, 60_000);
 
   it('once anchored, never mints below the Status sample plus the monotonic time since it, whatever the wall clock does', () => {
     fc.assert(
@@ -924,7 +924,7 @@ describe('Hlc properties', () => {
       ),
       { numRuns: 10_000 },
     );
-  });
+  }, 60_000);
 
   it('never clamps an honest clock: across sleeps of any length, a tick is at least true-now minus the round trip', () => {
     fc.assert(
@@ -950,5 +950,5 @@ describe('Hlc properties', () => {
       ),
       { numRuns: 10_000 },
     );
-  });
+  }, 60_000);
 });

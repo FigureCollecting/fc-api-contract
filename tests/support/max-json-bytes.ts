@@ -10,6 +10,8 @@ export interface Schema {
   maximum?: number;
   properties?: Record<string, Schema>;
   additionalProperties?: unknown;
+  items?: Schema;
+  maxItems?: number;
 }
 const utf8 = (text: string) => Buffer.byteLength(text, 'utf8');
 
@@ -113,5 +115,10 @@ export function maxJsonBytes(s: Schema): number {
   }
   if (s.type === 'integer' && s.minimum !== undefined && s.maximum !== undefined)
     return Math.max(String(s.minimum).length, String(s.maximum).length);
+  if (s.type === 'boolean') return 5;
+  if (s.type === 'array') {
+    if (s.maxItems === undefined || s.items === undefined) return Infinity;
+    return 2 + s.maxItems * maxJsonBytes(s.items) + Math.max(0, s.maxItems - 1);
+  }
   return Infinity;
 }

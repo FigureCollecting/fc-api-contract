@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -8,12 +8,14 @@ const catalog = read('proto/coordinator/v1/catalog.proto');
 const importProto = read('proto/coordinator/v1/import.proto');
 const readme = read('README.md');
 const hlcSource = read('src/hlc.ts');
+const vocabSource = read('src/sync-vocabulary.ts');
 const genSync = read('src/gen/coordinator/v1/sync_pb.ts');
 const pkg = JSON.parse(read('package.json')) as {
   version: string;
   files: string[];
   exports: Record<string, unknown>;
   description: string;
+  scripts: Record<string, string>;
 };
 
 // Collapse comment markers and whitespace so a rule reflowed across lines still matches.
@@ -32,6 +34,12 @@ const errorEntry = (start: string) => {
 };
 
 describe('sync.proto', () => {
+  it('says, where the merge rule is stated, that there is no exception: the import is decided on the server', () => {
+    const header = prose(sync.slice(0, sync.indexOf('SEVEN RULES THIS SHAPE ENCODES')));
+    expect(header).toMatch(/There is no exception: the MFC import is decided on the server, which places a late edit where it belongs by the basis it was made on \(rule 6, THE IMPORT, ON A CLIENT\), so a client only ever merges by LWW\./);
+    for (const doc of [sync, importProto, readme]) expect(doc).not.toMatch(/IMPORT CROSSINGS|IMPORT CONFLICTS|ROW GRAIN|crosses an open edit/);
+  });
+
   it('no longer tells a client to keep its losing payload under the server version', () => {
     expect(sync).not.toMatch(/whatever the outcome/);
     expect(prose(sync)).toMatch(/adopt `current` whole/i);
@@ -115,7 +123,7 @@ describe('sync.proto', () => {
     const result = prose(sync.slice(sync.indexOf('message PushResult {'), sync.indexOf('SyncEvent current = 4;')));
     for (const text of [clientId, duplicate, result]) {
       expect(text).toMatch(/a replay \(same client_id, same events\) returns each event's recorded outcome and reason/i);
-      expect(text).toMatch(/an event first APPLIED is answered DUPLICATE, one first REJECTED is REJECTED again with the same reason, one first STALE is STALE again and one first REVIEW is REVIEW again/i);
+      expect(text).toMatch(/an event first APPLIED is answered DUPLICATE, one first REJECTED is REJECTED again with the same reason, one first STALE is STALE again, one first REVIEW is REVIEW again and one first HELD is HELD again/i);
       expect(text).toMatch(/`current` on every replayed user-owned result is the facet as the server holds it at the replay/i);
     }
     for (const text of [sync, genSync]) expect(text).not.toMatch(/byte-identical/i);
@@ -141,7 +149,7 @@ describe('sync.proto', () => {
   });
 
   it('pins the server\'s check order: every REJECTED check before any STALE, REVIEW or APPLIED routing', () => {
-    const order = /the server runs the REJECTED checks in the listed order \(version_malformed, version_future, facet_key_not_user_owned, device_mismatch, payload_invalid\), all before any STALE, REVIEW or APPLIED routing, so an event past server_now \+ 5 minutes is REJECTED version_future unless an earlier-listed check fails, whatever the field's policy and whatever the stored version/i;
+    const order = /the server runs the REJECTED checks in the listed order \(version_malformed, version_future, facet_key_not_user_owned, device_mismatch, payload_invalid, basis_missing\), all before any STALE, REVIEW, HELD or APPLIED routing, so an event past server_now \+ 5 minutes is REJECTED version_future unless an earlier-listed check fails, whatever the field's policy and whatever the stored version/i;
     const rule5 = prose(sync.slice(sync.indexOf(' 5. THE VERSION GRAMMAR'), sync.indexOf(' 6. USER-OWNED FACET KEYS')));
     expect(rule5).toMatch(order);
     const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
@@ -149,13 +157,14 @@ describe('sync.proto', () => {
   });
 
   it('bounds every version the server emits, since the Hlc folds tokens unclamped', () => {
-    const emitted = /every version the server emits, in Delta or as `current`, is at most server_now \+ 5 minutes when emitted: a pushed one by the check order, the import by min\(export_date, server_now\), and every other server write, server-owned facets included, at most server_now\. The Hlc folds tokens unclamped, so the bound depends on this\./i;
+    const emitted = /every version the server emits, in Delta or as `current`, is at most server_now \+ 5 minutes when emitted: a pushed one by the check order, and every server write, the import and server-owned facets included, at most server_now\. The Hlc folds tokens unclamped, so the bound depends on this\./i;
     const rule5 = prose(sync.slice(sync.indexOf(' 5. THE VERSION GRAMMAR'), sync.indexOf(' 6. USER-OWNED FACET KEYS')));
     expect(rule5).toMatch(emitted);
     const observeDoc = prose(hlcSource.slice(hlcSource.indexOf('Fold in a token seen from elsewhere'), hlcSource.indexOf('observe(version: string)')));
     expect(observeDoc).toMatch(emitted);
     expect(sync).not.toMatch(/bounds every token on the feed/);
     expect(hlcSource).not.toMatch(/bounds every token on the feed/);
+    for (const text of [sync, hlcSource, importProto]) expect(text).not.toMatch(/min\(export_date, server_now\)/);
   });
 
   it('pins server_now to one clock that never steps back, and the bound to client monotonic time keeping server rate', () => {
@@ -177,35 +186,133 @@ describe('sync.proto', () => {
   });
 
   it('lists every REJECTED reason code', () => {
-    for (const code of ['version_malformed', 'version_future', 'facet_key_not_user_owned', 'device_mismatch', 'payload_invalid']) {
+    for (const code of ['version_malformed', 'version_future', 'facet_key_not_user_owned', 'device_mismatch', 'payload_invalid', 'basis_missing']) {
       expect(sync).toContain(code);
     }
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).toMatch(/facet_key_not_user_owned the key is not one of rule 6's user-owned forms \(a retired holding\/\* key included\)/);
+    expect(sync).not.toMatch(/four forms|four user-owned/);
   });
 
-  it('documents the user-owned facet-key grammar for the per-product register', () => {
-    const text = prose(sync);
-    for (const key of ['holding/{head_id}/status', 'holding/{head_id}/count', 'uf/{head_id}/score', 'uf/{head_id}/note']) {
+  const rule6 = () => prose(sync.slice(sync.indexOf(' 6. USER-OWNED FACET KEYS'), sync.indexOf(' 7. TRANSACTIONS, AND WHAT IS DEFERRED')));
+
+  it('documents the 0.3.0 user-owned key table and nothing of the holding grain but its retirement', () => {
+    const text = rule6();
+    for (const key of [
+      'occ/{occ}/head', 'occ/{occ}/status', 'occ/{occ}/collection', 'occ/{occ}/disposal', 'occ/{occ}/tag/{tag}',
+      'uf/{head_id}/score', 'uf/{head_id}/note', 'uf/{head_id}/wishability', 'uf/{head_id}/tag/{tag}',
+      'uf/{head_id}/ktag/{kind}/{tag}', 'coll/{kind}/{cid|default}/name', 'tag/{tag}/name',
+      'res/{site}/{head_id}', 'pref/{site}/import',
+    ]) {
       expect(text).toContain(key);
     }
-    expect(text).toMatch(/written against the head_id at write time and never re-keyed/i);
+    expect(text).toMatch(/RETIRED: holding\/\{head_id\}\/status and holding\/\{head_id\}\/count \(0\.2\.x\) are no longer user-owned; a Push of either is REJECTED facet_key_not_user_owned/);
+    expect(text).toMatch(/`default` is legal only as a collection id/);
     expect(text).toMatch(/edited_at/);
+    expect(text).not.toMatch(/holding grain;|one status register per \(user, product\)/i);
   });
 
-  it('keys every facet of a holding by its status facet\'s head_id and says which status shows after a merge', () => {
-    const text = prose(sync);
-    expect(text).toMatch(/keyed by the head_id its status facet was first written under, never by the ProductCard\.head_id/i);
-    expect(text).toMatch(/the status with the higher version is displayed/i);
-    expect(text).toMatch(/a delete on a merged card tombstones every live status among requested_as/i);
+  it('names the server-owned keys a client reads and never pushes, the draft\'s import bases and conflicts gone', () => {
+    const text = rule6();
+    for (const key of ['occ/{occ}/origin', 'imp/{site}/figure/{head_id}', 'imp/{site}/held/{head_id}', 'imp/{site}/change/{head_id}', 'imp/{site}/align/{head_id}', 'imp/{site}/import'])
+      expect(text).toContain(key);
+    expect(text).toMatch(/SERVER-OWNED KEYS a client reads but never pushes/);
+    expect(text).toContain("res/{site}/{head_id} answers one of the import's items on the figure {head_id}, naming the item and its rev; pref/{site}/import holds the import's preferences (import.proto THE SERVER DECIDES).");
+    expect(text).toContain('res/{site}/{head_id} {"item": "figure"|"held"|"change"| "align", "rev", "choice": "keep"| "take"|"per_copy"|"undo"|"dismiss", "copies"?, "fields"?}');
+    for (const doc of [sync, importProto, readme]) expect(doc).not.toMatch(/imp\/\{site\}\/(base|conflict)|imp\/mfc\/(base|conflict)/);
+  });
+
+  it('counts copies, keeps a removed copy\'s head, and never counts former as held', () => {
+    const text = rule6();
+    expect(text).toMatch(/one record per copy and no quantity field/i);
+    expect(text).toMatch(/a move can never create or lose a copy/i);
+    expect(text).toMatch(/An occurrence is live while its status facet is live and its head facet is present; one with a live status and no head \(a partial batch\) is hidden, flagged and never counted/);
+    expect(text).toMatch(/never tombstoned by an ordinary removal/);
+    expect(text).toMatch(/`former` is a live status \(no longer owned\) and is never counted as held/);
+    expect(text).toMatch(/A disposal describes a former copy; it is kept, and hidden, while the status is anything else/);
+  });
+
+  it('states the display rule, the kind-change rule and collection deletion', () => {
+    const text = rule6();
+    expect(text).toMatch(/A copy is shown in its filed collection if that collection exists and its kind equals the copy's status; otherwise in \{status\}\/default/);
+    expect(text).toMatch(/every live copy shows in exactly one collection/i);
+    expect(text).toMatch(/A device write that changes a copy's kind also writes or tombstones its filing in the same batch, and an import write that sets a status of another kind than the filing writes it \{status\}\/default \(import\.proto FILING\)/);
+    expect(text).not.toMatch(/the import never writes filing/);
+    expect(text).toMatch(/Deleting a collection tombstones its name only: its copies show in the default, and undo restores them/);
+  });
+
+  it('states the three tag scopes, read-time figure-by-kind membership and effective tags', () => {
+    const text = rule6();
+    expect(text).toMatch(/Membership is one facet per \(target, tag\): upsert = member, tombstone = not/);
+    expect(text).toMatch(/evaluated at read time, so a copy that arrives later picks it up and one that leaves drops it with no write/);
+    expect(text).toMatch(/The effective tags of a copy are its own, its figure's, and its figure's tags for its status/);
+  });
+
+  it('states library presence, the reader rule, deterministic picks and privacy', () => {
+    const text = rule6();
+    expect(text).toMatch(/A figure is in the library while any live user facet references it: a live occurrence's head or any live uf\/\{head_id\} facet/);
+    expect(text).toMatch(/A reader stores an unknown key form, kind, status or reason, hides it, never counts it and never pushes it, and re-parses its stored rows on every local-store upgrade/);
+    expect(text).toMatch(/picks by occurrence id alone: the lowest to receive or keep, the highest to remove/);
+    expect(text).toMatch(/Neither the coordinator nor a client logs a payload or a name facet/);
+    expect(text).toMatch(/An import copy's occ id is a keyed MAC \(import\.proto OCCURRENCE IDS\), so a key and a user id do not reveal an MFC id/);
+  });
+
+  it('lets a client decide nothing about an import: a basis on every edit, the overlay, push before pull, HELD, items and answers', () => {
+    const text = rule6();
+    expect(text).toMatch(/THE IMPORT, ON A CLIENT \(import\.proto THE SERVER DECIDES\)\. A client decides nothing about an import and never compares anything with MFC: it merges every event by LWW, as above\./);
+    expect(text).toMatch(/\* Every edit is minted with its basis \(SyncEvent\.basis\): the commit_cursor of the last transaction the client had applied \(rule 7\), or "" when it has applied none\. The basis never changes afterwards, whatever is pulled, replayed or re-minted\./);
+    expect(text).toMatch(/\* What the user sees is the replica with the unanswered outbox laid over it in minting order\. A newer remote event on the same key does not drop an outbox entry: the entry is still pushed, and the server decides\./);
+    expect(text).toMatch(/\* The client pushes before it pulls, every outbox entry, oldest first, and adopts `current` on every outcome \(THE CLIENT RULE\), HELD included; a held edit is shown in its figure's held-edit card\./);
+    expect(text).toContain("* After its own ImportMfcExport returns, it pulls until it has applied the import's transaction (its replica's marker imp/{site}/import holds an import at or above the response's import_number) before it presents the review set or mints any edit or answer, so what the user does about the review set is knowing (import.proto THE REVIEW SET).");
+    expect(text).toMatch(/\* It shows every live figure item, held-edit card, change entry and align-MFC entry \(import\.proto THE REVIEW SET\), never blocks an edit while one is pending, and answers one by writing res\/\{site\}\/\{head_id\} through the outbox, offline or not\. An answer answered STALE means the item changed or another device answered first: the client shows what is there now\./);
+    expect(text).toMatch(/\* A replay from an empty cursor re-applies the feed by LWW onto an empty replica, the outbox and its bases untouched, and presents nothing again: the items are server state\./);
+  });
+
+  it('keeps THE CLIENT RULE free of exceptions, and answers an edit a replay overrides STALE and a held one HELD', () => {
+    const clientRule = prose(sync.slice(sync.indexOf('// PushResult — one per pushed event.'), sync.indexOf('message PushResult {')));
+    expect(clientRule).not.toMatch(/exception/);
+    const stale = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_DUPLICATE = 2;'), sync.indexOf('PUSH_OUTCOME_STALE = 3;')));
+    expect(stale).toMatch(/An edit is STALE too when it landed but the replay of an import placed after it leaves the facet another value \(import\.proto LATE EDITS AND REPLAY\)\./);
+    const held = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REJECTED = 5;'), sync.indexOf('PUSH_OUTCOME_HELD = 6;')));
+    expect(held).toMatch(/Kept on the server but not applied: an edit the server holds for the user \(import\.proto HELD\): a late edit that would change an import's result another device acted on, or a decision made on its figure without it; or an edit that acted on a result a replay has since revised\. `current` is the facet as the server holds it, adopted like any outcome; the figure's held-edit card imp\/\{site\}\/held\/\{head_id\} shows the held edits for the user to keep or drop\./);
+    const current = prose(sync.slice(sync.indexOf('message PushResult {'), sync.indexOf('SyncEvent current = 4;')));
+    expect(current).toMatch(/Always set on APPLIED, DUPLICATE, STALE, REVIEW and HELD\./);
+  });
+
+  it('carries the basis on Push and the commit cursor on Delta', () => {
+    const fields = prose(sync.slice(sync.indexOf('string payload = 4;'), sync.indexOf('string commit_cursor = 6;')));
+    expect(fields).toMatch(/Push only, and required there: the commit_cursor of the last server transaction the client had applied when it minted this edit \(rule 7\), or "" when it had applied none\. It is set when the edit is minted and never changed afterwards; the server places a late edit by it \(import\.proto THE SERVER DECIDES\)\. A pushed event with no basis is REJECTED basis_missing\. Unset on Delta\./);
+    expect(fields).toMatch(/Delta only: the cursor just after this event when it is the last event of a server transaction \(rule 7\); empty on every other event and on Push\./);
+    const commit = prose(sync.slice(sync.indexOf('optional string basis = 5;'), sync.indexOf('string commit_cursor = 6;')));
+    expect(commit).toContain('A client applies a transaction\'s events only once it has the one carrying commit_cursor, and resumes from the commit_cursor of the last transaction it applied: it is a legal DeltaRequest.cursor.');
+    const cursor = prose(sync.slice(sync.indexOf('message DeltaRequest {'), sync.indexOf('string cursor = 1;')));
+    expect(cursor).toContain('Opaque resume token: a previous DeltaResponse\'s next_cursor, or a SyncEvent\'s commit_cursor (rule 7).');
+    expect(sync).toMatch(/optional string basis = 5;/);
+  });
+
+  it('restates the ER-merge rules for occurrences: counts sum, no status tiebreak, tags union', () => {
+    const text = rule6();
+    expect(text).toMatch(/written against the ids of their time and never re-keyed/i);
+    expect(text).toMatch(/A card groups occurrences whose head is any of its requested_as, and their counts sum; there is no status tiebreak/);
+    expect(text).toMatch(/For each uf field the live facet with the higher version among requested_as is displayed, the lower head_id \(bytewise\) between equal versions \(one import's writes under heads merged later\), and new writes go to its head_id \(a card with none uses card\.head_id\); a delete tombstones that field on every requested_as head holding it live, each minted on its own facet's version/);
+    expect(text).toMatch(/Tag sets union across requested_as, and an untag tombstones the membership on every head that holds it/);
+    expect(text).not.toMatch(/the status with the higher version is displayed/i);
   });
 
   it('applies the merged-card rules to requested_as unioned across every GetProducts call', () => {
     expect(prose(sync)).toMatch(/groups cards by head_id across every call and page and unions their requested_as; the display, write-target and delete rules apply to that union/i);
   });
 
-  it('says the payload schemas check writes only, so an additive property cannot break an installed phone', () => {
+  it('closes every payload schema forever: a new attribute is a new key, never a property', () => {
     const text = prose(sync);
     expect(text).toMatch(/The schemas check writes only/);
+    expect(text).toMatch(/A published payload schema never gains a property; a new attribute is a new facet key/);
+    expect(text).not.toMatch(/a property added later cannot break an installed phone/i);
     expect(text).toMatch(/10,000 code points/);
+  });
+
+  it('carries the 0.3.0 SEMANTIC CHANGE note', () => {
+    expect(rule6()).toMatch(/SEMANTIC CHANGE, SAFE ONLY BECAUSE NO DEVICE HAS INSTALLED AND NO IMPORT HAS RUN\. 0\.3\.0 replaces 0\.2\.x's per-figure holding grain \(one status per user and product\) with per-copy occurrences\. buf cannot see a key change: the wire is unchanged, and this comment, golden\/key-vectors\.json and the vocabulary tests are the guard/);
   });
 
   it('caps a pushed payload at MAX_PAYLOAD_BYTES of UTF-8 and names the reject', () => {
@@ -239,6 +346,14 @@ describe('sync.proto', () => {
   it('keeps the deferred Resync and Ack out of the wire and says so', () => {
     expect(prose(sync)).toMatch(/Resync|prune/);
     expect(sync).not.toMatch(/rpc (Resync|Ack)\(/);
+  });
+
+  it('writes each server transaction consecutively and lets a client apply only whole transactions (F2)', () => {
+    const rule7 = prose(sync.slice(sync.indexOf(' 7. TRANSACTIONS, AND WHAT IS DEFERRED'), sync.indexOf('syntax = "proto3";')));
+    expect(rule7).toMatch(/Every server transaction \(one push, one import, the writes of one replay, one answer\) writes its events consecutively in the feed, and its last event carries commit_cursor, the cursor just after it\. A Delta page may end inside a transaction\./);
+    expect(rule7).toMatch(/A client applies a transaction only once it has all of its events, and keeps the rest of the page staged until then, so what it shows, and the basis it mints an edit on, are always at a transaction boundary: it never shows half of an import and has the user react to it\./);
+    expect(rule7).toMatch(/A prune, when one comes, keeps nothing for the import's sake: the server keeps its frames itself \(import\.proto HELD\)\./);
+    expect(rule7).toContain('A commit_cursor is a legal DeltaRequest.cursor: a client resumes, after a restart included, from the commit_cursor of the last transaction it applied, and fetches what it had staged again; it parks a next_cursor past staged events only if it persists those events with it.');
   });
 });
 
@@ -280,9 +395,37 @@ describe('catalog.proto', () => {
     expect(text).toMatch(/survivor/i);
     expect(text).toMatch(/requested_as/);
     expect(text).toMatch(/never re-keyed/i);
-    expect(text).toMatch(/which status is shown/i);
+    expect(text).toMatch(/whose copies it counts/i);
     expect(text).toMatch(/what a delete clears/i);
+    expect(text).not.toMatch(/which status is shown|holding facets/i);
     expect(text).toMatch(/groups cards by head_id across every call and page and unions their requested_as; the display, write-target and delete rules of sync\.proto rule 6 apply to that union/i);
+  });
+
+  it('states the unit, rounding and presence of the physical dimensions', () => {
+    const card = prose(catalog.slice(catalog.indexOf('message ProductCard {'), catalog.indexOf('// GetProducts')));
+    expect(card).toMatch(/in whole millimetres, rounded half up from the spine's value\. Unset means unknown, never 0/);
+    expect(card).toMatch(/the figure with its base, never the box/);
+    expect(card).toMatch(/MFC's L is depth/);
+  });
+
+  it('describes the mask as a separate, non-destructive overlay and the grounding fields by how they are measured', () => {
+    const image = prose(catalog.slice(catalog.indexOf('// One derivative the client may show.'), catalog.indexOf('// SearchProducts')));
+    expect(image).toMatch(/non-destructive, display-time overlay; the derivative is never cut out/);
+    expect(image).toMatch(/Unset when there is none or when a display restriction withholds it from this caller/);
+    expect(image).toMatch(/0 is a measurement/);
+    expect(image).toMatch(/opaque means alpha above 10 of 255/);
+    expect(image).toMatch(/the lowest 8 % of the image's height/);
+    expect(image).toMatch(/ThumbHash/);
+    expect(image).toMatch(/"#rrggbb", lowercase/);
+    expect(image).toMatch(/Same pixel dimensions as its derivative/);
+  });
+
+  it('never lets a withheld mask reach a caller through the fields derived from it', () => {
+    const image = prose(catalog.slice(catalog.indexOf('// One derivative the client may show.'), catalog.indexOf('// SearchProducts')));
+    expect(image).toMatch(/The grounding fields, thumbhash and dominant_color describe the image as THIS caller is shown it: when a display restriction withholds the mask from the caller they are computed without it \(the grounding fields on the derivative's own alpha, else unset\), so a withheld mask never reaches the caller through a field derived from it\./);
+    expect(image).toMatch(/A ThumbHash \(github\.com\/evanw\/thumbhash\) of the image as this caller is shown it, the mask applied only when the caller is sent one/);
+    expect(image).toMatch(/The dominant color of the image as this caller is shown it, as "#rrggbb", lowercase\./);
+    expect(image).not.toMatch(/the mask applied when there is one/);
   });
 
   it('marks SearchProducts UNIMPLEMENTED until served', () => {
@@ -291,25 +434,286 @@ describe('catalog.proto', () => {
 });
 
 describe('import.proto', () => {
-  it('versions import writes under the reserved server device with a per-user counter', () => {
-    const text = prose(importProto);
+  const header = () => prose(importProto.slice(0, importProto.indexOf('syntax = "proto3";')));
+
+  it('versions import writes under the reserved server device with a per-user counter, at the server clock', () => {
+    const text = header();
     expect(text).toMatch(/reserved server device/i);
     expect(text).toMatch(/per-user import counter/i);
-    expect(text).toMatch(/never removes a holding a device wrote/i);
+    expect(text).toMatch(/<instant> is the server's clock when the import starts \(at most server_now\)/);
+    expect(text).not.toMatch(/whichever is earlier|Any device edit made after that instant outranks the import/);
+    expect(text).toMatch(/Which side's change stands is not decided by version: THE SERVER DECIDES below decides, and each write of a decision or an answer is minted above the facet's current version\./);
   });
 
-  it('keys import writes the way rule 6 keys device writes', () => {
-    expect(prose(importProto)).toMatch(/already holds under a merged head_id writes under that head_id/i);
+  it('is asked for online, after the client pushed and had every push answered, and runs as one transaction (R1)', () => {
+    expect(header()).toMatch(/ONLINE ONLY \(R1; Ross, 2026-09-27\)\. A client calls ImportMfcExport only while online, after it has pushed its whole outbox and has every push answered, so the import sees every edit of the device that asks for it\. The coordinator resolves each MFC id to a spine product, decides what the export means for each figure \(THE SERVER DECIDES below\) under the per-user lock and as one server transaction \(sync\.proto rule 7\)/);
+    expect(header()).toMatch(/Other devices may still be offline with edits the import has not seen; LATE EDITS AND REPLAY below gives them the result they would have had by pushing first\./);
   });
 
-  it('never versions an import in the future', () => {
-    const text = prose(importProto);
-    expect(text).toMatch(/whichever is earlier/i);
-    expect(text).toMatch(/export_date later than the server's current UTC date plus one day -> INVALID_ARGUMENT/i);
+  it('derives import occ ids with a key the coordinator alone holds, never a published namespace', () => {
+    const text = header();
+    expect(text).toMatch(/occ_id = importOccIdFromMac\(HMAC-SHA256\(key, "\{user_id\}:mfc:\{mfc_id\}:\{k\}"\)\) the MAC's first 16 bytes as an RFC 9562 version 8 uuid, lowercase and dashed/);
+    expect(text).toMatch(/The key is the import occ-id key, held by the coordinator alone: never sent to a client, logged or shipped in this package \(golden\/key-vectors\.json uses a published test key that is never the production one\)\. So an occurrence key and a user id do not reveal an MFC id, and a retry of an import mints the same ids\./);
+    expect(text).toMatch(/finds its copies later through origin facets, never by recomputing ids: rotating or losing the key changes only the ids of copies created afterwards, and duplicates or re-keys nothing\. The key never changes during an import\./);
+    for (const doc of [importProto, sync, readme, vocabSource]) expect(doc).not.toMatch(/uuidv5|MFC_IMPORT_OCC_NAMESPACE/);
   });
 
-  it('counts a resolved row whose write lost to a newer device edit', () => {
+  it('canonicalises MFC ids, orders the unresolved reasons and says what Count 0 and a duplicate mean', () => {
+    const text = header();
+    expect(text).toMatch(/An ID is made canonical first \(canonicalMfcId\): leading zeros are stripped, and what remains must be 1 to 64 ASCII digits\. Every later step, occurrence ids and origin facets included, uses the canonical id\./);
+    expect(text).toMatch(/A row is unresolved, with the first reason that applies, in this order: "invalid_id" \(no canonical id: "0", a sign, a space, a non-ASCII digit\), "duplicate_id" \(an earlier row has the same canonical id; the first row stands\), "invalid_count" \(Count is neither blank nor ASCII digits\), "count_over_99", "no_product"\./);
+    expect(text).toMatch(/An unresolved row writes nothing\. One unresolved for invalid_count, count_over_99 or no_product also leaves its id's earlier copies and their figure values alone; a duplicate_id row leaves its id to the first row, and an invalid_id row names no id\./);
+    expect(text).not.toMatch(/An unresolved row writes nothing, and the import leaves/);
+    expect(text).toMatch(/Count blank means 1; Count 0 states no copies, and the row still states its figure values\./);
+    // contract-8 close-out, fix round 1: a blank note is no value, like a blank score or wishability
+    expect(text).toContain('A row\'s figure values are uf/{head_id}/score ("N/10"), note and wishability (1..5; 0 is no value). A blank figure value, empty or only whitespace, is no value: the row states none for it, so a blank note is no note, never an empty one.');
+    expect(text).not.toMatch(/0 or blank is no value/);
+    const reason = prose(importProto.slice(importProto.indexOf('message UnresolvedMfcRow {'), importProto.indexOf('// ImportService')));
+    expect(reason).toMatch(/Why nothing was written, the first that applies: "invalid_id", "duplicate_id", "invalid_count", "count_over_99" or "no_product" \(ROWS above\)/);
+  });
+
+  it('decides on the server, at figure grain, with a frame for every figure an import decides (F1)', () => {
+    const text = header();
+    expect(text).toMatch(/THE SERVER DECIDES \(Ross, 2026-09-27: design A, with the review's fixes F1 to F3\)\. A client never compares anything with MFC: it sends every edit with the basis it was made on, shows the server's state, and shows and answers the items the server raises/);
+    expect(text).toMatch(/FRAME \(F1\): every import writes one marker event last, imp\/\{site\}\/import\. For every figure the import decides, whether it writes to it or only moves its bases, last_seq\(I, S\) is the marker's position\./);
+    // contract-8 close-out, round 1: which figures an import frames (a figure whose last row the export drops too)
+    expect(text).toContain('An import frames each figure an export row or a row base belonged to as it began, so a figure whose last row the export drops is framed though the import writes nothing to it and leaves it no row base.');
+    expect(text).toMatch(/LATE EDIT: a pushed edit to a copy or field of S whose basis is before last_seq\(I, S\) for an import I that arrived before it: the device made it without having seen what I decided for S\. Any other edit is KNOWING\./);
+    expect(text).toMatch(/ROW BASE \(server-internal, per MFC id\)/);
+    for (const removed of [/THE THREE-WAY RULE/, /ADOPTION IN PLACE/, /`against`/, /COUNT other-row/, /raises the whole difference for removal/]) expect(importProto).not.toMatch(removed);
+  });
+
+  it('decides each figure once: counts by transitions and matching, fields per row, and one decision for the whole figure', () => {
+    const text = header();
+    expect(text).toMatch(/\* M == B for every kind: MFC changed no count\. Nothing is written and no base moves, so an app change stays an app change\./);
+    expect(text).toMatch(/\* A == M for every kind: both sides reached the same counts\. Nothing is written, and every copy of S takes its current state as its base\./);
+    expect(text).toMatch(/d_k = M_k - B_k gives, in this order, ordered->owned \(arrivals\), wished->ordered and wished->owned, as many as both sides allow, then k->OUT for each remaining negative d_k and OUT->k for each remaining positive d_k\./);
+    expect(text).toMatch(/MATCHING pairs each MFC transition with an app transition of the same \(from, to\), the app's copies taken in occ-id order: a pair is the same change on both sides\./);
+    expect(text).toMatch(/- No app transition is left, or none shares a kind with an MFC one left: only MFC made the rest, and the import MATERIALIZES it\. - Otherwise the counts are a CONFLICT\./);
+    expect(text).toMatch(/So MFC's change to one of several merged rows is found against that row's own base, never mistaken for another row's value\./);
+    expect(text).toMatch(/ONE DECISION PER FIGURE\. If any part is a CONFLICT, nothing of S is written and none of its bases move\./);
+  });
+
+  it('materializes on unchanged copies, a new copy going to the lowest row whose Count exceeds its live copies (4.5)', () => {
+    const text = header();
+    expect(text).toMatch(/else a copy is created for the lowest-numbered row of S whose Count exceeds its live copies of kind y, counting the copies created in this decision, at that row's lowest unused ordinal: its origin, head and status, in that order\./);
+    expect(text).toMatch(/The import never restores a former copy, never writes former or a disposal, and never touches a copy with no base unless the decision counted or paired it\./);
+    // round 8, recheck 2: what keeps a copy one an import removed
+    expect(text).toContain('A copy stays one an import removed until an import restores it, whatever an answer or a device writes to it meanwhile.');
+    // round 9, recheck 1: what a keep applies of MFC's change alone is the import's
+    expect(text).toContain("What a keep or per_copy applies of MFC's change alone (ITEMS AND ANSWERS) is the import's: a copy it removes is one an import removed, and one it restores is no longer.");
+    expect(text).toMatch(/ROW MOVED\. A row whose base head and new head resolve to different survivors, with no merge between them, was moved by the spine: MFC did not change it\./);
+  });
+
+  it('projects the app onto what MFC can hold, and never raises anything for app-only richness (R2)', () => {
+    const text = header();
+    // contract-8 close-out h1: an import compares against the row bases before its decision, an acknowledgement records them after
+    expect(text).toContain("MFC's side of a figure S is its MFC ROWS: the export's rows of S, and each row base of S the export lacks, at Count 0, each with the field values it states. An import compares the two sides against the row bases as they stood before its decision, so a row its export drops is there at Count 0; an acknowledgement records MFC's rows once the bases have moved (ACKNOWLEDGED).");
+    expect(text).toContain("The app's side, as MFC could state it, is what THE ALIGN PLAN (ALIGN-MFC) makes of those rows for the app's live copies per kind and its displayed score, note and wishability. The two sides are compared part by part, the rows' kinds and Counts and each field, and a part differs exactly when the plan would change it on some row.");
+    expect(text).toContain('What no row can take is APP-ONLY RICHNESS MFC cannot express: a wished or ordered copy beside owned ones when no row is free for its kind (a one-row figure, or merged rows all in use), former copies and their dispositions, filings and tags. Richness never raises an item or an align-MFC entry by itself.');
+    expect(text).not.toMatch(/only for as many kinds as S has MFC ids known/);
+  });
+
+  it('turns each decision into a conflict, an applied and listed MFC change, or a divergence, by the user\'s preferences (R3, R4, R5)', () => {
+    const text = header();
+    expect(text).toMatch(/\* A CONFLICT is a figure item imp\/\{site\}\/figure\/\{S\} of kind "conflict" when import_policy is ASK, the default\. With FAVOR_APP or FAVOR_MFC the import answers it keep or take itself \(ITEMS AND ANSWERS\), writes a change entry imp\/\{site\}\/change\/\{S\} of kind "favor_app" or "favor_mfc", and the user can undo it like an answer \(R5\)\. A preference applies to conflicts only, never to a change only one side made\./);
+    expect(text).toContain('* A decision that writes, because only MFC changed, on a figure the import had a row base for is written to the copies the app left untouched, and listed with its undo as a change entry of kind "applied" (R3; Ross, CT4 (a)). A figure new to the import (no row base) is added, counted in `added` and never listed.');
+    // Ross, CT4 (a): no HOLD mode, no mfc_only preference and no held MFC change (0.3.0 is unpublished; its field and enum value are reserved)
+    for (const doc of [importProto, sync]) expect(doc).not.toMatch(/mfc_only|APPLY_AND_LIST|"mfc_change"|held for confirmation|kind mfc_change/);
+    // nor in what the package ships beside the protos: the goldens, their notes, the schemas and the README
+    for (const rel of ['golden/import-vectors.json', 'golden/key-vectors.json', 'golden/version-vectors.json', 'README.md', ...readdirSync(fileURLToPath(new URL('../schemas', import.meta.url))).map((f) => `schemas/${f}`)])
+      expect(read(rel), rel).not.toMatch(/mfc_only|APPLY_AND_LIST|mfc_change|held MFC change/i);
+    // contract-8 close-out i1 (recheck SHOULD 1): an import of the same export raises again a divergence an undo ended unanswered
+    expect(text).toContain('* Every other decision settles. Then, when a part of the projection differs and is not acknowledged at its present values (ACKNOWLEDGED), the difference is the app\'s: MFC has not caught up with it. It writes nothing and is one figure item of kind "divergence" (R4), which an import of the same export neither duplicates while it is pending nor raises again once it is answered (ACKNOWLEDGED).');
+    expect(text).not.toMatch(/neither raises again nor duplicates/);
+    expect(text).toContain("A SPINE MERGE re-derives the merged figure: when a redirect makes a head no longer a survivor, the figure item, change entry, align-MFC entry and acknowledgement of that head and of its survivor end (an answer to one is then STALE), and the next import decides the merged figure as one, its rows together. Held edits follow their copies to the survivor's card.");
+  });
+
+  it('replays a late edit where it belongs, and answers it APPLIED or STALE by what stands after the replay', () => {
+    const text = header();
+    expect(text).toMatch(/CANONICAL ORDER: imports, answers and spine redirects in arrival order; each late edit just before the earliest import it is late for; every other edit at its arrival\./);
+    expect(text).toMatch(/The PushResult \(sync\.proto\) of such an edit is APPLIED when its value stands after the replay and STALE, with `current`, when the replay leaves another value \(an import placed after it changed the facet, or another device's edit won\)\./);
+  });
+
+  it('holds a late edit on reaction or after an answer, an edit made on a revised result, and one past retention (F3, 5.4)', () => {
+    const text = header();
+    expect(text).toContain("HELD. The server decides HELD once, when a push arrives, for each UNIT of the push in push order: the push's edits to one copy's head, status, collection and disposal are one unit, held or replayed together; every other edit (a tag, a figure value) is a unit with the push's other edits of its key. A unit is late when an edit of it is late.");
+    // round 8, recheck 1: the push's later units stand at their arrival, so two late units of one push never excuse each other
+    // round 8, recheck 2: the push's later units at their arrival, and the chain from the whole push at its arrival
+    expect(text).toContain("The RELEVANCE TEST of a late unit: the server replays S both ways, the unit's late edits before their import I and at their arrival, every earlier input as decided and the push's later units at their arrival, and compares S's LIVE COPIES (each copy's figure and kind, or out: a former or removed copy is out whatever facets it keeps; the unit's own copies count too) and S's ITEMS (its figure item, change entry and align-MFC entry, each by its rev: an item changes when it appears, ends or takes a new rev, not when it only shows the app's side anew); the unit passes when they differ. Taken in push order, the units' tests step from the whole push at its arrival to the push's replay, so the late units of one push never excuse each other: what the push would withdraw from a result another device acted on is withdrawn in some unit's test.");
+    expect(text).not.toMatch(/later units as if not held|as the result stands|from the result as it stands/);
+    expect(text).toContain("A REACTION to a result is an edit, made after that result without having seen what withdraws it, that * writes a copy whose live state the two sides leave different; * adds a copy to S: writes the head or status of a copy that had no head when the import ran, judged in arrival order (the server had emitted no head of the copy by the import's marker, wherever a replay places a late head); or");
+    // round 8: an item the device saw, by rev, that the side where the result stands gave S and the other never gives (a compound reaction)
+    // round 8, recheck 1: the item judged from the result's import on, so one an earlier import raised and I kept counts
+    expect(text).toContain("* writes the status or head of a copy of S while S had an item, as its device saw it (pending: a device that saw an item only after it ended saw none), that the two sides leave different, or that the side where the result stands has pending with the rev the device saw at or after the result's import I (I raised or kept it), and the other side never has pending at or after I, whatever an answer has done to that item since.");
+    expect(text).toContain("(i) it is late, and a reaction to I's result arrived before it or in the same push: an edit made after I without having seen the unit's replay (knowing for I, whether or not it is late for a later import), the two sides being the two placements, the result standing at arrival. The unit must pass the relevance test, unless the reaction is to an item its device saw that the placement before I never has pending at or after I: an answer (a dismiss, an undo) may since have ended the item, so that both placements end alike. HOLD ON REACTION: another device acted on the result the late edit would withdraw;");
+    // round 8, recheck 1: (ii) for an edit knowing for the revision's import though late for a later one; the revision's
+    // import and feed position; an added copy reacts only to a revision that changes something
+    expect(text).toContain("(ii) an edit of it was made after a REVISION's import (knowing for that import, whether or not it is late for a later one) and before the revision, which its device had not seen, and is a reaction to the result the revision withdrew, the two sides being S just before the revision, where the result stands, and S after it. Every push that replays a late edit is a revision of that edit's figures; its import is the earliest import those late edits are late for, and its position is its push's commit on the feed (a push that emits nothing is at the feed's last commit, so a device already there has seen it). It is a revision even when it changes nothing against S just before it (an answer may already have ended the item a device reacted to), but a copy an edit adds reacts only to a revision that changes S's live copies or items; a push whose late edits are all held is none.");
+    expect(text).not.toMatch(/\(ii\) a knowing edit of it was made before a REVISION|the side where the result stands gave S|the placement before I never gives S/);
+    expect(text).toContain("What a revision changes is what its replayed late edits alone make of S: S replayed with them, without the push's answers and knowing edits, against S just before the push, leaving out the late edits' own writes, facet by facet (another facet of a copy they wrote still counts). So an answer's writes are no revision, even in the push of a late edit, and a by-hand tag on the copy a replayed sale took out is applied. An edit that is no reaction (a tag on a copy the revision left alone, a figure value) is applied;");
+    expect(text).not.toMatch(/A revision is a push that replays a late edit and so changes S's live copies or items/);
+    expect(text).toContain("(iii) it is late, its basis is before the commit of an answer on S that the server accepted (to any of S's items; a device that had applied the answer's transaction made its edit after the answer), and it passes the relevance test: the user decided without it; or (iv) it is late for a frame the server no longer keeps. Frames are kept at least 180 days and while any enrolled device's cursor is before them.");
+    expect(text).toContain("The decision is final: a held unit stays held, whatever arrives later, until its card is answered, and a unit replayed is never held later. An answer holds no knowing edit: (iii) is for late units, and an answer's writes are no revision.");
+    expect(text).toContain("The card lists the held units of S whole, oldest first, as many as fit in 16 edits, and `more` counts the held edits it does not list. Its keep writes the listed edits now, as an answer's writes (above each facet's current version, so over any edit made before the keep), each then a knowing edit; its take drops them; the card then lists the next.");
+    expect(text).not.toMatch(/has its basis before a replay's revision of S \(a withdrawal the device had not seen\)|Its keep applies the listed edits now, as knowing edits/);
+    expect(text).not.toMatch(/\(iii\) it is late and its basis is before an answer on S: the user decided without it/);
+  });
+
+  it('answers items by rev: keep, take, per_copy, undo and dismiss, then realigns the bases', () => {
+    const text = header();
+    expect(text).toContain('The user answers an item by writing res/{site}/{S} through Push, naming the item (figure, held, change or align), its rev and a choice. An answer is accepted only while that item of S is pending with that rev; otherwise it is STALE, with `current`');
+    expect(text).not.toMatch(/An mfc_change\. take/);
+    // round 8: the restore order and the row of a take's new copy, which copies realign, and what an undo writes
+    expect(text).toContain("then restoring a copy that is out: a tracked one first, one whose base is the kind first, which can bring back a copy the app sold, then one an import removed (not tracked: its base is OUT), lowest occ id first; then new copies, each for the lowest-numbered row of S of the kind, whatever its Count, at that row's lowest unused ordinal. A copy with no base is never changed, but for one an import removed, and a disputed field takes MFC's value.");
+    expect(text).toMatch(/per_copy: what only MFC changed as keep applies it, then the final statuses listed and "app" or "mfc" per disputed field, exactly\./);
+    // round 8, recheck 2: keep follows the rev, not the figure decided again; round 9, recheck 1: and what it applies besides
+    expect(text).toContain("* A conflict. keep: every part the rev lists as disputed stays at the app's side, even when a knowing edit has since brought it back to its base (keep does not decide the figure again). A part the rev found only MFC changed is applied where the app has not changed it since: decided again it is still MFC's change alone (MFC's transitions on the copies the app left unchanged, MFC's value on a field the app holds at its base). Every other part stays as the app has it: one MFC did not change, one the rev found alike or matched, and one the app has changed since.");
+    expect(text).not.toMatch(/what only MFC changed is still applied, to the copies the app left unchanged/);
+    // round 9, recheck 1: take's removal order, as MATERIALIZE's
+    expect(text).toContain('conversions first, arrivals first, lowest occ id; then removals, a copy with an origin before one without, then the highest occ id; then restoring a copy that is out');
+    expect(text).not.toMatch(/then removals, highest occ id/);
+    // and the schemas say the same: a favor_app undo list, and what a conflict item's field status is
+    expect(read('schemas/imp-change.schema.json')).toContain('What undo would write: the values before, or for favor_app the take its import would have written.');
+    expect(read('schemas/imp-change.schema.json')).not.toMatch(/what take writes now/);
+    expect(read('schemas/imp-figure.schema.json').match(/What the import that raised the rev found for it \(kept with the rev; keep and per_copy follow it\)/g)).toHaveLength(3);
+    expect(text).not.toMatch(/keep: the app's side of every disputed part stands/);
+    expect(text).toContain("After a keep, take or per_copy on a conflict, a take on a divergence, and the undo of a favor_app settlement, the bases REALIGN to MFC's side: the row bases become the export's rows, the field bases MFC's values, and per kind the live copies with the lowest occ ids, up to MFC's Count, get that base; other copies get base OUT, and MFC's Counts beyond the app's copies become placeholders. A keep on a divergence and the undo of an applied or favor_mfc change move no base: they acknowledge the app's side, which stays an app change against MFC's, so a later MFC change that meets it is a conflict. A dismiss and a held-edit card's answer move none either.");
+    // round 8, recheck 1: which export an undo works against, after a later import; contract-8 close-out, fix rounds 1
+    // and 2: an applied or favor_mfc undo acknowledges MFC's rows as the row bases stand at the undo, so a row with no
+    // row base then is none of them (a row its import dropped is one again once a later import that settled the figure
+    // lists it), and an import of the export that last settled the figure, by an import or by an answer that realigned
+    // its bases, finds the rows it recorded
+    // contract-8 close-out i1 (recheck SHOULD 1): the undo of an older FAVOR_APP settlement that ends a divergence records no
+    // acknowledgement, so the next import really compares again and raises what still differs
+    // contract-8 close-out i2 (recheck SHOULD, the orchestrator's ruling): the undo keeps acknowledged the counts a keep acknowledged
+    // when it kept a copy against MFC's removal, and records nothing else
+    expect(text).toContain("* A change entry. undo: an applied or favor_mfc change is reverted by its undo list, each facet the import wrote back to its value before the import, while every write still holds the value the import wrote (else the undo is STALE); a copy the import created keeps its origin and head, and only its status is tombstoned. The undo of a favor_app settlement is the take its import would have written: the bases the settlement's realignment moved are put back as they stood before it (any other base stays as later steps left it, so a copy MFC came to track since stays tracked), MFC's side is made true against them as take makes it, and the bases realign; like a take it records the acknowledgement, so the same export raises nothing again, but for an undo that ends a divergence (below). An undo works against the export of the import that made the entry, whatever a later import found: that take, and the realignment after it, use that export's side. A divergence a later import left pending on S compared the sides before that take, against the bases that import left, so the undo ends it (an answer to it is then STALE) and records no acknowledgement, but for the counts when the copies knowing keeps kept against MFC's removal alone make them differ, which it keeps acknowledged as a take records them, with no align-MFC entry (A COPY KEPT AGAINST MFC'S REMOVAL). The next import compares again and raises whatever else still differs after its decision, such as a value the user changed since, or the counts of a hand copy the take leaves, though the settlement or a keep acknowledged them, a hand copy held beside kept copies included; a conflict a later import raised stays pending, and its answer realigns the bases to its own export. An applied or favor_mfc undo acknowledges MFC's rows as they stand at the undo (ACKNOWLEDGED): S's row bases, each as the last import that settled its row, or the last answer that realigned it, took it from MFC (one after the change's import has moved them), so an import of the export that last settled S, by an import or by such an answer, finds the rows the undo recorded. A row is one of MFC's rows exactly when it has a row base at the undo: a row the change's import dropped is one again if a later import that settled S listed it, at any Count, and a row that import listed, even at Count 0, is none if a later import that settled S dropped it. Such an undo is a knowing keep of each copy the change removed that it restores, whichever copy MATERIALIZE chose, the dropped row's own or another; one that restores no copy, such as an undo that puts back a field, keeps none (A COPY KEPT AGAINST MFC'S REMOVAL). Such an undo answers the change entry alone: a divergence its import left pending stays beside the undo's align-MFC entry until an answer or an import ends it (an import that finds it acknowledged at its values does), and a conflict a later import raised stays pending beside that entry, which the conflict's answer replaces with its own acknowledgement and an import that keeps the conflict ends (ACKNOWLEDGED). dismiss: it goes. * An align-MFC entry: dismiss.");
+    // contract-8 close-out round 1 (recheck i2 SHOULD 1, NOTE 3): an undo keeps only the copies it restores; the kept counts
+    // hold while S holds each kept copy, a hand copy held beside them at the keep included
+    expect(text).not.toMatch(/it kept a copy against MFC's removal, which it keeps acknowledged while they stand at those values, as a take/);
+    expect(text).not.toMatch(/MFC's removal \(A COPY KEPT AGAINST MFC'S REMOVAL\)\. Such an undo/);
+    expect(text).not.toMatch(/since the user has answered none of what still differs/);
+    // contract-8 last round (recheck i2 c2 SHOULDs 1 and 2; the orchestrator's final ruling): an undo keeps each copy the change
+    // removed that it restores, whichever copy MATERIALIZE chose; the counts stay acknowledged only while kept copies alone differ
+    expect(text).not.toMatch(/the undo keeps only the copies it restores/);
+    expect(text).not.toMatch(/A copy the undo restores whose row \(by its origin\) has no row base is a copy kept against MFC's removal/);
+    expect(text).not.toMatch(/whose counts are kept with theirs/);
+    expect(text).not.toMatch(/STALE\), and the next import compares again;/);
+    // contract-8 close-out h2, round 3: the undo of a FAVOR_APP settlement ends a divergence a later import raised (recheck h2 SHOULD 2)
+    expect(text).not.toMatch(/An undo answers the change entry alone/);
+    // contract-8 close-out h1: a restored copy whose row has no row base is one kept against MFC's removal, and an undo beside a pending item
+    expect(text).not.toMatch(/The undo is the user's choice to differ from MFC, so no align-MFC entry asks MFC to list that row again/);
+    expect(text).not.toMatch(/though the change's import dropped that base/);
+    expect(text).not.toMatch(/the next import of an unchanged export finds the rows it recorded/);
+    // contract-8 close-out, fix round 2: no longer that a row the change's import dropped has no row base (a later import
+    // that settled the figure may list it again), nor that a copy only it held is richness (another row may take it)
+    expect(text).not.toMatch(/A row the change's import dropped has no row base/);
+    expect(text).not.toMatch(/a copy only it held is richness/);
+    // each row base as the last import that settled its row, or the last answer that realigned it, took it (recheck e2)
+    expect(text).not.toMatch(/each as the last import that settled its row took it from MFC/);
+    // round 8, recheck 1: an item a replay withdrew and a later replay gave back at the same rev
+    expect(text).toContain('The first accepted answer wins. An item a replay withdrew and a later replay gives back at the same rev is pending with that rev again, so an answer naming it is accepted: it answers what the user was asked.');
+    expect(text).not.toMatch(/After any answer the bases REALIGN/);
+    // contract-8 close-out, round 1: for the rev, a row listed at Count 0 is not one the export lacks, a blank value is none, a head is the spine's
+    expect(text).toContain("REVS. An answer names an item's rev, which is: * A conflict: the raising import with MFC's side and the disputed parts it found, both sides of each (for the counts, the transitions each side left unmatched, each of the app's naming its copy), so it carries the app's side of the disputed parts as that import found it. An import that finds MFC's side unchanged keeps it, whatever the app did meanwhile, and with it what the raising import found, part by part, which keep, per_copy and the item's keep preview follow. For the rev, MFC's side is MFC's rows by id: each of the export's rows of S with its kind, Count and the field values it states (a blank value states none), and each row base of S the export lacks, as lacked: a row the export lists at Count 0 is not one it lacks. A row's head is the spine's, not MFC's: a row the spine re-points to another head of S keeps the rev, and take's new copy for that row takes the head the row has when the take applies. * A divergence: the raising import with both sides' values of the parts that differ. An import that finds the same values keeps it; other values, on either side, give a new rev. * A change entry: the import that made it, its kind and its writes. * A held-edit card: the edits it lists. * An align-MFC entry: its actions, so a dismissed entry returns only when they change.");
+    expect(text).toContain("So a figure item or change entry raised again after it ended has a new rev, even when it is identical, and an answer to the old one is STALE. A knowing edit never changes a figure item's rev, and a late edit changes it only when its replay changes what the raising import found.");
+    expect(text).toContain('An item ends by an answer naming it and its rev, when a later import finds MFC back at the base or the two sides agreeing, when a knowing edit makes the sides of a conflict agree, when the undo of an older FAVOR_APP settlement ends a divergence (ITEMS AND ANSWERS), or at a spine merge (WHAT AN IMPORT DOES).');
+    expect(text).toContain("The sides of a conflict agree when, decided again against the export that raised it, every part of the figure is one MFC did not change or one the app now holds at MFC's value (for the counts, as many live copies of each kind as MFC's Counts). The item then ends and nothing else happens: nothing is written, no base moves, and the next import decides the figure. A knowing edit that leaves the sides differing leaves the conflict standing, and a late edit leaves it to the import it is replayed before.");
+    expect(text).toContain("A replay re-derives items like the rest of S: a late edit replayed before the import that raised an item can withdraw the item or change its rev, and every device sees that as ordinary events (the item's tombstone, or its new rev). An answer to an item a replay withdrew or re-revved is void: its writes go with it, its recorded PushResult stands, and the client shows the item and the facets as they now are. A replay voids an accepted answer only when S's live copies and items end the same either way; otherwise HELD (iii) holds the late edit.");
+    expect(text).not.toMatch(/never by a replay, another device's write or an older edit/);
+  });
+
+  it('acknowledges a figure the user kept, so an unchanged re-import raises nothing and a new change re-opens it (R4, R7)', () => {
+    // contract-8 close-out h2, round 3: MFC's rows are S's row bases, which no answer moves while a divergence is pending but one
+    // that ends it (the undo of an older FAVOR_APP settlement now does), so a keep on a divergence meets the bases its import left
+    // contract-8 close-out i1 (recheck NOTE 1): an import that re-points S's rows to another figure moves S's row bases too
+    expect(header()).toContain("the server records MFC's rows and, for each part of the projection that differs, both sides' values, as they stand once the answer or settlement has moved its bases. MFC's rows are then S's row bases, which a realignment, or the import that raised or kept a divergence, made the export's rows of S, so a row that export lacks is none of them; while a divergence is pending, only an answer that ends it (a take on it, or the undo of an older FAVOR_APP settlement, which realigns them to its own export: ITEMS AND ANSWERS), or an import that moves a row of S to another figure (ROW MOVED), moves those bases. An applied or favor_mfc undo, which moves no base, takes S's row bases at the undo (ITEMS AND ANSWERS).");
+    expect(header()).not.toMatch(/only an answer that ends it moves those bases/);
+    expect(header()).not.toMatch(/even when an answer since has moved the bases/);
+    expect(header()).not.toMatch(/the rows of the last import that raised or kept the divergence/);
+    // round 8, recheck 2: the undo of a FAVOR_APP settlement records it as a take does
+    // contract-8 close-out i1 (recheck SHOULD 1): but for an undo that ends a divergence
+    // contract-8 close-out i2 (recheck SHOULD): but the counts of a copy kept against MFC's removal
+    expect(header()).toContain("A take on a conflict or a divergence, a FAVOR_MFC settlement and the undo of a FAVOR_APP settlement record them too, with no align-MFC entry, since the user took MFC's side; an undo that ends a divergence records only the counts that copies kept against MFC's removal alone make differ (ITEMS AND ANSWERS).");
+    expect(header()).not.toMatch(/an undo that ends a divergence records none/);
+    // contract-8 close-out h2: the import records the parts too, as its decision leaves them
+    // contract-8 close-out i1 (recheck SHOULD 2): a part an import finds equal is acknowledged no more, as the whole figure is when every
+    // part is equal
+    expect(header()).toContain("An import raises nothing for a part acknowledged at its present values, and records again, as its decision leaves them, MFC's rows (the export's rows of S) and each part that differs against them, including one that differs only because a row the export dropped is gone; so the next import of that export, nothing changed meanwhile, finds every part that differs acknowledged, and a partial catch-up on MFC leaves the rest acknowledged. A part an import finds equal is acknowledged no more, as when every part is equal: should it come to differ again, even at the values it had, it re-opens the figure. A part that comes to differ at other values, by a new MFC change or a new app change, re-opens the figure (a new item, with a new rev); an import that finds every part equal ends the acknowledgement, and so does one that raises a conflict on S or keeps one.");
+    expect(header()).not.toMatch(/and records MFC's rows as its decision leaves them, the export's rows of S, so a partial/);
+    // contract-8 close-out h2: a re-import of the same export, and the divergence rev an import that dropped a row may see changed
+    // contract-8 close-out i1 (recheck SHOULD 1): and what it raises again after an undo ended a divergence
+    expect(prose(importProto)).toContain("Feed events this import produced, its marker and the server-owned items included. A re-import of the same export produces the marker and nothing else, bar the items it clears and what it raises again after the undo of a FAVOR_APP settlement ended a divergence; it may also give a new rev to a divergence the previous import raised while it dropped a row (that import compared the sides with the row at Count 0, this one without it).");
+    expect(header()).not.toMatch(/records MFC's rows as it found them/);
+  });
+
+  it('keeps an align-MFC entry of MFC-expressible actions only where the MFC id is known, never writing to MFC (R8)', () => {
+    const text = header();
+    expect(text).toContain("For an acknowledged figure that has an MFC id, the server keeps an align-MFC entry imp/{site}/align/{S} while THE ALIGN PLAN changes a row: what to change on MFC, by hand, so that MFC holds the app's side as it stands now. The entry follows every change of the app's side, knowing edits included.");
+    expect(text).toContain('and add_to_list on a row whose Count the entry lowers, or which leaves the collection, when the user has configured a disposition list (disposition_list, e.g. 206369) and a former copy of that row (by its origin) is disposed of as sold or traded.');
+    expect(text).toContain("Per kind, while the rows of that kind hold more than the app's live copies of it, they give up the excess first from the Count beyond their own live copies of the kind (copies whose origin is the row), the row with the most such Count first and the highest-numbered on a tie, then from the highest-numbered row; a row left with none leaves the collection. A kind the app has more of grows its lowest-numbered row of that kind, or takes the lowest-numbered row out of the collection.");
+    expect(text).toContain("The server never writes to MFC; a client links each action to the item's page on MFC. An entry clears itself when an import finds MFC matching, and a dismissed entry is not shown again until its actions change.");
+  });
+
+  it('returns one ordered review set right after the import (R7)', () => {
+    expect(header()).toContain('THE REVIEW SET (R7). The response carries, in this order, the pending figure items of kind conflict, then divergence, then the held-edit cards, then the align-MFC entries as a separate, dismissable group; each group in head_id order, each item with the answers it allows, and a bulk answer per group (conflict: keep or take; divergence: keep or take; held edits: keep or take; align-MFC: dismiss).');
+    // contract-8 close-out i2 (recheck SHOULD): what the undo of a FAVOR_APP settlement that ends a divergence leaves unacknowledged recurs
+    expect(header()).toContain('What the user skips stays pending on every device and is badged, and an answered or acknowledged item never recurs on an import of an unchanged row, but for what the undo of a FAVOR_APP settlement that ends a divergence leaves unacknowledged (ITEMS AND ANSWERS).');
+    expect(header()).toContain("Before it presents the review set, or mints any edit or answer, the client that asked for the import pulls until it has applied the import's transaction: until its replica's marker imp/{site}/import holds an import at or above import_number.");
+    expect(header()).toContain("The response carries the review set (R7), which the client presents once it has pulled the import's transaction (THE REVIEW SET).");
+    expect(importProto).not.toMatch(/present(s)? (it|them) at once/);
+  });
+
+  it('states what a full discrepancy report must list, though 0.3.0 defines none, and what keeping a copy against MFC\'s removal does (Ross, 2026-10-05)', () => {
+    // contract-8 close-out h1: by state, whatever kept the copy, so one MFC has come to count is not listed
+    expect(header()).toContain("FULL DISCREPANCY REPORT (Ross, 2026-10-05). 0.3.0 defines no report that compares the whole collection with MFC's latest export on demand: the review set shows only what is pending. A full discrepancy report, when the contract adds one, MUST list as a difference every live copy MFC's latest export cannot account for, whatever kept it (an undo, a keep, per_copy, a FAVOR_APP settlement, an acknowledged or dismissed item, richness): per figure S and kind, the app's live copies of that kind beyond the export's Counts of it on S's rows, those whose row (by its origin) the export lacks or lists at Count 0 first. So it lists as many copies as MFC's export cannot account for, a copy kept against MFC's removal counted among them until MFC counts it (A COPY KEPT AGAINST MFC'S REMOVAL), though the copies it names follow that order and need not be the kept ones; one MFC has come to count on another row, as an align-MFC entry asked, is not counted. Its goldens must pin such a copy, kept and then counted.");
+    expect(header()).not.toMatch(/every live copy brought back by the undo of the change that removed it/);
+    // a keep, per_copy, a FAVOR_APP settlement and an undo alike: the dropped row is none of MFC's rows, the plan counts the copy
+    // contract-8 close-out i2 (recheck SHOULD): such a keep's counts survive the undo of an older FAVOR_APP settlement that ends a
+    // divergence, until an import finds them equal; a FAVOR_APP settlement is no such keep
+    // contract-8 close-out round 1 (recheck i2 SHOULD 1 and 2, NOTEs 3 and 4): the copies a keep kept, held at the undo; a take
+    // neither keeps nor ends one; equal as the import's decision leaves them
+    expect(header()).not.toMatch(/acknowledges while S holds a copy kept against MFC's removal/);
+    // contract-8 last round (the orchestrator's final ruling): a knowing keep per copy id, the copies the MATERIALIZE rule removes
+    // for the item; per copy, so a hand copy beside kept copies is raised again and a deleted kept copy drops only its own record
+    expect(header()).not.toMatch(/A copy kept against MFC's removal is a live copy whose row \(by its origin\) has no row base/);
+    expect(header()).not.toMatch(/The acknowledgement records the counts as one part/);
+    expect(header()).not.toMatch(/S still holds each of those copies/);
+    expect(header()).not.toMatch(/records only the counts of a copy kept against MFC's removal/);
+    // contract-8 close-out round 1 (recheck l1): only a rev whose counts part presented MFC's removal keeps a copy, a kept copy
+    // MFC counts again drops its record, and the discrepancy report counts kept copies without naming them
+    expect(header()).not.toMatch(/a keep on a conflict whose counts MFC did not change, the undo/);
+    expect(header()).not.toMatch(/A kept copy stays kept while S holds it live at the kind it was kept at: deleted/);
+    expect(header()).not.toMatch(/So a copy kept against MFC's removal is listed until MFC counts it/);
+    expect(header()).toContain("A COPY KEPT AGAINST MFC'S REMOVAL (Ross, 2026-10-05). When an export drops a row (the user deleted the entry on MFC), the import presents the removal: it removes and lists a copy of the row's kind that the app left unchanged (a change entry, with its undo), or shows the app's side as a conflict or a divergence. Keeping the copy there, by that undo, a keep or per_copy on that item, or a FAVOR_APP settlement, is the user's choice to differ from MFC: the dropped row is none of the MFC rows the acknowledgement records, so no align-MFC entry asks MFC to list it again. THE ALIGN PLAN counts the kept copy like any other live copy of its kind: another row of S takes it where the plan allows (it grows a row of that kind, or takes into that kind a row out of the collection, one at Count 0 or one the plan leaves with none), and it is richness where no row can. An export that lists the row again, even at Count 0, makes it one of MFC's rows again, and the next decision compares the copy with it. A KNOWING KEEP of a copy against MFC's removal is recorded per copy, by two answers only. The undo of an applied or favor_mfc change keeps each copy that change removed and the undo restores. A keep or per_copy on a conflict whose rev found the counts disputed, or changed by MFC alone, keeps each copy that MATERIALIZE, run at the answer on MFC's transitions to OUT that the conflict's export leaves unmatched, would remove and that the answer leaves live: the copy the rule picks, the dropped row's own or another. Nothing else keeps a copy so: a keep on a divergence (its import has applied MFC's change, so the rule removes nothing more), a keep or per_copy on a conflict whose rev found the counts unchanged by MFC, alike or matched, such as a conflict over the note alone (a copy the user restored by hand before it is a hand copy, as before a keep on a divergence), the undo of a change that removed no copy, a take, or a FAVOR_APP settlement. A kept copy stays kept while S holds it live at the kind it was kept at and MFC does not count it: deleted or moved to another kind, even if restored before an import, it drops its own record, and so it does once MFC counts it again, when an import or an answer's realignment gives it a live base (MFC lists its row again, or raises a Count that the copy fills); the other kept copies stand. A later knowing keep adds its copies to those kept, and a take on a later item ends none. An import that finds the counts equal as its decision leaves them, whatever it decides, ends every knowing keep of S. The undo of an older FAVOR_APP settlement that ends a divergence keeps the counts acknowledged only while the kept copies alone make them differ, that is, while without those copies the app's side as MFC could state it (THE ALIGN PLAN) equals MFC's: a hand copy held beside kept copies, whenever it was added, is raised again with them (ITEMS AND ANSWERS). A knowing keep silences only that undo's re-raise: a full discrepancy report still lists, whatever kept it, every live copy MFC's export cannot account for (FULL DISCREPANCY REPORT).");
+  });
+
+  it('resets a filing beside a kind change, and keeps disposals to the configured disposition list', () => {
+    const text = header();
+    expect(text).toMatch(/FILING\. Whenever the import upserts a copy's status to a kind its filing is not of, it writes occ\/\{occ\}\/collection \{"collection": "\{status\}\/default"\} in the same batch, as a device kind change does\. That is the only filing it writes, and it never compares one\./);
+    expect(text).toMatch(/DISPOSITIONS\. Ross tracks dispositions on MFC as a list plus a note in a user field \(GR-Q3\)\. The import MAY write status former and occ\/\{occ\}\/disposal for rows of the user's configured disposition list; how that list and its note map to a disposal is desk item DL, so a 0\.3\.0 import writes neither, whatever pref disposition_list says\. No other row, and nothing else on the server, writes a former status or a disposal\./);
+    expect(text).not.toMatch(/The import never writes a filing|maps no column to `former`/);
+    const doc = prose(vocabSource.slice(vocabSource.indexOf('export const SERVER_FACET_FAMILIES'), vocabSource.indexOf('export const IMPORT_ITEMS')));
+    expect(doc).toMatch(/The per-figure items the import keeps on the feed \(import\.proto THE SERVER DECIDES\), keyed imp\/\{site\}\/\{item\}\/\{head_id\}: a figure item, held edits, a change entry and an align-MFC entry\./);
+  });
+
+  it('keeps the row counters partitioning resolved rows, and reserves the removed held-change counter and review kind', () => {
     expect(prose(importProto)).toMatch(/added \+ moved \+ unchanged \+ kept_newer == resolved/);
+    expect(prose(importProto)).toContain('Resolved rows, not added, of a figure whose decision is a conflict this import left for the user (ASK), the app\'s side kept meanwhile. The 0.2.x name, a 0.3.0 meaning.');
+    expect(importProto).toMatch(/reserved 15;\s+reserved "changes_held";/);
+    expect(importProto).toMatch(/reserved 2;\s+reserved "IMPORT_REVIEW_KIND_MFC_CHANGE";/);
+    expect(prose(importProto)).toContain('MFC ids of earlier imports absent from this export, of a figure whose decision tombstoned at least one occurrence status.');
+    expect(prose(importProto)).toContain('The rev an answer names (res/{site}/{head_id} `rev`), with the item it names (`item`: figure, held, change or align, as facet_key has it).');
+  });
+
+  it('names the reason a row is unresolved', () => {
+    const row = prose(importProto.slice(importProto.indexOf('message UnresolvedMfcRow {'), importProto.indexOf('// ImportService')));
+    for (const reason of ['no_product', 'count_over_99', 'invalid_count', 'invalid_id', 'duplicate_id']) expect(row).toContain(`"${reason}"`);
+  });
+
+  it('never versions an import in the future and still refuses a future export_date', () => {
+    expect(prose(importProto)).toMatch(/export_date later than the server's current UTC date plus one day -> INVALID_ARGUMENT/);
   });
 });
 
@@ -318,11 +722,50 @@ describe('README', () => {
     expect(readme).not.toMatch(/which ignores `#`/);
     expect(readme).toMatch(/out-of-grammar token/);
   });
+
+  it('names the key helpers and the key vectors, and records the 0.3.0 semantic change', () => {
+    expect(readme).toMatch(/golden\/key-vectors\.json/);
+    expect(readme).toMatch(/golden\/import-vectors\.json/);
+    expect(readme).toMatch(/canonicalMfcId/);
+    expect(readme).toMatch(/importOccIdFromMac/);
+    expect(readme).toMatch(/parseUserFacetKey/);
+    expect(readme).toMatch(/buildFacetKey/);
+    expect(readme).not.toMatch(/userFacetKey`|holding states/);
+    expect(readme).toMatch(/0\.3\.0 made one/);
+  });
+});
+
+describe('README: the schema guard', () => {
+  it('says the payload schemas are guarded mechanically, like the protos', () => {
+    expect(readme).toMatch(/scripts\/schema-growth\.ts/);
+    expect(readme).toMatch(/npm run schema-growth/);
+  });
+
+  it('says only annotations may change and an enum may only grow', () => {
+    const text = readme.replace(/\s+/g, ' ');
+    expect(text).toMatch(/every keyword must be unchanged at every depth except the annotations \(`title`, `description`, `\$comment`, `examples`\), which no validator reads, and `enum`, which may only grow/);
+    expect(text).toMatch(/no property, pattern property or subschema is added or removed, a closed object stays closed, and no type, bound, pattern or format changes/);
+    expect(text).not.toMatch(/the properties and `required` sets must be unchanged at every depth/);
+    expect(text).toMatch(/An `enum` gained where there was none narrows what the schema accepts, so it is flagged too\./);
+  });
+
+  it('says the server decides the import, and what comes back for the user', () => {
+    const text = readme.replace(/\s+/g, ' ');
+    expect(text).toContain("**The server decides** (`import.proto` THE SERVER DECIDES): every pushed event carries the basis it was made on, a late edit is replayed where it belongs, a change only MFC made is applied and listed with its undo, and conflicts, divergences, held edits and what to change on MFC by hand come back as items the client shows right after the import, once it has pulled the import's transaction. A late edit another device has already reacted to is held, a copy's head, status, filing and disposal together, until the user keeps or drops it.");
+    expect(text).not.toMatch(/changes held for confirmation/);
+    expect(text).toContain('golden/import-vectors.json replayed server scenarios, re-imports and review cases (R1-R8)');
+    expect(text).not.toMatch(/import-crossing cases/);
+  });
 });
 
 describe('package', () => {
-  it('is 0.2.1', () => {
-    expect(pkg.version).toBe('0.2.1');
+  it('is 0.3.0', () => {
+    expect(pkg.version).toBe('0.3.0');
+  });
+
+  it('runs the schema growth guard in verify, right after the proto breaking check', () => {
+    expect(pkg.scripts['schema-growth']).toBe('node scripts/schema-growth.ts');
+    expect(pkg.scripts.verify).toContain('npm run breaking && npm run schema-growth && ');
   });
 
   it('ships and exports the new protos, the golden vectors and the payload schemas', () => {
@@ -331,6 +774,8 @@ describe('package', () => {
       './proto/coordinator/v1/catalog.proto',
       './proto/coordinator/v1/import.proto',
       './golden/version-vectors.json',
+      './golden/key-vectors.json',
+      './golden/import-vectors.json',
       './schemas/*',
     ]) {
       expect(pkg.exports, key).toHaveProperty([key]);
