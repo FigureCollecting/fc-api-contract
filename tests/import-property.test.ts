@@ -85,8 +85,20 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     if (process.env.FC_PROPERTY_REPORT !== undefined) appendFileSync(process.env.FC_PROPERTY_REPORT, `${line}\n`);
     expect(t.runs).toBe(20_000);
     expect({ silent: t.silent, silentItem: t.silentItem }, t.first.join('\n')).toEqual({ silent: 0, silentItem: 0 });
-    // the paths counted apart, each read (none is a loss): pinned so that any change is seen
-    expect({ picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual({ picks: 30, refHeldAnswered: 9, answeredSameRev: 2, collisions: 15 });
+    // the paths counted apart, each read (none is a loss): pinned so that any change is seen (contract-8 close-out i1, recheck
+    // NOTE: same, sameCountsShown and differsShown pinned too; the undo of an older FAVOR_APP settlement ending a divergence a
+    // later import raised (h2, round 3) moved 18 FAVOR_APP scripts from 555a107, same 12,401 -> 12,416, sameCountsShown 2,665 ->
+    // 2,653, differsShown 4,878 -> 4,875, none silent: 15 into same (9 from sameCountsShown, 6 from differsShown) and 3 from
+    // sameCountsShown to differsShown, seeds 4375, 7944 and 16067)
+    expect({ same: t.same, sameCountsShown: t.sameCountsShown, differsShown: t.differsShown, picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual({
+      same: 12_416,
+      sameCountsShown: 2_653,
+      differsShown: 4_875,
+      picks: 30,
+      refHeldAnswered: 9,
+      answeredSameRev: 2,
+      collisions: 15,
+    });
   }, 600_000);
 
   it('reactions across two imports, one import dropping the row: where the script\'s last (or middle) import states Count 0 it lacks the row instead (the user deleted the entry on MFC), so it decides and frames a figure it may write nothing to (F1)', () => {
