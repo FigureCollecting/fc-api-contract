@@ -357,12 +357,14 @@
 //     pending on S compared the sides before that take, against the bases that
 //     import left, so the undo ends it (an answer to it is then STALE) and
 //     records no acknowledgement, but for the counts a keep acknowledged when
-//     it kept a copy against MFC's removal, which it keeps acknowledged while
-//     they stand at those values, as a take records them, with no align-MFC
-//     entry (A COPY KEPT AGAINST MFC'S REMOVAL). The next import compares again
-//     and raises whatever else still differs after its decision, such as a
-//     value the user changed since, or the counts of a hand copy the take
-//     leaves, though the settlement or a keep acknowledged them; a conflict a
+//     it kept copies against MFC's removal, which it keeps acknowledged while
+//     they stand at those values and S still holds each of those copies, as a
+//     take records them, with no align-MFC entry (A COPY KEPT AGAINST MFC'S
+//     REMOVAL). The next import compares again and raises whatever else still
+//     differs after its decision, such as a value the user changed since, or
+//     the counts of a hand copy the take leaves, though the settlement or a
+//     keep acknowledged them (but for a hand copy S held beside such copies
+//     when that keep was made, whose counts are kept with theirs); a conflict a
 //     later import raised stays pending, and its answer realigns the bases to
 //     its own export. An applied or favor_mfc undo acknowledges MFC's rows as
 //     they stand at the undo (ACKNOWLEDGED): S's row bases, each as the last
@@ -374,13 +376,15 @@
 //     again if a later import that settled S listed it, at any Count, and a row
 //     that import listed, even at Count 0, is none if a later import that
 //     settled S dropped it. A copy the undo restores whose row (by its origin)
-//     has no row base is a copy kept against MFC's removal (A COPY KEPT AGAINST
-//     MFC'S REMOVAL). Such an undo answers the change entry alone: a divergence
-//     its import left pending stays beside the undo's align-MFC entry until an
-//     answer or an import ends it (an import that finds it acknowledged at its
-//     values does), and a conflict a later import raised stays pending beside
-//     that entry, which the conflict's answer replaces with its own
-//     acknowledgement and an import that keeps the conflict ends
+//     has no row base is a copy kept against MFC's removal, and the undo keeps
+//     only the copies it restores: one that restores none, such as an undo that
+//     puts back a field, keeps none, though S holds such a copy (A COPY KEPT
+//     AGAINST MFC'S REMOVAL). Such an undo answers the change entry alone: a
+//     divergence its import left pending stays beside the undo's align-MFC
+//     entry until an answer or an import ends it (an import that finds it
+//     acknowledged at its values does), and a conflict a later import raised
+//     stays pending beside that entry, which the conflict's answer replaces
+//     with its own acknowledgement and an import that keeps the conflict ends
 //     (ACKNOWLEDGED). dismiss: it goes.
 //   * An align-MFC entry: dismiss.
 // REVS. An answer names an item's rev, which is:
@@ -468,14 +472,19 @@
 // out of the collection, one at Count 0 or one the plan leaves with none), and
 // it is richness where no row can. An export that lists the row again, even at
 // Count 0, makes it one of MFC's rows again, and the next decision compares the
-// copy with it. The counts a keep (that undo, or a keep or per_copy on an item)
-// acknowledges while S holds a copy kept against MFC's removal, a live copy
-// whose row (by its origin) has no row base, stay the user's choice while they
-// stand at those values: the undo of an older FAVOR_APP settlement that ends a
-// divergence keeps them acknowledged (ITEMS AND ANSWERS). A FAVOR_APP
-// settlement's own acknowledgement is no such keep. An import that finds the
-// counts equal, whatever it decides, ends that keep. A full discrepancy report
-// lists the copy (FULL DISCREPANCY REPORT).
+// copy with it. A copy kept against MFC's removal is a live copy whose row (by
+// its origin) has no row base. The counts a keep acknowledges when it keeps
+// such copies (that undo, the copies it restores; a keep or per_copy on an
+// item, each such copy S holds) stay the user's choice while they stand at
+// those values and S still holds each of those copies: the undo of an older
+// FAVOR_APP settlement that ends a divergence keeps them acknowledged (ITEMS
+// AND ANSWERS). The acknowledgement records the counts as one part, so the
+// counts of a hand copy S held beside those copies when the keep was made are
+// kept with them. A FAVOR_APP settlement's own acknowledgement is no such keep,
+// nor is a take, and a take on a later item that leaves those copies does not
+// end one. An import that finds the counts equal as its decision leaves them,
+// whatever it decides, ends that keep. A full discrepancy report lists the copy
+// (FULL DISCREPANCY REPORT).
 //
 // ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
 // truth"). For an acknowledged figure that has an MFC id, the server keeps an
