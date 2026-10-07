@@ -150,9 +150,11 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // the paths counted apart, each read (none is a loss; t.apart lists the first): a by-hand pick, pushed-first holding
     // an edit whose card's answer ends at the offline counts, an undo of an applied change offline where pushed-first
     // shows a favor_app settlement (the same answer, another meaning), and a by-hand sale of the copy a late unit took
-    // out; pinned so that any change is seen
+    // out; pinned so that any change is seen (contract-8 close-out h2, round 3: picks 49 -> 50 in full, seed 5127, a
+    // FAVOR_APP undo offline: the divergence it now ends no longer holds the phone's late units, and what still differs is
+    // which copy each by-hand sale took, equal to pushed-first with those copies taken by name)
     expect({ picks: t.picks, refHeldAnswered: t.refHeldAnswered, answerKind: t.answerKind, collisions: t.collisions, tuCollisions: t.tuCollisions }, t.apart.join('\n')).toEqual(
-      full ? { picks: 49, refHeldAnswered: 1, answerKind: 6, collisions: 1, tuCollisions: 0 } : { picks: 3, refHeldAnswered: 0, answerKind: 0, collisions: 0, tuCollisions: 0 },
+      full ? { picks: 50, refHeldAnswered: 1, answerKind: 6, collisions: 1, tuCollisions: 0 } : { picks: 3, refHeldAnswered: 0, answerKind: 0, collisions: 0, tuCollisions: 0 },
     );
   }, 7_200_000);
 
