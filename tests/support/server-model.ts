@@ -1082,6 +1082,17 @@ export interface Switches {
   keptRemovalOverwrites?: boolean;
   /** A kept copy is checked only at the undo: one deleted and restored by hand meanwhile is still kept. */
   keptRemovalLazyHeld?: boolean;
+  // contract-8 close-out round 1 (recheck l1)
+  /** A kept copy MFC comes to count again (it gets a base: MFC lists its row again or raises a Count) keeps its record. */
+  keptRemovalOutlivesCount?: boolean;
+  /** A keep or per_copy on a conflict records the copies the rule removes, though the card found the counts alike or unchanged. */
+  keptRemovalAnyCounts?: boolean;
+  /** Only a rev that found the counts disputed keeps a copy: a per_copy that keeps the copy MFC alone removed keeps none. */
+  keptRemovalOnlyDisputed?: boolean;
+  /** A knowing keep records every kept copy as owned, whatever its kind. */
+  keptRemovalKindOwned?: boolean;
+  /** The undo's check subtracts only the owned kept copies from the app's counts. */
+  keptRemovalLessOwned?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1775,15 +1786,16 @@ export class Server {
     const hand = this.sw.keptRemovalHandBeside ? st.copiesRel(S).filter((c) => st.val(`occ/${c}/origin`) === null) : [];
     for (const c of [...ids, ...hand]) {
       const k = st.curKind(c, S);
-      if (k !== OUT) rec.set(c, k);
+      if (k !== OUT) rec.set(c, this.sw.keptRemovalKindOwned ? 'owned' : k);
     }
     if (rec.size > 0) st.keptRemoval.set(S, rec);
   }
 
-  /** A kept copy S no longer holds at the kind it kept drops its own record; the others stand. */
+  /** A kept copy S no longer holds at the kind it kept, or that MFC counts again (it has a base), drops its own record; the others stand. */
   private pruneKept(st: Canon): void {
     for (const [S, rec] of st.keptRemoval) {
-      for (const [c, k] of rec) if (st.curKind(c, S) !== k) (this.sw.keptRemovalDropsAll ? rec.clear() : rec.delete(c));
+      const counted = (c: string) => !this.sw.keptRemovalOutlivesCount && st.baseKind(c, S) !== OUT;
+      for (const [c, k] of rec) if (st.curKind(c, S) !== k || counted(c)) (this.sw.keptRemovalDropsAll ? rec.clear() : rec.delete(c));
       if (rec.size === 0) st.keptRemoval.delete(S);
     }
   }
@@ -1791,7 +1803,7 @@ export class Server {
   /** The counts of S differ from MFC's rows only by the kept copies: without them, the app's side as MFC could state it equals MFC's. */
   private onlyKeptDiffer(st: Canon, S: string, rows: readonly MfcRow[], rec: Map<string, Kind>): boolean {
     const less = zero();
-    for (const k of rec.values()) less[k]++;
+    for (const k of rec.values()) if (!this.sw.keptRemovalLessOwned || k === 'owned') less[k]++;
     const c = this.parts(st, S, rows, less).counts;
     return c.mfc === c.app;
   }
@@ -2125,7 +2137,9 @@ export class Server {
       R.accepted = true;
       return;
     }
-    const removes = this.removedByRule(st, S, cf.exp);
+    // only a card whose counts part presented a removal of MFC's (apply or conflict) keeps a copy against it
+    const real = this.sw.keptRemovalAnyCounts || (cf.comps.counts === 'apply' && !this.sw.keptRemovalOnlyDisputed) || cf.comps.counts === 'conflict';
+    const removes = real ? this.removedByRule(st, S, cf.exp) : [];
     if (cf.kind === 'conflict') applyOps(st, answerOps(st, S, cf.exp, R.choice, this.sw, R.copies, R.fields, cf.comps), R.version);
     else if (R.choice === 'take') applyOps(st, this.takeSettled(st, S, cf.exp), R.version);
     applyOps(st, realign(st, S, cf.exp), R.version);

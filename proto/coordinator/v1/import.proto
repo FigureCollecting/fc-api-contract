@@ -474,26 +474,31 @@
 // copy with it. A KNOWING KEEP of a copy against MFC's removal is recorded per
 // copy, by two answers only. The undo of an applied or favor_mfc change keeps
 // each copy that change removed and the undo restores. A keep or per_copy on a
-// conflict keeps each copy that MATERIALIZE, run at the answer on MFC's
-// transitions to OUT that the conflict's export leaves unmatched, would remove
-// and that the answer leaves live: the copy the rule picks, the dropped row's
-// own or another. Nothing else keeps a copy so: a keep on a divergence (its
-// import has applied MFC's change, so the rule removes nothing more), a keep on
-// a conflict whose counts MFC did not change, the undo of a change that removed
-// no copy, a take, or a FAVOR_APP settlement. A kept copy stays kept while S
-// holds it live at the kind it was kept at: deleted or moved to another kind,
-// even if restored before an import, it drops its own record, and the other
-// kept copies stand. A later knowing keep adds its copies to those kept, and a
-// take on a later item ends none. An import that finds the counts equal as its
-// decision leaves them, whatever it decides, ends every knowing keep of S. The
-// undo of an older FAVOR_APP settlement that ends a divergence keeps the counts
-// acknowledged only while the kept copies alone make them differ, that is,
-// while without those copies the app's side as MFC could state it (THE ALIGN
-// PLAN) equals MFC's: a hand copy held beside kept copies, whenever it was
-// added, is raised again with them (ITEMS AND ANSWERS). A knowing keep silences
-// only that undo's re-raise: a full discrepancy report still lists, whatever
-// kept it, every live copy MFC's export cannot account for (FULL DISCREPANCY
-// REPORT).
+// conflict whose rev found the counts disputed, or changed by MFC alone, keeps
+// each copy that MATERIALIZE, run at the answer on MFC's transitions to OUT
+// that the conflict's export leaves unmatched, would remove and that the answer
+// leaves live: the copy the rule picks, the dropped row's own or another.
+// Nothing else keeps a copy so: a keep on a divergence (its import has applied
+// MFC's change, so the rule removes nothing more), a keep or per_copy on a
+// conflict whose rev found the counts unchanged by MFC, alike or matched, such
+// as a conflict over the note alone (a copy the user restored by hand before it
+// is a hand copy, as before a keep on a divergence), the undo of a change that
+// removed no copy, a take, or a FAVOR_APP settlement. A kept copy stays kept
+// while S holds it live at the kind it was kept at and MFC does not count it:
+// deleted or moved to another kind, even if restored before an import, it drops
+// its own record, and so it does once MFC counts it again, when an import or an
+// answer's realignment gives it a live base (MFC lists its row again, or raises
+// a Count that the copy fills); the other kept copies stand. A later knowing
+// keep adds its copies to those kept, and a take on a later item ends none. An
+// import that finds the counts equal as its decision leaves them, whatever it
+// decides, ends every knowing keep of S. The undo of an older FAVOR_APP
+// settlement that ends a divergence keeps the counts acknowledged only while
+// the kept copies alone make them differ, that is, while without those copies
+// the app's side as MFC could state it (THE ALIGN PLAN) equals MFC's: a hand
+// copy held beside kept copies, whenever it was added, is raised again with
+// them (ITEMS AND ANSWERS). A knowing keep silences only that undo's re-raise:
+// a full discrepancy report still lists, whatever kept it, every live copy
+// MFC's export cannot account for (FULL DISCREPANCY REPORT).
 //
 // ALIGN-MFC (R8; Ross: "enabling us to become their preferred source of
 // truth"). For an acknowledged figure that has an MFC id, the server keeps an
@@ -543,10 +548,12 @@
 // settlement, an acknowledged or dismissed item, richness): per figure S and
 // kind, the app's live copies of that kind beyond the export's Counts of it on
 // S's rows, those whose row (by its origin) the export lacks or lists at Count
-// 0 first. So a copy kept against MFC's removal is listed until MFC counts it
-// (A COPY KEPT AGAINST MFC'S REMOVAL), and one MFC has come to count on another
-// row, as an align-MFC entry asked, is not. Its goldens must pin such a copy,
-// kept and then counted.
+// 0 first. So it lists as many copies as MFC's export cannot account for, a
+// copy kept against MFC's removal counted among them until MFC counts it (A
+// COPY KEPT AGAINST MFC'S REMOVAL), though the copies it names follow that
+// order and need not be the kept ones; one MFC has come to count on another
+// row, as an align-MFC entry asked, is not counted. Its goldens must pin such a
+// copy, kept and then counted.
 //
 // FILING. Whenever the import upserts a copy's status to a kind its filing is
 // not of, it writes occ/{occ}/collection {"collection": "{status}/default"}
