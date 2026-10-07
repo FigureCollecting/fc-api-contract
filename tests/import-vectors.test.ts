@@ -155,8 +155,10 @@ describe("golden import vectors: Ross's rules R1-R8 (review right after the impo
       /records MFC's rows as its decision leaves them/, /while a later import's conflict on the figure is pending/,
       // contract-8 close-out h2
       /records the parts as its decision leaves them/, /also records a part that differs only once that row is gone/,
-      /A keep on a divergence after the undo of an older FAVOR_APP settlement brought back/,
-      /A keep on a divergence after the undo of an older FAVOR_APP settlement realigned the bases/,
+      /The undo of an older FAVOR_APP settlement ends the divergence a later import raised when it dropped a row/,
+      /The undo of an older FAVOR_APP settlement ends the divergence a later import raised when it listed a row/,
+      /and the undo still takes the settling import's side, and ends the divergence that import raised/,
+      /The undo of an older FAVOR_APP settlement leaves pending a conflict a later import raised/,
       /compares the sides without that row: the divergence takes a new rev/])
       expect(names.join('\n')).toMatch(topic);
     expect(names.join('\n')).not.toMatch(/mfc_only|mfc_change|HOLD/);

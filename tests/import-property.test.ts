@@ -96,9 +96,11 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // sale of the highest live copy the device saw, equal to pushed-first with that copy taken by name)
     // (contract-8 close-out h2: same, sameCountsShown and differsShown pinned too, so a change that moves a script between
     // them is seen; recheck h2 found 54 middle-drop scripts had left 'same' at h1 unseen, 32 of them FAVOR_MFC)
+    // (contract-8 close-out h2, round 3: the undo of a FAVOR_APP settlement ends a divergence a later import raised; same
+    // 2,723 -> 2,730 and 2,627 -> 2,640, every moved script a FAVOR_APP one, none silent)
     const apart = {
-      last: { runs: 3_947, same: 2_723, sameCountsShown: 361, differsShown: 846, picks: 6, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 },
-      middle: { runs: 3_914, same: 2_627, sameCountsShown: 421, differsShown: 836, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 },
+      last: { runs: 3_947, same: 2_730, sameCountsShown: 355, differsShown: 845, picks: 6, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 },
+      middle: { runs: 3_914, same: 2_640, sameCountsShown: 414, differsShown: 830, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 },
     };
     for (const drop of ['last', 'middle'] as const) {
       const t = crossImportWorld({ from: 1, to: 20_000, drop });
