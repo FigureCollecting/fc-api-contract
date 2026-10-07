@@ -241,8 +241,8 @@ export class Canon {
   held: Edit[] = [];
   /** Per import number: what its decisions did (ImportMfcExportResponse). */
   stats = new Map<number, Stats>();
-  /** A COPY KEPT AGAINST MFC'S REMOVAL: per figure, the counts (both sides' values) a keep acknowledged when it kept such copies, and those copies. */
-  keptRemoval = new Map<string, { counts: string; copies: string[] }>();
+  /** A COPY KEPT AGAINST MFC'S REMOVAL: per figure, each copy a knowing keep kept against MFC's removal, at the kind it kept. */
+  keptRemoval = new Map<string, Map<string, Kind>>();
 
   constructor(
     readonly namer: Namer,
@@ -1054,27 +1054,34 @@ export interface Switches {
   favorUndoKeepsSettledParts?: boolean;
   /** The counts it keeps acknowledged keep their align-MFC entry. */
   favorUndoKeptAligns?: boolean;
-  /** Any keep's counts are kept, though it kept no copy against MFC's removal. */
+  /** A keep or per_copy on an item, a keep on a divergence included, records every live copy it leaves beyond MFC's counts (base OUT), though the rule removes none of them. */
   keptRemovalAnyKeep?: boolean;
   /** An import that finds the counts equal leaves the counts a keep acknowledged when it kept a copy against MFC's removal recorded. */
   keptRemovalOutlivesEqual?: boolean;
-  /** A take on a conflict that leaves such a copy records its counts too. */
+  /** A take on a conflict records the copies MATERIALIZE removes for it that the take leaves, as a keep does. */
   keptRemovalOnTake?: boolean;
-  /** A copy out of the figure whose row has no row base counts as one kept against MFC's removal. */
-  keptRemovalOutCopy?: boolean;
-  /** The undo keeps the counts acknowledged at whatever values they stand, once a keep recorded them. */
+  /** The undo keeps the counts while the figure holds a kept copy, whatever else makes them differ. */
   keptRemovalAnyValue?: boolean;
   /** Once it keeps the counts, the undo keeps every part acknowledged as a take records them. */
   favorUndoKeepsAllParts?: boolean;
   // contract-8 close-out round 1
-  /** The undo of an applied or favor_mfc entry records the counts while the figure holds such a copy, though the undo restored none of them (e74de67). */
+  /** The undo of an applied or favor_mfc entry records every live copy whose row (by its origin) has no row base, though the change removed none of them (e74de67). */
   keptRemovalAnyUndo?: boolean;
-  /** The undo keeps the counts at those values though the figure no longer holds the copies the keep kept (e74de67). */
+  /** A kept copy the figure no longer holds at the kind it kept keeps its record (e74de67). */
   keptRemovalOutlivesCopy?: boolean;
-  /** The undo keeps the counts while the figure holds any one of the copies the keep kept. */
-  keptRemovalAnyCopyHeld?: boolean;
   /** A take on a conflict ends that keep, though it leaves the copies the keep kept. */
   keptRemovalTakeEnds?: boolean;
+  // contract-8 last round (round9l): a knowing keep per copy id, the copies the MATERIALIZE rule removes
+  /** A keep or per_copy, a keep on a divergence included, records each live copy whose row (by its origin) has no row base, and an undo each such copy it restores (0378b33). */
+  keptRemovalByRowBase?: boolean;
+  /** A knowing keep also records the hand copies (no origin) the figure holds beside the kept ones: the counts kept as one part (0378b33). */
+  keptRemovalHandBeside?: boolean;
+  /** A kept copy the figure no longer holds ends the record of every copy kept with it. */
+  keptRemovalDropsAll?: boolean;
+  /** A later knowing keep replaces the record of an earlier one, though the figure still holds its copies. */
+  keptRemovalOverwrites?: boolean;
+  /** A kept copy is checked only at the undo: one deleted and restored by hand meanwhile is still kept. */
+  keptRemovalLazyHeld?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1492,6 +1499,7 @@ export class Server {
       else if (inp.type === 'import') this.applyImport(st, inp);
       else if (inp.type === 'answer') this.applyAnswer(st, inp);
       else this.applyRedirect(st, inp);
+      if (!this.sw.keptRemovalOutlivesCopy && !this.sw.keptRemovalLazyHeld) this.pruneKept(st);
       if (inp.type === 'import') nImp = inp.n;
       if (!this.sw.pendingAtImportsOnly || inp.type === 'import') this.recordPending(st, nImp);
     }
@@ -1693,8 +1701,9 @@ export class Server {
   }
 
   /** Each part of the projection, MFC's side and the app's as MFC could state it (the plan); they differ exactly when ALIGN-MFC has an action. */
-  private parts(st: Canon, S: string, rows: readonly MfcRow[]): Record<Part, { mfc: string; app: string }> {
+  private parts(st: Canon, S: string, rows: readonly MfcRow[], less: Counts = zero()): Record<Part, { mfc: string; app: string }> {
     const now = this.appNow(st, S);
+    for (const k of KINDS) now.counts[k] -= less[k];
     const plan = this.plan(st, S, rows, now.counts);
     const kept = plan.filter((p) => p.kind !== null);
     const M = zero();
@@ -1736,20 +1745,58 @@ export class Server {
     });
   }
 
-  /** A copy of S kept against MFC's removal: a live copy whose row (by its origin) has no row base. */
-  private keptAgainstRemoval(st: Canon, S: string, c: string): boolean {
-    const id = (st.val(`occ/${c}/origin`) as string | null)?.split('#')[0];
-    return (this.sw.keptRemovalOutCopy || st.curKind(c, S) !== OUT) && id !== undefined && !st.rowBase.has(id);
+  /** The copies of S the MATERIALIZE rule removes for an item's export (MFC's x->OUT transitions, on copies the app left unchanged). */
+  private removedByRule(st: Canon, S: string, exp: Map<string, Row>): string[] {
+    let d: Decision;
+    try {
+      d = decide(st, S, exp, { ...this.sw, countsConflictAsApply: true });
+    } catch {
+      return [];
+    }
+    return d.ops.filter((op) => op[0] === 'status' && op[2] === null).map((op) => op[1] as string);
   }
 
-  /** A COPY KEPT AGAINST MFC'S REMOVAL: a keep that keeps such copies of S (of `only`, for an undo: the copies it restored) records the counts it acknowledged and those copies. */
-  private noteKeptRemoval(st: Canon, S: string, only?: ReadonlySet<string>): void {
-    const counts = st.acks.get(S)?.parts.counts;
-    const copies = st.copiesRel(S).filter((c) => (only === undefined || only.has(c)) && this.keptAgainstRemoval(st, S, c));
-    if (counts !== undefined && (this.sw.keptRemovalAnyKeep || copies.length > 0)) st.keptRemoval.set(S, { counts, copies });
+  /** Mutant keptRemovalByRowBase (0378b33): live copies of S whose row (by its origin) has no row base. */
+  private rowless(st: Canon, S: string): string[] {
+    return st.copiesRel(S).filter((c) => {
+      const id = (st.val(`occ/${c}/origin`) as string | null)?.split('#')[0];
+      return id !== undefined && !st.rowBase.has(id);
+    });
   }
 
-  /** The undo of a FAVOR_APP settlement that ends a divergence: of what it acknowledged, only the counts a keep acknowledged when it kept copies against MFC's removal, at those values, while S holds each of those copies. */
+  /** Mutants keptRemovalAnyKeep and keptRemovalByRowBase: what a keep records under them, as the answer leaves S. */
+  private mutantKept(st: Canon, S: string): string[] {
+    return this.sw.keptRemovalAnyKeep ? st.copiesRel(S).filter((c) => st.baseKind(c, S) === OUT) : this.rowless(st, S);
+  }
+
+  /** A COPY KEPT AGAINST MFC'S REMOVAL: a knowing keep records each copy of `ids` S holds live, at its kind, beside the copies earlier keeps kept. */
+  private noteKept(st: Canon, S: string, ids: readonly string[]): void {
+    const rec = this.sw.keptRemovalOverwrites ? new Map<string, Kind>() : (st.keptRemoval.get(S) ?? new Map<string, Kind>());
+    const hand = this.sw.keptRemovalHandBeside ? st.copiesRel(S).filter((c) => st.val(`occ/${c}/origin`) === null) : [];
+    for (const c of [...ids, ...hand]) {
+      const k = st.curKind(c, S);
+      if (k !== OUT) rec.set(c, k);
+    }
+    if (rec.size > 0) st.keptRemoval.set(S, rec);
+  }
+
+  /** A kept copy S no longer holds at the kind it kept drops its own record; the others stand. */
+  private pruneKept(st: Canon): void {
+    for (const [S, rec] of st.keptRemoval) {
+      for (const [c, k] of rec) if (st.curKind(c, S) !== k) (this.sw.keptRemovalDropsAll ? rec.clear() : rec.delete(c));
+      if (rec.size === 0) st.keptRemoval.delete(S);
+    }
+  }
+
+  /** The counts of S differ from MFC's rows only by the kept copies: without them, the app's side as MFC could state it equals MFC's. */
+  private onlyKeptDiffer(st: Canon, S: string, rows: readonly MfcRow[], rec: Map<string, Kind>): boolean {
+    const less = zero();
+    for (const k of rec.values()) less[k]++;
+    const c = this.parts(st, S, rows, less).counts;
+    return c.mfc === c.app;
+  }
+
+  /** The undo of a FAVOR_APP settlement that ends a divergence: of what it acknowledged, only the counts, while the copies knowing keeps kept against MFC's removal alone make them differ. */
   private keepOnlyKept(st: Canon, S: string, ch: Change): void {
     const ack = st.acks.get(S);
     if (ack === undefined) return;
@@ -1757,10 +1804,10 @@ export class Server {
     if (this.sw.favorUndoKeepsSettledParts) {
       for (const p of PARTS) if (ack.parts[p] !== undefined && ch.settled?.[p] === ack.parts[p]) kept[p] = ack.parts[p];
     } else {
+      if (!this.sw.keptRemovalOutlivesCopy) this.pruneKept(st);
       const k = st.keptRemoval.get(S);
-      const held = (c: string) => this.keptAgainstRemoval(st, S, c);
-      const holds = k !== undefined && (this.sw.keptRemovalOutlivesCopy || (this.sw.keptRemovalAnyCopyHeld ? k.copies.some(held) : k.copies.every(held)));
-      if (!this.sw.favorUndoDropsKeptRemoval && holds && (this.sw.keptRemovalAnyValue || ack.parts.counts === k.counts)) kept.counts = ack.parts.counts;
+      if (!this.sw.favorUndoDropsKeptRemoval && k !== undefined && ack.parts.counts !== undefined && (this.sw.keptRemovalAnyValue || this.onlyKeptDiffer(st, S, ack.rows, k)))
+        kept.counts = ack.parts.counts;
     }
     if (Object.keys(kept).length === 0) st.acks.delete(S);
     else {
@@ -2073,17 +2120,19 @@ export class Server {
       // them meanwhile, the undo of an older FAVOR_APP settlement, ends the divergence)
       const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
       this.acknowledge(st, S, cf.exp, dk, dr, true, policy);
-      this.noteKeptRemoval(st, S);
+      // its import has applied MFC's change already: the rule removes nothing more for it, so it keeps no copy
+      if (this.sw.keptRemovalByRowBase || this.sw.keptRemovalAnyKeep) this.noteKept(st, S, this.mutantKept(st, S));
       R.accepted = true;
       return;
     }
+    const removes = this.removedByRule(st, S, cf.exp);
     if (cf.kind === 'conflict') applyOps(st, answerOps(st, S, cf.exp, R.choice, this.sw, R.copies, R.fields, cf.comps), R.version);
     else if (R.choice === 'take') applyOps(st, this.takeSettled(st, S, cf.exp), R.version);
     applyOps(st, realign(st, S, cf.exp), R.version);
     st.conflicts.delete(S);
     const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
     this.acknowledge(st, S, cf.exp, ackKnown, ackRows, R.choice !== 'take', policy);
-    if (R.choice !== 'take' || this.sw.keptRemovalOnTake) this.noteKeptRemoval(st, S);
+    if (R.choice !== 'take' || this.sw.keptRemovalOnTake) this.noteKept(st, S, this.sw.keptRemovalByRowBase || this.sw.keptRemovalAnyKeep ? this.mutantKept(st, S) : removes);
     else if (this.sw.keptRemovalTakeEnds) st.keptRemoval.delete(S);
     R.accepted = true;
   }
@@ -2150,8 +2199,10 @@ export class Server {
         const kind = (id: string, b: RowBase) => (this.sw.undoAckKindFromExport === true ? (ch.exp.get(id)?.kind ?? b.kind) : b.kind);
         this.acknowledge(st, S, new Map([...baseRows].map(([id, b]) => [id, { id, ...b, kind: kind(id, b), fields: { ...b.fields } }])), known, baseRows, true, policy);
       }
-      // a knowing keep of only the copies this undo restores (A COPY KEPT AGAINST MFC'S REMOVAL)
-      this.noteKeptRemoval(st, S, this.sw.keptRemovalAnyUndo ? undefined : new Set(ch.undo.map((u) => u.key.split('/')).filter((k) => k[0] === 'occ').map((k) => k[1]!)));
+      // a knowing keep of the copies the undone change removed, which the undo restores (A COPY KEPT AGAINST MFC'S REMOVAL)
+      const removed = ch.writes.filter((w) => w.value === null && w.key.endsWith('/status')).map((w) => w.key.split('/')[1]!);
+      const restored = (c: string) => ch.undo.some((u) => u.key === `occ/${c}/status`);
+      this.noteKept(st, S, this.sw.keptRemovalAnyUndo ? this.rowless(st, S) : this.sw.keptRemovalByRowBase ? this.rowless(st, S).filter(restored) : removed);
     }
     st.changes.delete(S);
     R.accepted = true;
