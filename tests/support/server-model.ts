@@ -210,6 +210,8 @@ export interface Change {
   /** favor_app: the figure's bases as they stood before the settlement's realignment, and right after it: its undo puts back the ones the realignment moved. */
   pre?: Bases;
   post?: Bases;
+  /** Mutant favorUndoKeepsSettledParts only: the parts the settlement acknowledged. */
+  settled?: Partial<Record<Part, string>>;
 }
 /** A figure's bases (server-internal): each copy's, each row's and each head's field bases. */
 export interface Bases {
@@ -239,6 +241,8 @@ export class Canon {
   held: Edit[] = [];
   /** Per import number: what its decisions did (ImportMfcExportResponse). */
   stats = new Map<number, Stats>();
+  /** A COPY KEPT AGAINST MFC'S REMOVAL: per figure, the counts (both sides' values) a keep acknowledged when it kept such a copy. */
+  keptRemoval = new Map<string, string>();
 
   constructor(
     readonly namer: Namer,
@@ -1043,6 +1047,25 @@ export interface Switches {
   importAckPartsMerged?: boolean;
   /** An import that finds a figure acknowledged records the parts again only when it leaves a row out of MFC's rows (a row its export dropped at Count 0). */
   importAckPartsOnDropOnly?: boolean;
+  // contract-8 close-out i2
+  /** The undo of a FAVOR_APP settlement that ends a divergence records nothing, the counts a keep acknowledged when it kept a copy against MFC's removal included (1d7a76d). */
+  favorUndoDropsKeptRemoval?: boolean;
+  /** The same undo keeps acknowledged each part the settlement acknowledged that stands at the same values. */
+  favorUndoKeepsSettledParts?: boolean;
+  /** The counts it keeps acknowledged keep their align-MFC entry. */
+  favorUndoKeptAligns?: boolean;
+  /** Any keep's counts are kept, though it kept no copy against MFC's removal. */
+  keptRemovalAnyKeep?: boolean;
+  /** An import that finds the counts equal leaves the counts a keep acknowledged when it kept a copy against MFC's removal recorded. */
+  keptRemovalOutlivesEqual?: boolean;
+  /** A take on a conflict that leaves such a copy records its counts too. */
+  keptRemovalOnTake?: boolean;
+  /** A copy out of the figure whose row has no row base counts as one kept against MFC's removal. */
+  keptRemovalOutCopy?: boolean;
+  /** The undo keeps the counts acknowledged at whatever values they stand, once a keep recorded them. */
+  keptRemovalAnyValue?: boolean;
+  /** Once it keeps the counts, the undo keeps every part acknowledged as a take records them. */
+  favorUndoKeepsAllParts?: boolean;
 }
 
 // ------------------------------------------------------------------ the server
@@ -1704,6 +1727,34 @@ export class Server {
     });
   }
 
+  /** A COPY KEPT AGAINST MFC'S REMOVAL: a keep that keeps a live copy of S whose row (by its origin) has no row base records the counts it acknowledged. */
+  private noteKeptRemoval(st: Canon, S: string): void {
+    const counts = st.acks.get(S)?.parts.counts;
+    const removed = (c: string) => {
+      const id = (st.val(`occ/${c}/origin`) as string | null)?.split('#')[0];
+      return (this.sw.keptRemovalOutCopy || st.curKind(c, S) !== OUT) && id !== undefined && !st.rowBase.has(id);
+    };
+    if (counts !== undefined && (this.sw.keptRemovalAnyKeep || st.copiesRel(S).some(removed))) st.keptRemoval.set(S, counts);
+  }
+
+  /** The undo of a FAVOR_APP settlement that ends a divergence: of what it acknowledged, only the counts a keep acknowledged when it kept a copy against MFC's removal, at those values. */
+  private keepOnlyKept(st: Canon, S: string, ch: Change): void {
+    const ack = st.acks.get(S);
+    if (ack === undefined) return;
+    const kept: Partial<Record<Part, string>> = {};
+    if (this.sw.favorUndoKeepsSettledParts) {
+      for (const p of PARTS) if (ack.parts[p] !== undefined && ch.settled?.[p] === ack.parts[p]) kept[p] = ack.parts[p];
+    } else {
+      const k = st.keptRemoval.get(S);
+      if (!this.sw.favorUndoDropsKeptRemoval && k !== undefined && (this.sw.keptRemovalAnyValue || ack.parts.counts === k)) kept.counts = ack.parts.counts;
+    }
+    if (Object.keys(kept).length === 0) st.acks.delete(S);
+    else {
+      if (!this.sw.favorUndoKeepsAllParts) ack.parts = kept;
+      ack.align = this.sw.favorUndoKeptAligns === true;
+    }
+  }
+
   /** ALIGN-MFC: what to change on MFC for it to hold the app's side, per MFC row. */
   /** ALIGN-MFC: what to change on MFC, per MFC row, for it to hold the app's side as it stands now. */
   private alignOf(st: Canon, S: string): { rev: string; actions: AlignAction[] } | null {
@@ -1917,6 +1968,7 @@ export class Server {
         st.conflicts.delete(S);
         const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
         this.acknowledge(st, S, exp, ackKnown, ackRows, choice === 'keep', I.policy);
+        if (this.sw.favorUndoKeepsSettledParts) st.changes.get(S)!.settled = { ...st.acks.get(S)?.parts };
         st.decisions.push([`import#${I.n}`, S, kind]);
       } else {
         const before = this.snapshot(st);
@@ -1929,6 +1981,9 @@ export class Server {
         this.diverge(st, S, exp, known, baseRows, I.n);
         st.decisions.push([`import#${I.n}`, S, d.status]);
       }
+      // counts the import finds equal, as its decision leaves them, are no longer those of a copy kept against MFC's removal
+      const counts = this.parts(st, S, this.mfcRows(exp, known, baseRows)).counts;
+      if (counts.mfc === counts.app && !this.sw.keptRemovalOutlivesEqual) st.keptRemoval.delete(S);
       // ImportMfcExportResponse: what this decision did to the figure's rows and copies
       let wrote = false;
       let tombstoned = false;
@@ -2004,6 +2059,7 @@ export class Server {
       // them meanwhile, the undo of an older FAVOR_APP settlement, ends the divergence)
       const [dk, dr] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
       this.acknowledge(st, S, cf.exp, dk, dr, true, policy);
+      this.noteKeptRemoval(st, S);
       R.accepted = true;
       return;
     }
@@ -2013,6 +2069,7 @@ export class Server {
     st.conflicts.delete(S);
     const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [known, baseRows] : this.rowsNow(st, S);
     this.acknowledge(st, S, cf.exp, ackKnown, ackRows, R.choice !== 'take', policy);
+    if (R.choice !== 'take' || this.sw.keptRemovalOnTake) this.noteKeptRemoval(st, S);
     R.accepted = true;
   }
 
@@ -2053,14 +2110,15 @@ export class Server {
       const baseRows = baseRowsFor(st, S);
       if (!this.sw.favorUndoNoRealign) applyOps(st, realign(st, S, exp), R.version);
       // a divergence a later import raised compared the sides before this take, against the bases that import left: it
-      // ends, and the undo acknowledges nothing, since the user answered none of what still differs: the next import
-      // compares again
+      // ends, and the undo keeps acknowledged only the counts a keep acknowledged when it kept a copy against MFC's removal,
+      // at those values: the next import compares again and raises whatever else differs
       const ends = !this.sw.favorUndoKeepsDivergence && st.conflicts.get(S)?.kind === 'divergence';
       if (ends) st.conflicts.delete(S);
-      if (this.sw.favorUndoEndsAck || (ends && !this.sw.favorUndoAcksEndedDivergence)) st.acks.delete(S);
+      if (this.sw.favorUndoEndsAck) st.acks.delete(S);
       else {
         const [ackKnown, ackRows] = this.sw.ackBeforeRealign ? [[...new Set([...exp.keys(), ...baseRows.keys()])].sort(byNum), baseRows] : this.rowsNow(st, S);
         this.acknowledge(st, S, exp, ackKnown, ackRows, false, policy);
+        if (ends && !this.sw.favorUndoAcksEndedDivergence) this.keepOnlyKept(st, S, ch);
       }
     } else {
       if (!this.sw.undoIgnoresLaterEdits && !ch.writes.every((w) => eq(st.val(w.key), w.value))) return;
@@ -2077,6 +2135,7 @@ export class Server {
         const kind = (id: string, b: RowBase) => (this.sw.undoAckKindFromExport === true ? (ch.exp.get(id)?.kind ?? b.kind) : b.kind);
         this.acknowledge(st, S, new Map([...baseRows].map(([id, b]) => [id, { id, ...b, kind: kind(id, b), fields: { ...b.fields } }])), known, baseRows, true, policy);
       }
+      this.noteKeptRemoval(st, S);
     }
     st.changes.delete(S);
     R.accepted = true;
