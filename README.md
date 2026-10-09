@@ -85,6 +85,7 @@ src/sync-vocabulary.ts               facet-key grammar and builders, occurrence 
 golden/version-vectors.json          version cases every implementation tests against
 golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
 golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
+golden/display-vectors.json          display restriction cases: scope, level and viewer context
 schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
 scripts/buf-breaking.sh              buf breaking against the previous v* tag
 scripts/schema-growth.ts             no published payload schema gains a property
@@ -160,6 +161,17 @@ A key change passes `buf breaking` too. **0.3.0 made one**: it retired 0.2.x's p
 REJECTED `facet_key_not_user_owned`). It is safe only because no device had installed 0.2.x and no
 import had run; 0.2.x is deprecated. `golden/key-vectors.json` and the vocabulary tests guard the
 grammar: every valid key parses to exactly one family and builds back to itself.
+
+## Display restrictions
+
+**Display restrictions** (`catalog.proto` DISPLAY RESTRICTIONS, Ross 2026-09-26): every image and
+its mask are shown to every viewer by default, in a user's own views and in the links they share. A
+restriction per image, product or source overrides that default with a scope (`no_display`,
+`owner_views_only`, `no_share`, `no_mask`) and only ever withholds, so the most restrictive one wins
+whatever its level. The coordinator evaluates them with the viewer context (`owner`, `share_link`,
+`anonymous`) wherever it builds an image list, logs every denial with its rule, and never names one to
+the caller. 0.4.0 adds the rule and `golden/display-vectors.json`; no field changed: the mask, the
+grounding fields and the physical dimensions shipped in 0.3.0.
 
 ## Two doctrines the messages encode
 

@@ -1,6 +1,6 @@
 {
   "name": "@figurecollecting/fc-api-contract",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "coordinator.v1: the CLIENT-facing wire contract served by fc-coordinator. CompareService (the spine read.v1 CompareResult carried verbatim), SyncService (SyncEvent {facet_key, version, op, payload} plus Delta/Push/Status), CatalogService (ProductCard reads) and ImportService (MFC export import). Generated TypeScript is committed and published, with the version and facet-key helpers, golden version and key vectors and payload JSON Schemas both sides test against.",
   "license": "UNLICENSED",
   "type": "module",
@@ -26,6 +26,7 @@
     "./golden/version-vectors.json": "./golden/version-vectors.json",
     "./golden/key-vectors.json": "./golden/key-vectors.json",
     "./golden/import-vectors.json": "./golden/import-vectors.json",
+    "./golden/display-vectors.json": "./golden/display-vectors.json",
     "./schemas/*": "./schemas/*",
     "./package.json": "./package.json"
   },
