@@ -43,16 +43,28 @@
 // default for one image (every derivative of it), one product (a restriction
 // on any id that resolves to a head covers that head's images) or one source
 // (every image captured from that store; an image captured from several is
-// covered by each). Restrictions are data, never code, and they only
-// withhold: none grants anything, so where several apply the most
-// restrictive wins, whatever their level. A restriction's scope says what it
+// covered by each). A subject matches an id without regard to ASCII case.
+// Restrictions are data, never code, and they only withhold: none grants
+// anything, so every restriction that applies withholds what its scope names
+// from the contexts its scope covers, whatever its level, and what a viewer
+// is denied is the union of them. A restriction's scope says what it
 // withholds and from which viewer context:
 //
 //   scope              withholds   from
 //   no_display         the image   owner, share_link, anonymous
 //   owner_views_only   the image   share_link, anonymous
-//   no_share           the image   share_link
+//   no_share           the image   share_link, anonymous
 //   no_mask            the mask    owner, share_link, anonymous
+//
+// no_share covers anonymous viewers too: a restriction against sharing
+// cannot be bypassed by not signing in, and anonymous is the weakest context
+// (orchestrator ruling 2026-10-09). Only these four scopes and the levels
+// image, product and source are valid, and a writer rejects any other; a
+// restriction read with any other scope or level (a typo such as "no-share"
+// or "Image") fails closed: an unrecognised scope withholds the image from
+// every viewer context, and an unrecognised level applies when its subject
+// matches the image's id, any id that resolves to its head or any of its
+// sources.
 //
 // The viewer context is `owner` (the signed-in user in their own views:
 // every CatalogService call), `share_link` (anyone opening a link the owner
@@ -62,16 +74,24 @@
 // any share projection the contract adds, each with the viewer context of
 // its call. A withheld image is absent, its mask with it; a withheld mask is
 // unset and the fields derived from it are computed without it
-// (ProductImage). A withheld primary is not replaced: no image in the list
-// is primary.
+// (ProductImage). When the primary is withheld, the first image of the
+// product shown to this caller, on whatever page it falls, is sent as the
+// primary (primary set, role "primary"), so the list reads as if the
+// withheld image never existed (orchestrator ruling 2026-10-09). A list the
+// spine sends with no primary is sent with none.
 //
-// Every denial is logged by the coordinator: the image, the viewer context
-// and every restriction that applies and covers that context, each with its
-// rule, even when another one, or a missing mask, already left it nothing to
-// withhold. The caller is never told: unlike an entitlement withholding
-// (CompareResponse.coverage.redacted), a display restriction is not named,
-// so a share-link viewer cannot learn that an owner-only image exists, and
-// absence reads the same either way. A client replaces a product's cached
+// A denial is logged by the coordinator only when an evaluation withholds
+// something the image has: the image, the viewer context and the
+// restrictions that withheld it, each with its rule. Those are the ones that
+// withhold the image when the image is withheld, else the ones that withhold
+// its mask. An evaluation that withholds nothing, because no restriction
+// applies, none covers the context or the image has no mask to withhold, is
+// logged at debug level only (orchestrator ruling 2026-10-09).
+//
+// The caller is never told (orchestrator ruling 2026-10-09): unlike an
+// entitlement withholding (CompareResponse.coverage.redacted), a display
+// restriction is not named, and a list, its primary and its pages read as if
+// a withheld image never existed. A client replaces a product's cached
 // images with each fresh list and drops an image or mask the list no longer
 // carries, since a restriction may have been added since.
 // golden/display-vectors.json has the cases.
@@ -155,8 +175,8 @@ message ProductCard {
 
   // Hex SHA-256 content addresses of display DERIVATIVES, primary first.
   // Never an original, never a URL; fetch refs come from GetProductImages.
-  // Empty until derivatives exist. Only the derivatives shown to this caller
-  // (DISPLAY RESTRICTIONS).
+  // Empty until derivatives exist. Only the derivatives shown to this caller,
+  // the first of them in place of a withheld primary (DISPLAY RESTRICTIONS).
   repeated string derivative_ids = 11;
 
   // The physical size of the product itself, the figure with its base, never
@@ -211,7 +231,8 @@ message GetProductsResponse {
 // next_page_token until it is empty, and a product's images may span pages.
 // A product with no displayable derivative is simply absent, as is one whose
 // every image a display restriction withholds from this caller (DISPLAY
-// RESTRICTIONS).
+// RESTRICTIONS). Withheld rows are dropped before the page is cut, so no page
+// is shorter for them.
 // ---------------------------------------------------------------------------
 message GetProductImagesRequest {
   // At most 200; more, or none, is INVALID_ARGUMENT.
@@ -233,7 +254,9 @@ message GetProductImagesResponse {
 message ProductImages {
   string head_id = 1;
 
-  // Render order: the primary first, then the gallery by position.
+  // Render order: the primary first, then the gallery by position. When the
+  // primary is withheld from this caller, the first image shown is sent as
+  // the primary (DISPLAY RESTRICTIONS).
   repeated ProductImage images = 2;
 }
 
@@ -243,7 +266,9 @@ message ProductImage {
   // Hex SHA-256 of the derivative bytes.
   string derivative_id = 1;
 
-  // The spine's role for the image, e.g. "primary" or "gallery".
+  // The spine's role for the image, e.g. "primary" or "gallery"; "primary"
+  // on the image sent as the primary in place of a withheld one (DISPLAY
+  // RESTRICTIONS).
   string role = 2;
 
   bool primary = 3;

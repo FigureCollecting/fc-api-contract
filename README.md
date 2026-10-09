@@ -164,14 +164,16 @@ grammar: every valid key parses to exactly one family and builds back to itself.
 
 ## Display restrictions
 
-**Display restrictions** (`catalog.proto` DISPLAY RESTRICTIONS, Ross 2026-09-26): every image and
-its mask are shown to every viewer by default, in a user's own views and in the links they share. A
-restriction per image, product or source overrides that default with a scope (`no_display`,
-`owner_views_only`, `no_share`, `no_mask`) and only ever withholds, so the most restrictive one wins
-whatever its level. The coordinator evaluates them with the viewer context (`owner`, `share_link`,
-`anonymous`) wherever it builds an image list, logs every denial with its rule, and never names one to
-the caller. 0.4.0 adds the rule and `golden/display-vectors.json`; no field changed: the mask, the
-grounding fields and the physical dimensions shipped in 0.3.0.
+**Display restrictions** (`catalog.proto` DISPLAY RESTRICTIONS, Ross 2026-09-26; orchestrator ruling
+2026-10-09): every image and its mask are shown to every viewer by default, in a user's own views and
+in the links they share. A restriction per image, product or source overrides that default with a
+scope (`no_display`, `owner_views_only`, `no_share`, `no_mask`) and only ever withholds: every one
+that applies withholds what its scope names (the union), whatever its level, and an unrecognised scope
+or level fails closed. The coordinator evaluates them with the viewer context (`owner`, `share_link`,
+`anonymous`) wherever it builds an image list, logs a denial only when one withheld something, and
+never names one to the caller: a withheld primary is replaced by the first image shown, so a list
+reads as if the withheld image never existed. 0.4.0 adds the rule and `golden/display-vectors.json`;
+no field changed: the mask, the grounding fields and the physical dimensions shipped in 0.3.0.
 
 ## Two doctrines the messages encode
 

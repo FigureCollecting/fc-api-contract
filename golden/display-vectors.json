@@ -1,5 +1,5 @@
 {
-  "$comment": "Golden vectors for catalog.proto DISPLAY RESTRICTIONS (Ross, 2026-09-26), from 0.4.0. Every image and its mask are shown to every viewer by default, in the owner's own views and in links the owner shares. A restriction (rule id, level image|product|source, subject, scope) only withholds; every restriction that applies to the image and whose scope covers the viewer context withholds what its scope names, so the most restrictive wins whatever the level, and each such rule is a denial the coordinator logs, even when another rule or a missing mask left it nothing to withhold. `image` lists the product ids that resolve to the image's head (the head first) and every source it was captured from; an image restriction's subject is image_id, a product restriction's any of product_ids, a source restriction's any of sources. `expect.image` and `expect.mask` say whether the caller is sent the image and its mask (mask is false when the image has none or is withheld); `expect.denials` lists the logged rules sorted by rule id, order not part of the contract. fc-coordinator's image-list chokepoint (GetProductImages, ProductCard.derivative_ids, any share projection) must agree with every case.",
+  "$comment": "Golden vectors for catalog.proto DISPLAY RESTRICTIONS (Ross, 2026-09-26; orchestrator ruling 2026-10-09), from 0.4.0. Every image and its mask are shown to every viewer by default, in the owner's own views and in links the owner shares. A restriction (rule id, level image|product|source, subject, scope) only withholds: every restriction that applies to the image and whose scope covers the viewer context withholds what its scope names, so what a viewer is denied is the union, whatever the level. `scopes` lists the valid scopes; a restriction with any other scope or level fails closed: an unrecognised scope withholds the image from every context, and an unrecognised level applies when its subject matches the image's id, any of product_ids or any of sources. Subjects match ids without regard to ASCII case. `image` lists the product ids that resolve to the image's head (the head first), every source it was captured from, whether it has a mask and whether the derivative has an alpha channel of its own; an image restriction's subject is image_id, a product restriction's any of product_ids, a source restriction's any of sources. `expect.image` and `expect.mask` say whether the caller is sent the image and its mask (mask is false when the image has none or is withheld). `expect.grounding_from` says what bottom_margin_frac and contact_band are measured on: the mask when it is sent, else the derivative's own alpha when it has one, else they are unset (and unset for a withheld image, which sends nothing). `expect.appearance_masked` says whether thumbhash and dominant_color are computed with the mask applied: only when the mask is sent. `expect.denials` lists the rules the coordinator logs as a denial, sorted by rule id, order not part of the contract: a denial is logged only when something the image has was withheld, naming the restrictions that withhold the image when it is withheld, else those that withhold its mask; an empty list means the evaluation withheld nothing and is logged at debug level only. `lists` pins the list a viewer is sent for one product: `images` in the spine's render order (the primary first, then the gallery), each with its `role` and `primary`; `expect.images` is the list sent, withheld images dropped and, when the spine's primary is withheld, the first image shown sent as the primary (primary true, role \"primary\"), so the list reads as if the withheld image never existed; a spine list with no primary is sent with none. fc-coordinator's image-list chokepoint (GetProductImages, ProductCard.derivative_ids, any share projection) must agree with every case and list.",
   "contexts": [
     "owner",
     "share_link",
@@ -29,7 +29,8 @@
     "no_share": {
       "withholds": "image",
       "from": [
-        "share_link"
+        "share_link",
+        "anonymous"
       ]
     },
     "no_mask": {
@@ -52,13 +53,16 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [],
       "context": "owner",
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -72,13 +76,16 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [],
       "context": "share_link",
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -92,13 +99,16 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [],
       "context": "anonymous",
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -112,13 +122,16 @@
         "sources": [
           "hlj"
         ],
-        "has_mask": false
+        "has_mask": false,
+        "has_own_alpha": false
       },
       "restrictions": [],
       "context": "share_link",
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": []
       }
     },
@@ -132,7 +145,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -146,6 +160,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -164,7 +180,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -178,6 +195,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -196,7 +215,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -210,6 +230,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -228,7 +250,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -242,6 +265,8 @@
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -255,7 +280,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -269,6 +295,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -287,7 +315,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -301,6 +330,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -319,7 +350,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -333,6 +365,8 @@
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -346,7 +380,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -360,6 +395,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -369,7 +406,7 @@
       }
     },
     {
-      "name": "no_share on the product, anonymous",
+      "name": "no_share on the product, anonymous: withheld too, not signing in does not bypass it (orchestrator ruling 2026-10-09)",
       "image": {
         "image_id": "img-a",
         "product_ids": [
@@ -378,7 +415,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -390,9 +428,16 @@
       ],
       "context": "anonymous",
       "expect": {
-        "image": true,
-        "mask": true,
-        "denials": []
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_share"
+          }
+        ]
       }
     },
     {
@@ -405,7 +450,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -419,6 +465,8 @@
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -437,7 +485,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -451,6 +500,8 @@
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -469,7 +520,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -483,6 +535,8 @@
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -501,7 +555,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -515,6 +570,8 @@
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -528,7 +585,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -542,6 +600,8 @@
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -555,7 +615,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -569,6 +630,8 @@
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -582,7 +645,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -608,6 +672,8 @@
       "expect": {
         "image": true,
         "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
         "denials": []
       }
     },
@@ -623,7 +689,8 @@
           "amiami",
           "hlj"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -637,6 +704,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -657,7 +726,8 @@
           "amiami",
           "hlj"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -671,6 +741,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -680,7 +752,7 @@
       }
     },
     {
-      "name": "no_mask and no_share in a shared link: the image is withheld and both rules are logged",
+      "name": "no_mask and no_share in a shared link: the image is withheld and only no_share, which withheld it, is logged",
       "image": {
         "image_id": "img-a",
         "product_ids": [
@@ -689,7 +761,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -709,11 +782,9 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
-          {
-            "rule": "r1",
-            "scope": "no_mask"
-          },
           {
             "rule": "r2",
             "scope": "no_share"
@@ -731,7 +802,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -751,6 +823,8 @@
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -769,7 +843,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -789,6 +864,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -807,7 +884,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -827,6 +905,8 @@
       "expect": {
         "image": false,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
@@ -849,7 +929,8 @@
         "sources": [
           "amiami"
         ],
-        "has_mask": true
+        "has_mask": true,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -869,6 +950,8 @@
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r2",
@@ -878,7 +961,7 @@
       }
     },
     {
-      "name": "no_mask on an image without a mask is still logged",
+      "name": "no_mask on an image without a mask withheld nothing: no denial, debug only",
       "image": {
         "image_id": "img-c",
         "product_ids": [
@@ -887,7 +970,8 @@
         "sources": [
           "hlj"
         ],
-        "has_mask": false
+        "has_mask": false,
+        "has_own_alpha": false
       },
       "restrictions": [
         {
@@ -901,10 +985,1330 @@
       "expect": {
         "image": true,
         "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": []
+      }
+    },
+    {
+      "name": "no restriction, a mask over a derivative with its own alpha: grounded on the mask, appearance masked",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": true
+      },
+      "restrictions": [],
+      "context": "owner",
+      "expect": {
+        "image": true,
+        "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
+        "denials": []
+      }
+    },
+    {
+      "name": "no restriction, no mask, the derivative's own alpha: grounded on its own alpha",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": false,
+        "has_own_alpha": true
+      },
+      "restrictions": [],
+      "context": "anonymous",
+      "expect": {
+        "image": true,
+        "mask": false,
+        "grounding_from": "own_alpha",
+        "appearance_masked": false,
+        "denials": []
+      }
+    },
+    {
+      "name": "no_mask withholds the mask, the derivative has its own alpha: grounded on its own alpha, thumbhash and color unmasked",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": true
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-a",
+          "scope": "no_mask"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "image": true,
+        "mask": false,
+        "grounding_from": "own_alpha",
+        "appearance_masked": false,
         "denials": [
           {
             "rule": "r1",
             "scope": "no_mask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no_mask withholds the mask, no alpha of its own: grounding unset, thumbhash and color unmasked",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "product",
+          "subject": "p-head",
+          "scope": "no_mask"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": true,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_mask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a withheld image with its own alpha: nothing is sent, no grounding",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": true
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-a",
+          "scope": "no_display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_display"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no_display and no_mask for the owner: the image is withheld and only no_display is logged",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-a",
+          "scope": "no_mask"
+        },
+        {
+          "rule": "r2",
+          "level": "source",
+          "subject": "amiami",
+          "scope": "no_display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r2",
+            "scope": "no_display"
+          }
+        ]
+      }
+    },
+    {
+      "name": "owner_views_only and no_share in a shared link: both withheld the image, both are logged",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "product",
+          "subject": "p-head",
+          "scope": "owner_views_only"
+        },
+        {
+          "rule": "r2",
+          "level": "source",
+          "subject": "amiami",
+          "scope": "no_share"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "owner_views_only"
+          },
+          {
+            "rule": "r2",
+            "scope": "no_share"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unrecognised scope fails closed for the owner: the image is withheld and logged as written",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-a",
+          "scope": "no-share"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no-share"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unrecognised scope fails closed in a shared link",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "source",
+          "subject": "amiami",
+          "scope": "nodisplay"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "nodisplay"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an empty scope fails closed for anonymous viewers",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "product",
+          "subject": "p-head",
+          "scope": ""
+        }
+      ],
+      "context": "anonymous",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unrecognised scope that does not apply withholds nothing",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-b",
+          "scope": "no-share"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": true,
+        "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
+        "denials": []
+      }
+    },
+    {
+      "name": "an unrecognised level fails closed: it applies when its subject is the image's id",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "Image",
+          "subject": "img-a",
+          "scope": "owner_views_only"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "owner_views_only"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unrecognised level fails closed: it applies when its subject is one of the image's sources",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami",
+          "hlj"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "store",
+          "subject": "hlj",
+          "scope": "no_mask"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": true,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_mask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unrecognised level whose subject matches no id of the image does not apply",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "Image",
+          "subject": "img-b",
+          "scope": "no_display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": true,
+        "mask": true,
+        "grounding_from": "mask",
+        "appearance_masked": true,
+        "denials": []
+      }
+    },
+    {
+      "name": "an image subject written in upper case matches",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "IMG-A",
+          "scope": "no_display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_display"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a product subject in mixed case matches an id that resolves to the head",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head",
+          "p-merged"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "product",
+          "subject": "P-Merged",
+          "scope": "no_share"
+        }
+      ],
+      "context": "anonymous",
+      "expect": {
+        "image": false,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_share"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a source subject in mixed case matches",
+      "image": {
+        "image_id": "img-a",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "source",
+          "subject": "AmiAmi",
+          "scope": "no_mask"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "image": true,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_mask"
+          }
+        ]
+      }
+    }
+  ],
+  "lists": [
+    {
+      "name": "no restriction: the spine's list as it is, the primary first",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [],
+      "context": "share_link",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-p",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g1",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "the primary withheld from a shared link: the first gallery image is sent as the primary, role \"primary\"",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-p",
+          "scope": "no_share"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-g1",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "the same restriction for the owner: the list is unchanged",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-p",
+          "scope": "no_share"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-p",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g1",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "the primary and the first gallery image withheld by their source: the next image shown is the primary",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "source",
+          "subject": "amiami",
+          "scope": "owner_views_only"
+        }
+      ],
+      "context": "anonymous",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-g2",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "a gallery image withheld: the primary stays, the gallery closes up",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-g1",
+          "scope": "no_display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-p",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "every image withheld: the list is empty and the product absent",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "product",
+          "subject": "p-head",
+          "scope": "no_display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "images": []
+      }
+    },
+    {
+      "name": "only the primary's mask withheld: the list is unchanged",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-p",
+          "scope": "no_mask"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-p",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g1",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "the primary withheld by an unrecognised scope: withheld from the owner too, and replaced",
+      "images": [
+        {
+          "image_id": "img-p",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "primary",
+          "primary": true
+        },
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami",
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": false,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-p",
+          "scope": "no-display"
+        }
+      ],
+      "context": "owner",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-g1",
+            "role": "primary",
+            "primary": true
+          },
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "a spine list with no primary: a withheld image is dropped and nothing is promoted",
+      "images": [
+        {
+          "image_id": "img-g1",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "amiami"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g2",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        },
+        {
+          "image_id": "img-g3",
+          "product_ids": [
+            "p-head"
+          ],
+          "sources": [
+            "hlj"
+          ],
+          "has_mask": true,
+          "has_own_alpha": false,
+          "role": "gallery",
+          "primary": false
+        }
+      ],
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "img-g1",
+          "scope": "no_share"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "images": [
+          {
+            "image_id": "img-g2",
+            "role": "gallery",
+            "primary": false
+          },
+          {
+            "image_id": "img-g3",
+            "role": "gallery",
+            "primary": false
           }
         ]
       }
