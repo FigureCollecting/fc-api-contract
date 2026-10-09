@@ -43,12 +43,13 @@
 // default for one image (every derivative of it), one product (a restriction
 // on any id that resolves to a head covers that head's images) or one source
 // (every image captured from that store; an image captured from several is
-// covered by each). A subject matches an id without regard to ASCII case.
-// Restrictions are data, never code, and they only withhold: none grants
-// anything, so every restriction that applies withholds what its scope names
-// from the contexts its scope covers, whatever its level, and what a viewer
-// is denied is the union of them. A restriction's scope says what it
-// withholds and from which viewer context:
+// covered by each). A subject matches an id without regard to ASCII case: A-Z
+// matches a-z and no other character is case-folded. Restrictions are data,
+// never code, and they only withhold: none grants anything, so every
+// restriction that applies withholds what its scope names from the contexts
+// its scope covers, whatever its level, and what a viewer is denied is the
+// union of them. A restriction's scope says what it withholds and from which
+// viewer context:
 //
 //   scope              withholds   from
 //   no_display         the image   owner, share_link, anonymous
@@ -59,12 +60,13 @@
 // no_share covers anonymous viewers too: a restriction against sharing
 // cannot be bypassed by not signing in, and anonymous is the weakest context
 // (orchestrator ruling 2026-10-09). Only these four scopes and the levels
-// image, product and source are valid, and a writer rejects any other; a
-// restriction read with any other scope or level (a typo such as "no-share"
-// or "Image") fails closed: an unrecognised scope withholds the image from
-// every viewer context, and an unrecognised level applies when its subject
-// matches the image's id, any id that resolves to its head or any of its
-// sources.
+// image, product and source are valid, and a writer rejects any other, as it
+// rejects a subject that is empty or begins or ends with white space; a
+// restriction read with any other scope or level (a typo such as "no-share" or
+// "Image", or a name such as "constructor") fails closed: an unrecognised
+// scope withholds the image from every viewer context, and an unrecognised
+// level applies when its subject matches the image's id, any id that resolves
+// to its head or any of its sources.
 //
 // The viewer context is `owner` (the signed-in user in their own views:
 // every CatalogService call), `share_link` (anyone opening a link the owner
@@ -74,11 +76,12 @@
 // any share projection the contract adds, each with the viewer context of
 // its call. A withheld image is absent, its mask with it; a withheld mask is
 // unset and the fields derived from it are computed without it
-// (ProductImage). When the primary is withheld, the first image of the
-// product shown to this caller, on whatever page it falls, is sent as the
-// primary (primary set, role "primary"), so the list reads as if the
-// withheld image never existed (orchestrator ruling 2026-10-09). A list the
-// spine sends with no primary is sent with none.
+// (ProductImage). When the primary is withheld, the first image of the product
+// shown to this caller, on whatever page it falls, is sent as the primary:
+// `primary` is set and its role stays the one the spine gave it, since no role
+// names the primary, so the list reads as if the withheld image never existed
+// (orchestrator ruling 2026-10-09). A list the spine sends with no primary is
+// sent with none.
 //
 // A denial is logged by the coordinator only when an evaluation withholds
 // something the image has: the image, the viewer context and the
@@ -266,8 +269,9 @@ message ProductImage {
   // Hex SHA-256 of the derivative bytes.
   string derivative_id = 1;
 
-  // The spine's role for the image, e.g. "primary" or "gallery"; "primary"
-  // on the image sent as the primary in place of a withheld one (DISPLAY
+  // The spine's role for the image: "gallery", "other", "thumbnail", "user" or
+  // "unknown". No role names the primary; only `primary` does, and the image
+  // sent as the primary in place of a withheld one keeps its own role (DISPLAY
   // RESTRICTIONS).
   string role = 2;
 

@@ -79,13 +79,18 @@ export type Scopes = DisplayVectors['scopes'];
 
 const ALL_CONTEXTS: Context[] = ['owner', 'share_link', 'anonymous'];
 
-// An unrecognised scope fails closed: it withholds the image from every viewer context.
-export const scopeOf = (r: Restriction, scopes: Scopes): Scopes[string] => scopes[r.scope] ?? { withholds: 'image', from: ALL_CONTEXTS };
+// An unrecognised scope fails closed: it withholds the image from every viewer context. A scope is recognised only as an
+// own key of the table, so a name such as "constructor" is unrecognised too.
+export const scopeOf = (r: Restriction, scopes: Scopes): Scopes[string] =>
+  Object.hasOwn(scopes, r.scope) ? scopes[r.scope]! : { withholds: 'image', from: ALL_CONTEXTS };
+
+// ASCII case only: A-Z to a-z, no other character folded.
+const asciiLower = (s: string) => s.replace(/[A-Z]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 32));
 
 // Subjects match without regard to ASCII case; an unrecognised level fails closed and matches any id of the image.
 export const applies = (r: Restriction, img: DisplayImage): boolean => {
-  const subject = r.subject.toLowerCase();
-  const is = (id: string) => id.toLowerCase() === subject;
+  const subject = asciiLower(r.subject);
+  const is = (id: string) => asciiLower(id) === subject;
   switch (r.level) {
     case 'image':
       return is(img.image_id);
@@ -120,13 +125,12 @@ export function evaluate(c: Pick<DisplayCase, 'image' | 'restrictions' | 'contex
 }
 
 // The list a viewer is sent: withheld images dropped; when the spine's primary is withheld, the first image shown is
-// sent as the primary (primary set, role "primary"), so the list reads as if the withheld image never existed.
+// sent as the primary (primary set, its spine role kept, since no role names the primary), so the list reads as if the
+// withheld image never existed.
 export function evaluateList(c: Pick<ListCase, 'images' | 'restrictions' | 'context'>, scopes: Scopes): { images: ShownImage[] } {
   const shown = c.images.filter((image) => evaluate({ image, restrictions: c.restrictions, context: c.context }, scopes).image);
   const promote = c.images.some((i) => i.primary) && !shown.some((i) => i.primary);
   return {
-    images: shown.map((i, k) =>
-      promote && k === 0 ? { image_id: i.image_id, role: 'primary', primary: true } : { image_id: i.image_id, role: i.role, primary: i.primary },
-    ),
+    images: shown.map((i, k) => ({ image_id: i.image_id, role: i.role, primary: i.primary || (promote && k === 0) })),
   };
 }

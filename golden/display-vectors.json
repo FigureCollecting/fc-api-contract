@@ -1739,6 +1739,41 @@
         "appearance_masked": true,
         "denials": []
       }
+    },
+    {
+      "name": "every upper-case letter A-Z in a subject matches its lower-case letter",
+      "image": {
+        "image_id": "img-abcdefghijklmnopqrstuvwxyz",
+        "product_ids": [
+          "p-head"
+        ],
+        "sources": [
+          "amiami"
+        ],
+        "has_mask": true,
+        "has_own_alpha": false
+      },
+      "restrictions": [
+        {
+          "rule": "r1",
+          "level": "image",
+          "subject": "IMG-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+          "scope": "no_mask"
+        }
+      ],
+      "context": "share_link",
+      "expect": {
+        "image": true,
+        "mask": false,
+        "grounding_from": "unset",
+        "appearance_masked": false,
+        "denials": [
+          {
+            "rule": "r1",
+            "scope": "no_mask"
+          }
+        ]
+      }
     }
   ],
   "lists": [
