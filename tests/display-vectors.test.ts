@@ -81,6 +81,11 @@ describe('golden display vectors (catalog.proto DISPLAY RESTRICTIONS)', () => {
     expect(v.cases.some((c) => c.expect.image && c.restrictions.some((r) => /[^\x00-\x7f]/.test(r.subject) && ids(c).some((id) => id.toLowerCase() === r.subject.toLowerCase())))).toBe(true);
   });
 
+  it('cover every letter A-Z in upper case in a subject that applies to a lower-case id', () => {
+    const letters = new Set(v.cases.flatMap((c) => c.restrictions.filter((r) => known(r) && applies(r, c.image) && !ids(c).includes(r.subject)).flatMap((r) => r.subject.match(/[A-Z]/g) ?? [])));
+    expect([...letters].sort().join('')).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+  });
+
   it('cover the fields derived from the mask: a withheld mask with and without the derivative\'s own alpha, and a mask sent over own alpha', () => {
     expect(v.cases.some((c) => shownWithMaskWithheld(c) && c.image.has_own_alpha)).toBe(true);
     expect(v.cases.some((c) => shownWithMaskWithheld(c) && !c.image.has_own_alpha)).toBe(true);
