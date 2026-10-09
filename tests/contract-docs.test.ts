@@ -433,7 +433,7 @@ describe('catalog.proto', () => {
     const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
     expect(rule).toContain("DISPLAY RESTRICTIONS (Ross, 2026-09-26). By default every image and its mask are shown to every viewer: to a user in their own views and to anyone opening a link the user shared.");
     expect(rule).toContain("A display restriction overrides that default for one image (every derivative of it), one product (a restriction on any id that resolves to a head covers that head's images) or one source (every image captured from that store; an image captured from several is covered by each).");
-    expect(rule).toContain('A subject matches an id without regard to ASCII case.');
+    expect(rule).toContain('A subject matches an id without regard to ASCII case: A-Z matches a-z and no other character is case-folded.');
     expect(rule).toContain('Restrictions are data, never code, and they only withhold: none grants anything, so every restriction that applies withholds what its scope names from the contexts its scope covers, whatever its level, and what a viewer is denied is the union of them.');
     expect(rule).not.toMatch(/most restrictive wins/);
   });
@@ -441,7 +441,7 @@ describe('catalog.proto', () => {
   it('records the orchestrator ruling 2026-10-09: no_share covers anonymous viewers, and an unrecognised scope or level fails closed', () => {
     const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
     expect(rule).toContain('no_share covers anonymous viewers too: a restriction against sharing cannot be bypassed by not signing in, and anonymous is the weakest context (orchestrator ruling 2026-10-09).');
-    expect(rule).toContain('Only these four scopes and the levels image, product and source are valid, and a writer rejects any other; a restriction read with any other scope or level (a typo such as "no-share" or "Image") fails closed: an unrecognised scope withholds the image from every viewer context, and an unrecognised level applies when its subject matches the image\'s id, any id that resolves to its head or any of its sources.');
+    expect(rule).toContain('Only these four scopes and the levels image, product and source are valid, and a writer rejects any other, as it rejects a subject that is empty or begins or ends with white space; a restriction read with any other scope or level (a typo such as "no-share" or "Image", or a name such as "constructor") fails closed: an unrecognised scope withholds the image from every viewer context, and an unrecognised level applies when its subject matches the image\'s id, any id that resolves to its head or any of its sources.');
   });
 
   it('tabulates each scope with what it withholds and from which viewer context, as the display vectors do', () => {
@@ -456,8 +456,9 @@ describe('catalog.proto', () => {
     expect(rule).toContain('The viewer context is `owner` (the signed-in user in their own views: every CatalogService call), `share_link` (anyone opening a link the owner shared, signed in or not) or `anonymous` (no account and no link).');
     expect(rule).toContain("Restrictions are evaluated in ONE place, where an image list is built for a viewer: the GetProductImages list, a ProductCard's derivative_ids and any share projection the contract adds, each with the viewer context of its call.");
     expect(rule).toContain('A withheld image is absent, its mask with it; a withheld mask is unset and the fields derived from it are computed without it (ProductImage).');
-    expect(rule).toContain('When the primary is withheld, the first image of the product shown to this caller, on whatever page it falls, is sent as the primary (primary set, role "primary"), so the list reads as if the withheld image never existed (orchestrator ruling 2026-10-09). A list the spine sends with no primary is sent with none.');
+    expect(rule).toContain('When the primary is withheld, the first image of the product shown to this caller, on whatever page it falls, is sent as the primary: `primary` is set and its role stays the one the spine gave it, since no role names the primary, so the list reads as if the withheld image never existed (orchestrator ruling 2026-10-09). A list the spine sends with no primary is sent with none.');
     expect(rule).not.toMatch(/is not replaced/);
+    expect(prose(catalog)).not.toMatch(/role "primary"|"primary" or "gallery"/);
   });
 
   it('logs a denial only when something was withheld, never names one to the caller, and tells a client to drop what a fresh list no longer carries', () => {
@@ -479,7 +480,7 @@ describe('catalog.proto', () => {
     const list = prose(catalog.slice(catalog.indexOf('message ProductImages {'), catalog.indexOf('// One derivative the client may show.')));
     expect(list).toContain('Render order: the primary first, then the gallery by position. When the primary is withheld from this caller, the first image shown is sent as the primary (DISPLAY RESTRICTIONS).');
     const image = prose(catalog.slice(catalog.indexOf('// One derivative the client may show.'), catalog.indexOf('// SearchProducts')));
-    expect(image).toContain('The spine\'s role for the image, e.g. "primary" or "gallery"; "primary" on the image sent as the primary in place of a withheld one (DISPLAY RESTRICTIONS).');
+    expect(image).toContain('The spine\'s role for the image: "gallery", "other", "thumbnail", "user" or "unknown". No role names the primary; only `primary` does, and the image sent as the primary in place of a withheld one keeps its own role (DISPLAY RESTRICTIONS).');
     expect(image).toContain('Unset when there is none or when a display restriction withholds it from this caller (DISPLAY RESTRICTIONS).');
     const errors = prose(catalog.slice(catalog.indexOf('ERROR CONTRACT:'), catalog.indexOf('service CatalogService {')));
     expect(errors).toContain('* a display restriction withholds an image or a mask from the caller -> OK, the image or mask absent and the restriction not named (DISPLAY RESTRICTIONS).');
