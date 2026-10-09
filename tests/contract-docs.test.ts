@@ -7,6 +7,7 @@ const sync = read('proto/coordinator/v1/sync.proto');
 const catalog = read('proto/coordinator/v1/catalog.proto');
 const importProto = read('proto/coordinator/v1/import.proto');
 const readme = read('README.md');
+const displayScopes = () => (JSON.parse(read('golden/display-vectors.json')) as { scopes: Record<string, unknown> }).scopes;
 const hlcSource = read('src/hlc.ts');
 const vocabSource = read('src/sync-vocabulary.ts');
 const genSync = read('src/gen/coordinator/v1/sync_pb.ts');
@@ -428,6 +429,63 @@ describe('catalog.proto', () => {
     expect(image).not.toMatch(/the mask applied when there is one/);
   });
 
+  it('states the display restriction rule: shown by default, restrictions only withhold, per image, product or source (Ross, 2026-09-26)', () => {
+    const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
+    expect(rule).toContain("DISPLAY RESTRICTIONS (Ross, 2026-09-26). By default every image and its mask are shown to every viewer: to a user in their own views and to anyone opening a link the user shared.");
+    expect(rule).toContain("A display restriction overrides that default for one image (every derivative of it), one product (a restriction on any id that resolves to a head covers that head's images) or one source (every image captured from that store; an image captured from several is covered by each).");
+    expect(rule).toContain('A subject matches an id without regard to ASCII case: A-Z matches a-z and no other character is case-folded.');
+    expect(rule).toContain('Restrictions are data, never code, and they only withhold: none grants anything, so every restriction that applies withholds what its scope names from the contexts its scope covers, whatever its level, and what a viewer is denied is the union of them.');
+    expect(rule).not.toMatch(/most restrictive wins/);
+  });
+
+  it('records the orchestrator ruling 2026-10-09: no_share covers anonymous viewers, and an unrecognised scope or level fails closed', () => {
+    const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
+    expect(rule).toContain('no_share covers anonymous viewers too: a restriction against sharing cannot be bypassed by not signing in, and anonymous is the weakest context (orchestrator ruling 2026-10-09).');
+    expect(rule).toContain('Only these four scopes and the levels image, product and source are valid, and a writer rejects any other, as it rejects a subject that is empty or begins or ends with white space; a restriction read with any other scope or level (a typo such as "no-share" or "Image", or a name such as "constructor") fails closed: an unrecognised scope withholds the image from every viewer context, and an unrecognised level applies when its subject matches the image\'s id, any id that resolves to its head or any of its sources.');
+  });
+
+  it('tabulates each scope with what it withholds and from which viewer context, as the display vectors do', () => {
+    const table = catalog.slice(catalog.indexOf('//   scope'), catalog.indexOf('// The viewer context is'));
+    const rows = [...table.matchAll(/^\/\/ {3}(\w+) +the (image|mask) +([a-z_, ]+?)\s*$/gm)].map((m) => [m[1], { withholds: m[2], from: m[3]!.split(', ') }]);
+    expect(Object.fromEntries(rows)).toEqual(displayScopes());
+    expect(rows.map((r) => r[0])).toEqual(['no_display', 'owner_views_only', 'no_share', 'no_mask']);
+  });
+
+  it('names the viewer contexts and the one place restrictions are evaluated, with the caller\'s context', () => {
+    const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
+    expect(rule).toContain('The viewer context is `owner` (the signed-in user in their own views: every CatalogService call), `share_link` (anyone opening a link the owner shared, signed in or not) or `anonymous` (no account and no link).');
+    expect(rule).toContain("Restrictions are evaluated in ONE place, where an image list is built for a viewer: the GetProductImages list, a ProductCard's derivative_ids and any share projection the contract adds, each with the viewer context of its call.");
+    expect(rule).toContain('A withheld image is absent, its mask with it; a withheld mask is unset and the fields derived from it are computed without it (ProductImage).');
+    expect(rule).toContain('When the primary is withheld, the first image of the product shown to this caller, on whatever page it falls, is sent as the primary: `primary` is set and its role stays the one the spine gave it, since no role names the primary, so the list reads as if the withheld image never existed (orchestrator ruling 2026-10-09). A list the spine sends with no primary is sent with none.');
+    expect(rule).not.toMatch(/is not replaced/);
+    expect(prose(catalog)).not.toMatch(/role "primary"|"primary" or "gallery"/);
+  });
+
+  it('logs a denial only when something was withheld, never names one to the caller, and tells a client to drop what a fresh list no longer carries', () => {
+    const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
+    expect(rule).toContain('A denial is logged by the coordinator only when an evaluation withholds something the image has: the image, the viewer context and the restrictions that withheld it, each with its rule. Those are the ones that withhold the image when the image is withheld, else the ones that withhold its mask. An evaluation that withholds nothing, because no restriction applies, none covers the context or the image has no mask to withhold, is logged at debug level only (orchestrator ruling 2026-10-09).');
+    expect(rule).not.toMatch(/Every denial is logged|even when another one/);
+    expect(rule).toContain('The caller is never told (orchestrator ruling 2026-10-09): unlike an entitlement withholding (CompareResponse.coverage.redacted), a display restriction is not named, and a list, its primary and its pages read as if a withheld image never existed.');
+    expect(rule).not.toMatch(/absence reads the same either way/);
+    expect(rule).toContain("A client replaces a product's cached images with each fresh list and drops an image or mask the list no longer carries, since a restriction may have been added since.");
+    expect(rule).toContain('golden/display-vectors.json has the cases.');
+  });
+
+  it('applies the display restrictions where each image list is built and in the error contract', () => {
+    const card = prose(catalog.slice(catalog.indexOf('message ProductCard {'), catalog.indexOf('// GetProducts')));
+    expect(card).toContain('Only the derivatives shown to this caller, the first of them in place of a withheld primary (DISPLAY RESTRICTIONS).');
+    const images = prose(catalog.slice(catalog.indexOf('// GetProductImages'), catalog.indexOf('message GetProductImagesRequest')));
+    expect(images).toContain('A product with no displayable derivative is simply absent, as is one whose every image a display restriction withholds from this caller (DISPLAY RESTRICTIONS).');
+    expect(images).toContain('Withheld rows are dropped before the page is cut, so no page is shorter for them.');
+    const list = prose(catalog.slice(catalog.indexOf('message ProductImages {'), catalog.indexOf('// One derivative the client may show.')));
+    expect(list).toContain('Render order: the primary first, then the gallery by position. When the primary is withheld from this caller, the first image shown is sent as the primary (DISPLAY RESTRICTIONS).');
+    const image = prose(catalog.slice(catalog.indexOf('// One derivative the client may show.'), catalog.indexOf('// SearchProducts')));
+    expect(image).toContain('The spine\'s role for the image: "gallery", "other", "thumbnail", "user" or "unknown". No role names the primary; only `primary` does, and the image sent as the primary in place of a withheld one keeps its own role (DISPLAY RESTRICTIONS).');
+    expect(image).toContain('Unset when there is none or when a display restriction withholds it from this caller (DISPLAY RESTRICTIONS).');
+    const errors = prose(catalog.slice(catalog.indexOf('ERROR CONTRACT:'), catalog.indexOf('service CatalogService {')));
+    expect(errors).toContain('* a display restriction withholds an image or a mask from the caller -> OK, the image or mask absent and the restriction not named (DISPLAY RESTRICTIONS).');
+  });
+
   it('marks SearchProducts UNIMPLEMENTED until served', () => {
     expect(prose(catalog)).toMatch(/UNIMPLEMENTED/);
   });
@@ -733,6 +791,15 @@ describe('README', () => {
     expect(readme).not.toMatch(/userFacetKey`|holding states/);
     expect(readme).toMatch(/0\.3\.0 made one/);
   });
+
+  it('lists the display vectors and states the display restriction rule', () => {
+    const text = readme.replace(/\s+/g, ' ');
+    expect(text).toContain('golden/display-vectors.json display restriction cases: scope, level and viewer context');
+    expect(text).toMatch(/\*\*Display restrictions\*\* \(`catalog\.proto` DISPLAY RESTRICTIONS, Ross 2026-09-26; orchestrator ruling 2026-10-09\)/);
+    expect(text).toContain('logs a denial only when one withheld something');
+    expect(text).toContain('an unrecognised scope or level fails closed');
+    expect(text).not.toMatch(/most restrictive one wins|logs every denial/);
+  });
 });
 
 describe('README: the schema guard', () => {
@@ -759,8 +826,8 @@ describe('README: the schema guard', () => {
 });
 
 describe('package', () => {
-  it('is 0.3.0', () => {
-    expect(pkg.version).toBe('0.3.0');
+  it('is 0.4.0', () => {
+    expect(pkg.version).toBe('0.4.0');
   });
 
   it('runs the schema growth guard in verify, right after the proto breaking check', () => {
@@ -776,6 +843,7 @@ describe('package', () => {
       './golden/version-vectors.json',
       './golden/key-vectors.json',
       './golden/import-vectors.json',
+      './golden/display-vectors.json',
       './schemas/*',
     ]) {
       expect(pkg.exports, key).toHaveProperty([key]);
