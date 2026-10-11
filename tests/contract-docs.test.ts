@@ -826,8 +826,8 @@ describe('README: the schema guard', () => {
 });
 
 describe('package', () => {
-  it('is 0.4.0', () => {
-    expect(pkg.version).toBe('0.4.0');
+  it('is 0.4.1', () => {
+    expect(pkg.version).toBe('0.4.1');
   });
 
   it('runs the schema growth guard in verify, right after the proto breaking check', () => {
