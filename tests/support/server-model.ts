@@ -728,9 +728,14 @@ export function answerOps(
     const L: Record<Kind, string[]> = { owned: [], ordered: [], wished: [] };
     for (const k of KINDS) L[k] = tracked.filter((c) => cur.get(c) === k).sort(st.byRank);
     const sur = { owned: L.owned.length - M.owned, ordered: L.ordered.length - M.ordered, wished: L.wished.length - M.wished };
+    // the user's own live copies (no base, or base OUT): take never changes them, but each counts toward MFC's Count of
+    // its kind, so no conversion, restore or new copy makes a kind the user already holds MFC's Count of; never toward a removal
+    const own: Record<Kind, number> = { owned: 0, ordered: 0, wished: 0 };
+    if (!sw.takeIgnoresOwnCopies) for (const c of cs) if (cur.get(c) !== OUT && !tracked.includes(c)) own[cur.get(c) as Kind]++;
+    const short = (k: Kind): boolean => sur[k] + own[k] < 0;
     const pairs: [Kind, Kind][] = [...ARRIVAL_PAIRS.map((p) => [p[0], p[1]] as [Kind, Kind]), ['owned', 'ordered'], ['owned', 'wished'], ['ordered', 'wished']];
     for (const [x, y] of pairs) {
-      while (sur[x] > 0 && sur[y] < 0) {
+      while (sur[x] > 0 && (sw.takeConvertsBesideOwn ? sur[y] < 0 : short(y))) {
         const c = L[x].shift()!;
         ops.push(['status', c, y]);
         L[y].push(c);
@@ -739,7 +744,7 @@ export function answerOps(
       }
     }
     for (const k of KINDS) {
-      while (sur[k] > 0) {
+      while (sw.takeRemovesForOwn ? sur[k] + own[k] > 0 && L[k].length > 0 : sur[k] > 0) {
         const c = L[k].reduce((best, c) => {
           const a: [number, string] = [st.hasOrigin(c) && !sw.takeRemovesByIdOnly ? 1 : 0, st.rank(c)];
           const b: [number, string] = [st.hasOrigin(best) && !sw.takeRemovesByIdOnly ? 1 : 0, st.rank(best)];
@@ -753,7 +758,7 @@ export function answerOps(
     const touched = new Set<string>();
     const trackedSet = new Set(tracked);
     for (const k of KINDS) {
-      while (sur[k] < 0) {
+      while (short(k)) {
         const outs = cs.filter(
           (c) => cur.get(c) === OUT && !touched.has(c) && st.head(c) !== null && st.surv(st.head(c)!) === S && (trackedSet.has(c) || st.importRemoved.has(c)),
         );
@@ -990,6 +995,12 @@ export interface Switches {
   keepLeavesImportMark?: boolean;
   /** take removes by the highest occ id alone, not a copy with an origin first. */
   takeRemovesByIdOnly?: boolean;
+  /** take counts no copy MFC does not track toward MFC's Count: beside the user's own copy it makes another. */
+  takeIgnoresOwnCopies?: boolean;
+  /** take counts the user's own copies toward a restore or a new copy, but converts a tracked copy into a kind they already fill. */
+  takeConvertsBesideOwn?: boolean;
+  /** take counts the user's own copies toward a removal too: beside the user's own copy it removes the one MFC tracks. */
+  takeRemovesForOwn?: boolean;
   /** The undo of a favor_app settlement puts back every base of the figure as it stood before the realignment, not only the ones the realignment moved. */
   undoRestoresAllBases?: boolean;
   /** A favor_app change entry shows the take against the realigned bases as its undo list (the undo itself unchanged). */
