@@ -180,8 +180,16 @@ const MUTANTS: { name: string; sw?: Switches; client?: Client; detector: Detecto
   { name: 'what keep applies of MFC\'s change leaves the import-removed mark as it was', sw: { keepLeavesImportMark: true }, detector: 'review', mustInclude: 'What keep applies of MFC\'s change is the import\'s' },
   { name: 'the same, a copy keep removes', sw: { keepLeavesImportMark: true }, detector: 'review', mustInclude: 'What keep removes of MFC\'s change is the import\'s' },
   { name: 'take removes by the highest occ id alone, not a copy with an origin first', sw: { takeRemovesByIdOnly: true }, detector: 'review', mustInclude: 'take removes a copy with an origin before one without, then the highest occ id' },
+  // WK-14d: take counts the user's own live copies toward MFC's Count of their kind, never toward a removal
+  { name: 'take counts no copy MFC does not track: beside the user\'s own copy it makes a second', sw: { takeIgnoresOwnCopies: true }, detector: 'review', mustInclude: 'A hand copy, then an import of its figure whose score conflicts' },
+  { name: 'take converts a tracked copy into a kind the user\'s own copies already fill', sw: { takeConvertsBesideOwn: true }, detector: 'review', mustInclude: 'An import tracks a copy as ordered, the user adds an owned copy by hand, then MFC says owned' },
+  { name: 'take counts the user\'s own copies toward a removal: beside the user\'s own copy it removes the one MFC tracks', sw: { takeRemovesForOwn: true }, detector: 'review', mustInclude: 'An import\'s copy, then a hand copy of the same kind and a score MFC changes too' },
   // round 9, recheck 1: the undo of a favor_app settlement
-  { name: 'the undo of a favor_app settlement puts back every base, not only the ones its realignment moved: a copy MFC came to track since', sw: { undoRestoresAllBases: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement puts back only the bases its realignment moved, so a copy MFC came to track since keeps its base' },
+  // WK-14d: take counts a live copy MFC does not track toward MFC's Count, so on 'The undo of a favor_app settlement puts back
+  // only the bases its realignment moved, so a copy MFC came to track since keeps its base' this mutant is equivalent (the
+  // live copy counts with its base or without, and the undo's realignment then bases it either way); the vector below and the
+  // hand-copy one still catch it
+  { name: 'the undo of a favor_app settlement puts back every base, not only the ones its realignment moved: a copy MFC came to track since', sw: { undoRestoresAllBases: true }, detector: 'review', mustInclude: 'The undo of an older FAVOR_APP settlement ends the divergence a later import raised when it listed a row the undo\'s export lacks' },
   { name: 'the same: a hand copy MFC came to track since', sw: { undoRestoresAllBases: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement puts back only the bases its realignment moved, so a hand copy MFC came to track since stays tracked' },
   { name: 'a favor_app entry shows the take against the realigned bases as its undo list (round 8\'s list)', sw: { favorShownOnRealigned: true }, detector: 'review', mustInclude: 'A favor_app change entry lists as its undo the take its import would have written' },
   { name: 'the undo of a favor_app settlement leaves the bases unrealigned', sw: { favorUndoNoRealign: true }, detector: 'review', mustInclude: 'The undo of a favor_app settlement realigns the bases, so MFC\'s later changes are decided against export 2\'s side' },

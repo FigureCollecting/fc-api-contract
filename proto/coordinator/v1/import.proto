@@ -323,9 +323,16 @@
 //     base is the kind first, which can bring back a copy the app sold, then
 //     one an import removed (not tracked: its base is OUT), lowest occ id
 //     first; then new copies, each for the lowest-numbered row of S of the
-//     kind, whatever its Count, at that row's lowest unused ordinal. A copy
-//     with no base is never changed, but for one an import removed, and a
-//     disputed field takes MFC's value. per_copy: what only MFC changed as keep
+//     kind, whatever its Count, at that row's lowest unused ordinal. The user's
+//     own live copies of S (no base, or base OUT) are never changed, but each
+//     counts toward MFC's Count of its kind: a conversion into a kind, a
+//     restore and a new copy are made only while the live copies of that kind,
+//     the user's own included, are fewer than MFC's Count, so take never adds a
+//     copy of a kind beside the user's own that MFC's Count does not call for
+//     (a tracked copy it then need not convert is removed, as any beyond MFC's
+//     Count is); they count toward no removal. A copy with no base is never
+//     changed, but for one an import removed, and a disputed field takes MFC's
+//     value. per_copy: what only MFC changed as keep
 //     applies it, then the final statuses listed and "app" or "mfc" per
 //     disputed field, exactly. After a keep, take or per_copy on a conflict, a
 //     take on a divergence, and the undo of a favor_app settlement, the bases
