@@ -90,10 +90,17 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // later import raised (h2, round 3) moved 18 FAVOR_APP scripts from 555a107, same 12,401 -> 12,416, sameCountsShown 2,665 ->
     // 2,653, differsShown 4,878 -> 4,875, none silent: 15 into same (9 from sameCountsShown, 6 from differsShown) and 3 from
     // sameCountsShown to differsShown, seeds 4375, 7944 and 16067)
+    // (WK-14d: take counts the user's own live copies toward MFC's Count, so a late hand-added copy is now relevant to a take
+    // or a FAVOR_MFC settlement it meets: 68 scripts move, none silent; same 12,416 -> 12,411, sameCountsShown 2,653 -> 2,693,
+    // differsShown 4,875 -> 4,840. 49 move toward pushed-first (39 differsShown -> sameCountsShown, 8 differsShown -> same,
+    // 2 sameCountsShown -> same): the old take made a copy beside the user's own on one path only. 19 move away (8 same ->
+    // differsShown, 7 same -> sameCountsShown, 4 sameCountsShown -> differsShown), each with its late unit held on a card
+    // (in 4538, 9613, 16757 and 17364 an answer is also STALE): 15 are a late added copy the take now counts, so the replay
+    // holds it; 3109, 3528, 5600 and 9613 already held their late unit and now end at other counts)
     expect({ same: t.same, sameCountsShown: t.sameCountsShown, differsShown: t.differsShown, picks: t.picks, refHeldAnswered: t.refHeldAnswered, answeredSameRev: t.answeredSameRev, collisions: t.collisions }).toEqual({
-      same: 12_416,
-      sameCountsShown: 2_653,
-      differsShown: 4_875,
+      same: 12_411,
+      sameCountsShown: 2_693,
+      differsShown: 4_840,
       picks: 30,
       refHeldAnswered: 9,
       answeredSameRev: 2,
@@ -110,9 +117,11 @@ describe('property: the offline path ends where the pushed-first path ends', () 
     // them is seen; recheck h2 found 54 middle-drop scripts had left 'same' at h1 unseen, 32 of them FAVOR_MFC)
     // (contract-8 close-out h2, round 3: the undo of a FAVOR_APP settlement ends a divergence a later import raised; same
     // 2,723 -> 2,730 and 2,627 -> 2,640, every moved script a FAVOR_APP one, none silent)
+    // (WK-14d: take counts the user's own live copies toward MFC's Count; one middle-drop script moves from differsShown to
+    // sameCountsShown, none silent; the last-drop world is unchanged)
     const apart = {
       last: { runs: 3_947, same: 2_730, sameCountsShown: 355, differsShown: 845, picks: 6, refHeldAnswered: 2, answeredSameRev: 0, collisions: 9 },
-      middle: { runs: 3_914, same: 2_640, sameCountsShown: 414, differsShown: 830, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 },
+      middle: { runs: 3_914, same: 2_640, sameCountsShown: 415, differsShown: 829, picks: 17, refHeldAnswered: 2, answeredSameRev: 0, collisions: 11 },
     };
     for (const drop of ['last', 'middle'] as const) {
       const t = crossImportWorld({ from: 1, to: 20_000, drop });
