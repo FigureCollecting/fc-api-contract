@@ -36604,6 +36604,92 @@
     "changes": {},
     "align": {}
    }
+  },
+  {
+   "name": "A hand copy, then an import of its figure whose score conflicts: take counts the user's own copy toward MFC's Count, so it makes no second copy and writes only MFC's score; the same export again raises nothing",
+   "rule": "R4",
+   "steps": [
+    {"op": "edit", "dev": "T", "key": "occ/a1/head", "value": "H1", "t": 530},
+    {"op": "edit", "dev": "T", "key": "occ/a1/status", "value": "owned", "t": 530},
+    {"op": "edit", "dev": "T", "key": "uf/H1/score", "value": 4, "t": 530},
+    {"op": "push", "dev": "T", "t": 531, "expect": [{"key": "occ/a1/head", "outcome": "APPLIED"}, {"key": "occ/a1/status", "outcome": "APPLIED"}, {"key": "uf/H1/score", "outcome": "APPLIED"}]},
+    {"op": "import", "t": 540, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {"score": 9}}], "by": "T", "expect": {"review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}], "applied": [], "counters": {"added": 1, "moved": 0, "unchanged": 0, "removed": 0, "kept_newer": 0, "occurrences_added": 0, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 1, "facets_written": 2, "conflicts_pending": 1, "divergences_pending": 0, "align_pending": 0, "import_number": 1}}},
+    {"op": "pull", "dev": "T", "expect": {"previews": {"H1": {"keep": [], "take": [{"key": "uf/H1/score", "value": 9}]}}}},
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "take", "t": 545, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 546, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/figure/H1": null}}},
+    {"op": "import", "t": 560, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {"score": 9}}], "by": "T", "expect": {"review": [], "applied": [], "counters": {"added": 0, "moved": 0, "unchanged": 1, "removed": 0, "kept_newer": 0, "occurrences_added": 0, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 0, "facets_written": 1, "conflicts_pending": 0, "divergences_pending": 0, "align_pending": 0, "import_number": 2}}}
+   ],
+   "expect": {
+    "facets": {
+     "occ/a1/head": "H1",
+     "occ/a1/status": "owned",
+     "uf/H1/score": 9
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "An import tracks a copy as ordered, the user adds an owned copy by hand, then MFC says owned: take converts no tracked copy into a kind the user's own copies already fill, it removes the tracked one; the same export again raises nothing",
+   "rule": "R4",
+   "steps": [
+    {"op": "import", "t": 540, "rows": [{"id": "1144", "head": "H1", "kind": "ordered", "count": 1, "fields": {}}], "by": "T", "expect": {"review": [], "applied": [], "counters": {"added": 1, "moved": 0, "unchanged": 0, "removed": 0, "kept_newer": 0, "occurrences_added": 1, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 0, "facets_written": 4, "conflicts_pending": 0, "divergences_pending": 0, "align_pending": 0, "import_number": 1}}},
+    {"op": "edit", "dev": "T", "key": "occ/a1/head", "value": "H1", "t": 550},
+    {"op": "edit", "dev": "T", "key": "occ/a1/status", "value": "owned", "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "occ/a1/head", "outcome": "APPLIED"}, {"key": "occ/a1/status", "outcome": "APPLIED"}]},
+    {"op": "import", "t": 560, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}], "by": "T", "expect": {"review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}], "applied": [], "counters": {"added": 0, "moved": 0, "unchanged": 0, "removed": 0, "kept_newer": 1, "occurrences_added": 0, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 1, "facets_written": 2, "conflicts_pending": 1, "divergences_pending": 0, "align_pending": 0, "import_number": 2}}},
+    {"op": "pull", "dev": "T", "expect": {"previews": {"H1": {"keep": [], "take": [{"key": "occ/o1/status", "value": null}]}}}},
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "take", "t": 565, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 566, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/figure/H1": null}}},
+    {"op": "import", "t": 580, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {}}], "by": "T", "expect": {"review": [], "applied": [], "counters": {"added": 0, "moved": 0, "unchanged": 1, "removed": 0, "kept_newer": 0, "occurrences_added": 0, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 0, "facets_written": 1, "conflicts_pending": 0, "divergences_pending": 0, "align_pending": 0, "import_number": 3}}}
+   ],
+   "expect": {
+    "facets": {
+     "occ/a1/head": "H1",
+     "occ/a1/status": "owned",
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1"
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
+  },
+  {
+   "name": "An import's copy, then a hand copy of the same kind and a score MFC changes too: take removes neither, the user's own copy counting toward no removal; the same export again raises nothing",
+   "rule": "R4",
+   "steps": [
+    {"op": "import", "t": 540, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {"score": 7}}], "by": "T", "expect": {"review": [], "applied": [], "counters": {"added": 1, "moved": 0, "unchanged": 0, "removed": 0, "kept_newer": 0, "occurrences_added": 1, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 0, "facets_written": 5, "conflicts_pending": 0, "divergences_pending": 0, "align_pending": 0, "import_number": 1}}},
+    {"op": "edit", "dev": "T", "key": "occ/a1/head", "value": "H1", "t": 550},
+    {"op": "edit", "dev": "T", "key": "occ/a1/status", "value": "owned", "t": 550},
+    {"op": "edit", "dev": "T", "key": "uf/H1/score", "value": 4, "t": 550},
+    {"op": "push", "dev": "T", "t": 551, "expect": [{"key": "occ/a1/head", "outcome": "APPLIED"}, {"key": "occ/a1/status", "outcome": "APPLIED"}, {"key": "uf/H1/score", "outcome": "APPLIED"}]},
+    {"op": "import", "t": 560, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {"score": 9}}], "by": "T", "expect": {"review": [{"kind": "conflict", "items": [{"head": "H1", "answers": ["keep", "take", "per_copy"]}], "bulk": ["keep", "take"]}], "applied": [], "counters": {"added": 0, "moved": 0, "unchanged": 0, "removed": 0, "kept_newer": 1, "occurrences_added": 0, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 1, "facets_written": 2, "conflicts_pending": 1, "divergences_pending": 0, "align_pending": 0, "import_number": 2}}},
+    {"op": "pull", "dev": "T", "expect": {"previews": {"H1": {"keep": [], "take": [{"key": "uf/H1/score", "value": 9}]}}}},
+    {"op": "resolve", "dev": "T", "fig": "H1", "choice": "take", "t": 565, "item": "figure"},
+    {"op": "push", "dev": "T", "t": 566, "expect": [{"key": "res/mfc/H1", "outcome": "APPLIED"}]},
+    {"op": "pull", "dev": "T", "expect": {"shows": {"imp/mfc/figure/H1": null}}},
+    {"op": "import", "t": 580, "rows": [{"id": "1144", "head": "H1", "kind": "owned", "count": 1, "fields": {"score": 9}}], "by": "T", "expect": {"review": [], "applied": [], "counters": {"added": 0, "moved": 0, "unchanged": 1, "removed": 0, "kept_newer": 0, "occurrences_added": 0, "occurrences_status_changed": 0, "occurrences_removed": 0, "conflicts_raised": 0, "facets_written": 1, "conflicts_pending": 0, "divergences_pending": 0, "align_pending": 0, "import_number": 3}}}
+   ],
+   "expect": {
+    "facets": {
+     "occ/a1/head": "H1",
+     "occ/a1/status": "owned",
+     "occ/o1/head": "H1",
+     "occ/o1/origin": "1144#1",
+     "occ/o1/status": "owned",
+     "uf/H1/score": 9
+    },
+    "figure": {},
+    "held": {},
+    "changes": {},
+    "align": {}
+   }
   }
  ]
 }
