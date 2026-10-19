@@ -175,6 +175,16 @@ never names one to the caller: a withheld primary is replaced by the first image
 reads as if the withheld image never existed. 0.4.0 adds the rule and `golden/display-vectors.json`;
 no field changed: the mask, the grounding fields and the physical dimensions shipped in 0.3.0.
 
+## Product kind
+
+`ProductCard.kind` and `ProductCard.category` (0.5.0, additive: fields 15 and 16, an enum and nothing moved)
+say what a product is, so a client can keep merchandise off its shelves. The spine's source files every item
+under a category of its own (MFC: Prepainted, Trading, Linens, On Walls, Video, ...); `category` carries that
+name verbatim and `kind` (`ProductKind`: `FIGURE`, `GOODS`, `MEDIA`) is the coordinator's reading of it. **Unset
+means unknown**: the spine holds no category, or one the coordinator cannot place, and a client treats the
+product as it did before the field existed, as a figure. A kind an older client has not heard of arrives as a raw
+number (proto3 enums are open): treat it as unset.
+
 ## Two doctrines the messages encode
 
 **The coordinator passes the spine's answer through; it does not re-derive it.**

@@ -825,9 +825,20 @@ describe('README: the schema guard', () => {
   });
 });
 
+describe('README: the product kind (FIGURES-ONLY-1)', () => {
+  it('says what an unset kind means, and that a kind the client does not know is treated as unset', () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    expect(readme).toMatch(/## Product kind/);
+    expect(readme).toMatch(/`ProductCard\.kind` and `ProductCard\.category` \(0\.5\.0, additive/);
+    expect(readme).toMatch(/\*\*Unset\s+means unknown\*\*/);
+    expect(readme).toMatch(/as a figure/);
+    expect(readme).toMatch(/treat it as unset/);
+  });
+});
+
 describe('package', () => {
-  it('is 0.4.1', () => {
-    expect(pkg.version).toBe('0.4.1');
+  it('is 0.5.0', () => {
+    expect(pkg.version).toBe('0.5.0');
   });
 
   it('runs the schema growth guard in verify, right after the proto breaking check', () => {

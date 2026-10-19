@@ -104,15 +104,15 @@
 // @generated from file coordinator/v1/catalog.proto (package coordinator.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file coordinator/v1/catalog.proto.
  */
 export const file_coordinator_v1_catalog: GenFile = /*@__PURE__*/
-  fileDesc("Chxjb29yZGluYXRvci92MS9jYXRhbG9nLnByb3RvEg5jb29yZGluYXRvci52MSJrCgpQcm9kdWN0UmVmEhEKB2hlYWRfaWQYASABKAlIABIQCgZndGluMTQYAiABKAlIABIxCgtzb3VyY2VfaXRlbRgDIAEoCzIaLmNvb3JkaW5hdG9yLnYxLlNvdXJjZUl0ZW1IAEIFCgNyZWYiLQoKU291cmNlSXRlbRIMCgRzaXRlGAEgASgJEhEKCW5hdGl2ZV9pZBgCIAEoCSIoCghDYXJkVGV4dBINCgV2YWx1ZRgBIAEoCRINCgVhc19vZhgCIAEoCSKfBAoLUHJvZHVjdENhcmQSDwoHaGVhZF9pZBgBIAEoCRIwCgxyZXF1ZXN0ZWRfYXMYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEicKBXRpdGxlGAMgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSLgoMbWFudWZhY3R1cmVyGAQgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKAoGc2VyaWVzGAUgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKwoJY2hhcmFjdGVyGAYgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSJwoFc2NhbGUYByABKAsyGC5jb29yZGluYXRvci52MS5DYXJkVGV4dBIsCgpyZWxlYXNlX3ltGAggASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSDwoHZ3RpbjE0cxgJIAMoCRIvCg1jb250ZW50X2xldmVsGAogASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSFgoOZGVyaXZhdGl2ZV9pZHMYCyADKAkSFgoJaGVpZ2h0X21tGAwgASgNSACIAQESFQoId2lkdGhfbW0YDSABKA1IAYgBARIVCghkZXB0aF9tbRgOIAEoDUgCiAEBQgwKCl9oZWlnaHRfbW1CCwoJX3dpZHRoX21tQgsKCV9kZXB0aF9tbSJlChJHZXRQcm9kdWN0c1JlcXVlc3QSKAoEcmVmcxgBIAMoCzIaLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RSZWYSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkijQEKE0dldFByb2R1Y3RzUmVzcG9uc2USLQoIcHJvZHVjdHMYASADKAsyGy5jb29yZGluYXRvci52MS5Qcm9kdWN0Q2FyZBIuCgp1bnJlc29sdmVkGAIgAygLMhouY29vcmRpbmF0b3IudjEuUHJvZHVjdFJlZhIXCg9uZXh0X3BhZ2VfdG9rZW4YAyABKAkiUgoXR2V0UHJvZHVjdEltYWdlc1JlcXVlc3QSEAoIaGVhZF9pZHMYASADKAkSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkiZAoYR2V0UHJvZHVjdEltYWdlc1Jlc3BvbnNlEi8KCHByb2R1Y3RzGAEgAygLMh0uY29vcmRpbmF0b3IudjEuUHJvZHVjdEltYWdlcxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiTgoNUHJvZHVjdEltYWdlcxIPCgdoZWFkX2lkGAEgASgJEiwKBmltYWdlcxgCIAMoCzIcLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RJbWFnZSLFAgoMUHJvZHVjdEltYWdlEhUKDWRlcml2YXRpdmVfaWQYASABKAkSDAoEcm9sZRgCIAEoCRIPCgdwcmltYXJ5GAMgASgIEhQKDGNvbnRlbnRfdHlwZRgEIAEoCRINCgV3aWR0aBgFIAEoDRIOCgZoZWlnaHQYBiABKA0SCwoDdXJsGAcgASgJEicKBG1hc2sYCCABKAsyGS5jb29yZGluYXRvci52MS5JbWFnZU1hc2sSHwoSYm90dG9tX21hcmdpbl9mcmFjGAkgASgBSACIAQESMQoMY29udGFjdF9iYW5kGAogASgLMhsuY29vcmRpbmF0b3IudjEuQ29udGFjdEJhbmQSEQoJdGh1bWJoYXNoGAsgASgMEhYKDmRvbWluYW50X2NvbG9yGAwgASgJQhUKE19ib3R0b21fbWFyZ2luX2ZyYWMiPwoJSW1hZ2VNYXNrEg8KB21hc2tfaWQYASABKAkSFAoMY29udGVudF90eXBlGAIgASgJEgsKA3VybBgDIAEoCSI4CgtDb250YWN0QmFuZBIVCg1jZW50ZXJfeF9mcmFjGAEgASgBEhIKCndpZHRoX2ZyYWMYAiABKAEiTQoVU2VhcmNoUHJvZHVjdHNSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoDRISCgpwYWdlX3Rva2VuGAMgASgJImAKFlNlYXJjaFByb2R1Y3RzUmVzcG9uc2USLQoIcHJvZHVjdHMYASADKAsyGy5jb29yZGluYXRvci52MS5Qcm9kdWN0Q2FyZBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkysAIKDkNhdGFsb2dTZXJ2aWNlElYKC0dldFByb2R1Y3RzEiIuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdHNSZXF1ZXN0GiMuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdHNSZXNwb25zZRJlChBHZXRQcm9kdWN0SW1hZ2VzEicuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdEltYWdlc1JlcXVlc3QaKC5jb29yZGluYXRvci52MS5HZXRQcm9kdWN0SW1hZ2VzUmVzcG9uc2USXwoOU2VhcmNoUHJvZHVjdHMSJS5jb29yZGluYXRvci52MS5TZWFyY2hQcm9kdWN0c1JlcXVlc3QaJi5jb29yZGluYXRvci52MS5TZWFyY2hQcm9kdWN0c1Jlc3BvbnNlYgZwcm90bzM");
+  fileDesc("Chxjb29yZGluYXRvci92MS9jYXRhbG9nLnByb3RvEg5jb29yZGluYXRvci52MSJrCgpQcm9kdWN0UmVmEhEKB2hlYWRfaWQYASABKAlIABIQCgZndGluMTQYAiABKAlIABIxCgtzb3VyY2VfaXRlbRgDIAEoCzIaLmNvb3JkaW5hdG9yLnYxLlNvdXJjZUl0ZW1IAEIFCgNyZWYiLQoKU291cmNlSXRlbRIMCgRzaXRlGAEgASgJEhEKCW5hdGl2ZV9pZBgCIAEoCSIoCghDYXJkVGV4dBINCgV2YWx1ZRgBIAEoCRINCgVhc19vZhgCIAEoCSKEBQoLUHJvZHVjdENhcmQSDwoHaGVhZF9pZBgBIAEoCRIwCgxyZXF1ZXN0ZWRfYXMYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEicKBXRpdGxlGAMgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSLgoMbWFudWZhY3R1cmVyGAQgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKAoGc2VyaWVzGAUgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKwoJY2hhcmFjdGVyGAYgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSJwoFc2NhbGUYByABKAsyGC5jb29yZGluYXRvci52MS5DYXJkVGV4dBIsCgpyZWxlYXNlX3ltGAggASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSDwoHZ3RpbjE0cxgJIAMoCRIvCg1jb250ZW50X2xldmVsGAogASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSFgoOZGVyaXZhdGl2ZV9pZHMYCyADKAkSFgoJaGVpZ2h0X21tGAwgASgNSACIAQESFQoId2lkdGhfbW0YDSABKA1IAYgBARIVCghkZXB0aF9tbRgOIAEoDUgCiAEBEi4KBGtpbmQYDyABKA4yGy5jb29yZGluYXRvci52MS5Qcm9kdWN0S2luZEgDiAEBEioKCGNhdGVnb3J5GBAgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHRCDAoKX2hlaWdodF9tbUILCglfd2lkdGhfbW1CCwoJX2RlcHRoX21tQgcKBV9raW5kImUKEkdldFByb2R1Y3RzUmVxdWVzdBIoCgRyZWZzGAEgAygLMhouY29vcmRpbmF0b3IudjEuUHJvZHVjdFJlZhIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSKNAQoTR2V0UHJvZHVjdHNSZXNwb25zZRItCghwcm9kdWN0cxgBIAMoCzIbLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RDYXJkEi4KCnVucmVzb2x2ZWQYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEhcKD25leHRfcGFnZV90b2tlbhgDIAEoCSJSChdHZXRQcm9kdWN0SW1hZ2VzUmVxdWVzdBIQCghoZWFkX2lkcxgBIAMoCRIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSJkChhHZXRQcm9kdWN0SW1hZ2VzUmVzcG9uc2USLwoIcHJvZHVjdHMYASADKAsyHS5jb29yZGluYXRvci52MS5Qcm9kdWN0SW1hZ2VzEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJOCg1Qcm9kdWN0SW1hZ2VzEg8KB2hlYWRfaWQYASABKAkSLAoGaW1hZ2VzGAIgAygLMhwuY29vcmRpbmF0b3IudjEuUHJvZHVjdEltYWdlIsUCCgxQcm9kdWN0SW1hZ2USFQoNZGVyaXZhdGl2ZV9pZBgBIAEoCRIMCgRyb2xlGAIgASgJEg8KB3ByaW1hcnkYAyABKAgSFAoMY29udGVudF90eXBlGAQgASgJEg0KBXdpZHRoGAUgASgNEg4KBmhlaWdodBgGIAEoDRILCgN1cmwYByABKAkSJwoEbWFzaxgIIAEoCzIZLmNvb3JkaW5hdG9yLnYxLkltYWdlTWFzaxIfChJib3R0b21fbWFyZ2luX2ZyYWMYCSABKAFIAIgBARIxCgxjb250YWN0X2JhbmQYCiABKAsyGy5jb29yZGluYXRvci52MS5Db250YWN0QmFuZBIRCgl0aHVtYmhhc2gYCyABKAwSFgoOZG9taW5hbnRfY29sb3IYDCABKAlCFQoTX2JvdHRvbV9tYXJnaW5fZnJhYyI/CglJbWFnZU1hc2sSDwoHbWFza19pZBgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSCwoDdXJsGAMgASgJIjgKC0NvbnRhY3RCYW5kEhUKDWNlbnRlcl94X2ZyYWMYASABKAESEgoKd2lkdGhfZnJhYxgCIAEoASJNChVTZWFyY2hQcm9kdWN0c1JlcXVlc3QSDQoFcXVlcnkYASABKAkSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkiYAoWU2VhcmNoUHJvZHVjdHNSZXNwb25zZRItCghwcm9kdWN0cxgBIAMoCzIbLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RDYXJkEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSp0CgtQcm9kdWN0S2luZBIcChhQUk9EVUNUX0tJTkRfVU5TUEVDSUZJRUQQABIXChNQUk9EVUNUX0tJTkRfRklHVVJFEAESFgoSUFJPRFVDVF9LSU5EX0dPT0RTEAISFgoSUFJPRFVDVF9LSU5EX01FRElBEAMysAIKDkNhdGFsb2dTZXJ2aWNlElYKC0dldFByb2R1Y3RzEiIuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdHNSZXF1ZXN0GiMuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdHNSZXNwb25zZRJlChBHZXRQcm9kdWN0SW1hZ2VzEicuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdEltYWdlc1JlcXVlc3QaKC5jb29yZGluYXRvci52MS5HZXRQcm9kdWN0SW1hZ2VzUmVzcG9uc2USXwoOU2VhcmNoUHJvZHVjdHMSJS5jb29yZGluYXRvci52MS5TZWFyY2hQcm9kdWN0c1JlcXVlc3QaJi5jb29yZGluYXRvci52MS5TZWFyY2hQcm9kdWN0c1Jlc3BvbnNlYgZwcm90bzM");
 
 /**
  * ---------------------------------------------------------------------------
@@ -326,6 +326,26 @@ export type ProductCard = Message<"coordinator.v1.ProductCard"> & {
    * @generated from field: optional uint32 depth_mm = 14;
    */
   depthMm?: number | undefined;
+
+  /**
+   * What the product is (ProductKind), as the coordinator derives it from the
+   * source's own category. Unset means unknown (the spine holds no category, or
+   * one the coordinator cannot place): a client then treats the product as it
+   * did before this field existed and shows the product as a figure. Never
+   * PRODUCT_KIND_UNSPECIFIED on the wire; absence is the unknown.
+   *
+   * @generated from field: optional coordinator.v1.ProductKind kind = 15;
+   */
+  kind?: ProductKind | undefined;
+
+  /**
+   * The source's own category name for the product, verbatim ("Prepainted",
+   * "Linens"), with the spine's as_of for the claim: what `kind` was derived
+   * from, for a client that wants to say it. Absent when the source states none.
+   *
+   * @generated from field: coordinator.v1.CardText category = 16;
+   */
+  category?: CardText | undefined;
 };
 
 /**
@@ -750,6 +770,55 @@ export type SearchProductsResponse = Message<"coordinator.v1.SearchProductsRespo
  */
 export const SearchProductsResponseSchema: GenMessage<SearchProductsResponse> = /*@__PURE__*/
   messageDesc(file_coordinator_v1_catalog, 13);
+
+/**
+ * ---------------------------------------------------------------------------
+ * ProductKind — what a product is, for the client's own use of it (0.5.0).
+ *
+ * The spine's source classifies every item under a category of its own (MFC:
+ * Prepainted, Trading, Linens, On Walls, Video, ...); the coordinator maps that
+ * category onto one of these. FIGURE is a thing to stand on a shelf. GOODS is
+ * merchandise that is not shelved as a figure (a towel, a tapestry, a poster).
+ * MEDIA is a recording or a book. A client that shelves figures (the case view)
+ * shelves FIGURE and an unset kind, and leaves the rest to its lists.
+ *
+ * Additive: an older client never reads the field and shows everything as it
+ * did. A newer server's value an older client has not heard of arrives as its
+ * raw number (proto3 enums are open); treat one you do not know as unset.
+ * ---------------------------------------------------------------------------
+ *
+ * @generated from enum coordinator.v1.ProductKind
+ */
+export enum ProductKind {
+  /**
+   * Never set on purpose: the card's `kind` is simply absent when unknown. The
+   * zero value is what an enum decodes to when nothing was written.
+   *
+   * @generated from enum value: PRODUCT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PRODUCT_KIND_FIGURE = 1;
+   */
+  FIGURE = 1,
+
+  /**
+   * @generated from enum value: PRODUCT_KIND_GOODS = 2;
+   */
+  GOODS = 2,
+
+  /**
+   * @generated from enum value: PRODUCT_KIND_MEDIA = 3;
+   */
+  MEDIA = 3,
+}
+
+/**
+ * Describes the enum coordinator.v1.ProductKind.
+ */
+export const ProductKindSchema: GenEnum<ProductKind> = /*@__PURE__*/
+  enumDesc(file_coordinator_v1_catalog, 0);
 
 /**
  * ---------------------------------------------------------------------------

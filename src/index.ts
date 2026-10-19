@@ -52,6 +52,8 @@ export {
   SourceItemSchema,
   CardTextSchema,
   ProductCardSchema,
+  ProductKind,
+  ProductKindSchema,
   GetProductsRequestSchema,
   GetProductsResponseSchema,
   GetProductImagesRequestSchema,
