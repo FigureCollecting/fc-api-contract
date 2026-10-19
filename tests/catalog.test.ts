@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ScalarType, create, equals, fromBinary, fromJson, toBinary, toJson } from '@bufbuild/protobuf';
 import {
@@ -9,7 +10,10 @@ import {
   GetProductImagesResponseSchema,
   GetProductsRequestSchema,
   GetProductsResponseSchema,
+  CardTextSchema,
   ProductCardSchema,
+  ProductKind,
+  ProductKindSchema,
   SearchProductsRequestSchema,
   SearchProductsResponseSchema,
 } from '../src/index.js';
@@ -91,6 +95,55 @@ describe('GetProducts', () => {
       ['width_mm', 13, ScalarType.UINT32, true],
       ['depth_mm', 14, ScalarType.UINT32, true],
     ]);
+  });
+
+  it('carries the product kind and the source\'s category, both unset when unknown (FIGURES-ONLY-1)', () => {
+    const goods = create(ProductCardSchema, { ...card, kind: ProductKind.GOODS, category: { value: 'Linens', asOf: AS_OF } });
+    const decoded = fromBinary(ProductCardSchema, toBinary(ProductCardSchema, goods));
+    expect(decoded.kind).toBe(ProductKind.GOODS);
+    expect(decoded.category).toEqual(expect.objectContaining({ value: 'Linens', asOf: AS_OF }));
+    expect(equals(ProductCardSchema, goods, fromJson(ProductCardSchema, toJson(ProductCardSchema, goods)))).toBe(true);
+
+    // an older writer's card, or one the spine could not classify: both absent, never a default
+    const unknown = fromBinary(ProductCardSchema, toBinary(ProductCardSchema, create(ProductCardSchema, card)));
+    expect(unknown.kind).toBeUndefined();
+    expect(unknown.category).toBeUndefined();
+  });
+
+  it('declares kind as an optional enum at 15 and category as a CardText at 16, additive after the dimensions', () => {
+    const kind = ProductCardSchema.fields.find((f) => f.name === 'kind')!;
+    expect([kind.number, kind.fieldKind, kind.proto.proto3Optional]).toEqual([15, 'enum', true]);
+    expect(kind.enum).toBe(ProductKindSchema);
+    const category = ProductCardSchema.fields.find((f) => f.name === 'category')!;
+    expect([category.number, category.fieldKind]).toEqual([16, 'message']);
+    expect(category.message).toBe(CardTextSchema);
+    // nothing already shipped moved
+    expect(ProductCardSchema.fields.filter((f) => f.number <= 14).map((f) => [f.name, f.number])).toEqual([
+      ['head_id', 1], ['requested_as', 2], ['title', 3], ['manufacturer', 4], ['series', 5], ['character', 6], ['scale', 7], ['release_ym', 8],
+      ['gtin14s', 9], ['content_level', 10], ['derivative_ids', 11], ['height_mm', 12], ['width_mm', 13], ['depth_mm', 14],
+    ]);
+  });
+
+  it('names the kinds: unspecified, figure, goods, media, at 0 to 3', () => {
+    expect(ProductKindSchema.values.map((v) => [v.name, v.number])).toEqual([
+      ['PRODUCT_KIND_UNSPECIFIED', 0],
+      ['PRODUCT_KIND_FIGURE', 1],
+      ['PRODUCT_KIND_GOODS', 2],
+      ['PRODUCT_KIND_MEDIA', 3],
+    ]);
+    expect([ProductKind.UNSPECIFIED, ProductKind.FIGURE, ProductKind.GOODS, ProductKind.MEDIA]).toEqual([0, 1, 2, 3]);
+  });
+
+  it('survives a kind from a newer server as the raw number (proto3 enums are open)', () => {
+    const newer = fromBinary(ProductCardSchema, toBinary(ProductCardSchema, create(ProductCardSchema, { ...card, kind: 99 as ProductKind })));
+    expect(newer.kind).toBe(99);
+  });
+
+  it('documents what an unset kind means and where the category comes from', () => {
+    const text = readFileSync(new URL('../proto/coordinator/v1/catalog.proto', import.meta.url), 'utf8');
+    expect(text).toMatch(/enum ProductKind/);
+    expect(text).toMatch(/Unset means unknown[\s\S]*shows the product as a figure/i);
+    expect(text).toMatch(/source's own category name/i);
   });
 
   it('carries no inventory field on the card', () => {

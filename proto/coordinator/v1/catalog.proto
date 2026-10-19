@@ -144,6 +144,29 @@ message CardText {
 }
 
 // ---------------------------------------------------------------------------
+// ProductKind — what a product is, for the client's own use of it (0.5.0).
+//
+// The spine's source classifies every item under a category of its own (MFC:
+// Prepainted, Trading, Linens, On Walls, Video, ...); the coordinator maps that
+// category onto one of these. FIGURE is a thing to stand on a shelf. GOODS is
+// merchandise that is not shelved as a figure (a towel, a tapestry, a poster).
+// MEDIA is a recording or a book. A client that shelves figures (the case view)
+// shelves FIGURE and an unset kind, and leaves the rest to its lists.
+//
+// Additive: an older client never reads the field and shows everything as it
+// did. A newer server's value an older client has not heard of arrives as its
+// raw number (proto3 enums are open); treat one you do not know as unset.
+// ---------------------------------------------------------------------------
+enum ProductKind {
+  // Never set on purpose: the card's `kind` is simply absent when unknown. The
+  // zero value is what an enum decodes to when nothing was written.
+  PRODUCT_KIND_UNSPECIFIED = 0;
+  PRODUCT_KIND_FIGURE = 1;
+  PRODUCT_KIND_GOODS = 2;
+  PRODUCT_KIND_MEDIA = 3;
+}
+
+// ---------------------------------------------------------------------------
 // ProductCard — the client-facing display record for one product.
 // ---------------------------------------------------------------------------
 message ProductCard {
@@ -191,6 +214,18 @@ message ProductCard {
   optional uint32 height_mm = 12;
   optional uint32 width_mm = 13;
   optional uint32 depth_mm = 14;
+
+  // What the product is (ProductKind), as the coordinator derives it from the
+  // source's own category. Unset means unknown (the spine holds no category, or
+  // one the coordinator cannot place): a client then treats the product as it
+  // did before this field existed and shows the product as a figure. Never
+  // PRODUCT_KIND_UNSPECIFIED on the wire; absence is the unknown.
+  optional ProductKind kind = 15;
+
+  // The source's own category name for the product, verbatim ("Prepainted",
+  // "Linens"), with the spine's as_of for the claim: what `kind` was derived
+  // from, for a client that wants to say it. Absent when the source states none.
+  CardText category = 16;
 }
 
 // ---------------------------------------------------------------------------
