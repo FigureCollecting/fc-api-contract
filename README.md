@@ -185,6 +185,16 @@ means unknown**: the spine holds no category, or one the coordinator cannot plac
 product as it did before the field existed, as a figure. A kind an older client has not heard of arrives as a raw
 number (proto3 enums are open): treat it as unset.
 
+## Figure labels and references
+
+`uf/{head_id}/label` and `uf/{head_id}/refs` (0.6.0, additive: two new keys, no field and no existing schema
+changed) serve a figure the catalogue has no product for: an unlicensed resin, a piece no store lists. The
+writer mints the head (any lowercase uuid that is not a product id); `GetProducts` lists it in `unresolved`,
+which is not an error; the label (`name`, and `maker`, `series`, `scale`, `edition` when known) is what the
+figure is shown under while it has no card, and a card always wins. `refs` keeps up to ten http or https links
+as the user wrote them, in RFC 3986 characters only, and nothing fetches them. Both schemas are closed: a
+property added later is a new facet, never a new property of these.
+
 ## Two doctrines the messages encode
 
 **The coordinator passes the spine's answer through; it does not re-derive it.**

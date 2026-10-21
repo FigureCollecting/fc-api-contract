@@ -10,6 +10,8 @@
     {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/score", "owner": "user", "parsed": {"family": "uf/score", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"}, "note": "unchanged from 0.2.x"},
     {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/note", "owner": "user", "parsed": {"family": "uf/note", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"}, "note": "unchanged from 0.2.x"},
     {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/wishability", "owner": "user", "parsed": {"family": "uf/wishability", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"}, "note": "MFC Wishability 1..5"},
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/label", "owner": "user", "parsed": {"family": "uf/label", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"}, "note": "the name a figure the catalogue has no product for is shown under (0.6.0); the head is writer-minted"},
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/refs", "owner": "user", "parsed": {"family": "uf/refs", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"}, "note": "the web pages the user keeps for the figure (0.6.0), 1 to 10 links"},
     {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/tag/0192f3a4-5b6c-7d8e-9f01-23456789abcd", "owner": "user", "parsed": {"family": "uf/tag", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "tagId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd"}, "note": "figure-scope tag, with or without copies"},
     {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/ktag/owned/0192f3a4-5b6c-7d8e-9f01-23456789abcd", "owner": "user", "parsed": {"family": "uf/ktag", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "collKind": "owned", "tagId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd"}, "note": "every owned copy of the figure, evaluated at read time"},
     {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/ktag/former/0192f3a4-5b6c-7d8e-9f01-23456789abcd", "owner": "user", "parsed": {"family": "uf/ktag", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "collKind": "former", "tagId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd"}, "note": "figure x kind scope for no-longer-owned copies"},
@@ -26,6 +28,11 @@
     {"key": "imp/mfc/import", "owner": "server", "parsed": {"family": "imp/import", "site": "mfc"}, "note": "the marker every import writes last"}
   ],
   "invalid": [
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/labels", "note": "a second spelling of a family is a second facet: label is singular"},
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/label/x", "note": "label has no suffix"},
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/ref", "note": "refs is plural; ref is no family"},
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/refs/0", "note": "the links are one payload, not one facet each"},
+    {"key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/LABEL", "note": "only the builder folds case, and only ids"},
     {"key": "holding/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/status", "note": "retired 0.2.x holding grain: REJECTED facet_key_not_user_owned"},
     {"key": "holding/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/count", "note": "retired 0.2.x holding grain"},
     {"key": "occ/6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7/status", "note": "uppercase id: a second spelling of one facet"},
@@ -75,6 +82,8 @@
     {"key": "", "note": "empty"}
   ],
   "build": [
+    {"input": {"family": "uf/label", "headId": "5B0C7C7E-2F1D-4C1E-9A1B-3C4D5E6F7A8B"}, "key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/label", "note": "the builder folds the head id's case"},
+    {"input": {"family": "uf/refs", "headId": "5B0C7C7E-2F1D-4C1E-9A1B-3C4D5E6F7A8B"}, "key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/refs", "note": "the builder folds the head id's case"},
     {"input": {"family": "occ/status", "occId": "6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7"}, "key": "occ/6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7/status", "note": "the builder alone folds case"},
     {"input": {"family": "coll/name", "collKind": "owned", "collId": "DEFAULT"}, "key": "coll/owned/default/name", "note": "`default` folds too"},
     {"input": {"family": "uf/ktag", "headId": "5B0C7C7E-2F1D-4C1E-9A1B-3C4D5E6F7A8B", "collKind": "owned", "tagId": "0192F3A4-5B6C-7D8E-9F01-23456789ABCD"}, "key": "uf/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/ktag/owned/0192f3a4-5b6c-7d8e-9f01-23456789abcd", "note": "every id folds"},

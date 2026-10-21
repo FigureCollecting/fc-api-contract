@@ -18,7 +18,7 @@ export type DisposalReason = (typeof DISPOSAL_REASONS)[number];
 export const OCC_FIELDS = ['head', 'status', 'collection', 'disposal'] as const;
 export type OccField = (typeof OCC_FIELDS)[number];
 
-export const UF_FIELDS = ['score', 'note', 'wishability'] as const;
+export const UF_FIELDS = ['score', 'note', 'wishability', 'label', 'refs'] as const;
 export type UfField = (typeof UF_FIELDS)[number];
 
 export const USER_FACET_FAMILIES = [
@@ -30,6 +30,8 @@ export const USER_FACET_FAMILIES = [
   'uf/score',
   'uf/note',
   'uf/wishability',
+  'uf/label',
+  'uf/refs',
   'uf/tag',
   'uf/ktag',
   'coll/name',
@@ -97,6 +99,8 @@ export const USER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<UserFacetFamily, string
   'uf/score': 'schemas/uf-score.schema.json',
   'uf/note': 'schemas/uf-note.schema.json',
   'uf/wishability': 'schemas/uf-wishability.schema.json',
+  'uf/label': 'schemas/uf-label.schema.json',
+  'uf/refs': 'schemas/uf-refs.schema.json',
   'uf/tag': 'schemas/uf-tag.schema.json',
   'uf/ktag': 'schemas/uf-ktag.schema.json',
   'coll/name': 'schemas/coll-name.schema.json',

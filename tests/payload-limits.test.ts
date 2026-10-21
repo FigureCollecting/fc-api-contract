@@ -53,6 +53,8 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
   'uf/score': { score: 10, ...WIDEST },
   'uf/note': { note: '\u0001'.repeat(10_000), ...WIDEST },
   'uf/wishability': { wishability: 5, ...WIDEST },
+  'uf/label': { name: '\u0001'.repeat(200), maker: '\u0001'.repeat(100), series: '\u0001'.repeat(100), scale: '\u0001'.repeat(20), edition: '\u0001'.repeat(100), ...WIDEST },
+  'uf/refs': { links: Array.from({ length: 10 }, (_, i) => ({ url: `https://${'a'.repeat(1991)}${i}`, label: '\u0001'.repeat(80) })), ...WIDEST },
   'uf/tag': { ...WIDEST },
   'uf/ktag': { ...WIDEST },
   'coll/name': { name: '\u0001'.repeat(100), ...WIDEST },
