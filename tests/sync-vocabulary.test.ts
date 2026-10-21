@@ -57,15 +57,15 @@ describe('vocabulary', () => {
     expect(DISPOSAL_REASONS).toEqual(['sold', 'traded', 'gifted', 'damaged', 'lost', 'stolen', 'other']);
   });
 
-  it('names fourteen user-owned and six server-owned families, one grammar each', () => {
+  it('names sixteen user-owned and six server-owned families, one grammar each', () => {
     expect(USER_FACET_FAMILIES).toEqual([
       'occ/head', 'occ/status', 'occ/collection', 'occ/disposal', 'occ/tag',
-      'uf/score', 'uf/note', 'uf/wishability', 'uf/tag', 'uf/ktag',
+      'uf/score', 'uf/note', 'uf/wishability', 'uf/label', 'uf/refs', 'uf/tag', 'uf/ktag',
       'coll/name', 'tag/name', 'res/answer', 'pref/import',
     ]);
     expect(SERVER_FACET_FAMILIES).toEqual(['occ/origin', 'imp/figure', 'imp/held', 'imp/change', 'imp/align', 'imp/import']);
     expect(OCC_FIELDS).toEqual(['head', 'status', 'collection', 'disposal']);
-    expect(UF_FIELDS).toEqual(['score', 'note', 'wishability']);
+    expect(UF_FIELDS).toEqual(['score', 'note', 'wishability', 'label', 'refs']);
     expect(FACET_KEY_GRAMMARS.map((g) => g.family)).toEqual([...USER_FACET_FAMILIES, ...SERVER_FACET_FAMILIES]);
     for (const g of FACET_KEY_GRAMMARS) {
       expect(g.owner).toBe((USER_FACET_FAMILIES as readonly string[]).includes(g.family) ? 'user' : 'server');

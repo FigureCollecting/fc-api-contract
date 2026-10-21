@@ -358,6 +358,40 @@ describe('sync.proto', () => {
   });
 });
 
+describe('sync.proto: the figure label and references (0.6.0)', () => {
+  const text = prose(sync);
+
+  it('lists both keys in the user-owned table with their payloads', () => {
+    expect(text).toContain('uf/{head_id}/label {"name": "1..200 code points", "maker"?, "series"?, "scale"?, "edition"?}');
+    expect(text).toContain('uf/{head_id}/refs {"links": [{"url", "label"?}], 1 to 10 links}');
+  });
+
+  it('lets the writer mint a head the catalogue does not know, and says what that costs and allows', () => {
+    expect(text).toMatch(/LABELS\. A figure the catalogue has no product for is held under a head the writer mints/);
+    expect(text).toMatch(/any lowercase dashed uuid that is not a product id/);
+    expect(text).toMatch(/a head GetProducts lists in `unresolved` is not an error/);
+    expect(text).toMatch(/every other uf facet, tag, copy and photo choice of the figure works on it unchanged/);
+  });
+
+  it('shows the label only while the head has no card, and keeps it when a card arrives', () => {
+    expect(text).toMatch(/shown only while the head has no card; a card always wins and the label is kept, hidden/);
+  });
+
+  it('keeps references as written, never fetched, and http or https only', () => {
+    expect(text).toMatch(/REFERENCES\. uf\/\{head_id\}\/refs keeps the pages a user holds for a figure/);
+    expect(text).toMatch(/never fetched by the service or by a client on its own/);
+    expect(text).toMatch(/only an http or https URL in RFC 3986 characters/);
+  });
+});
+
+describe('README: the figure label and references (0.6.0)', () => {
+  it('names both facets, says the schemas are closed and what a label is for', () => {
+    expect(readme).toMatch(/## Figure labels and references/);
+    expect(readme).toMatch(/`uf\/\{head_id\}\/label` and `uf\/\{head_id\}\/refs` \(0\.6\.0, additive/);
+    expect(readme).toMatch(/closed: a\s+property added later is a new facet/);
+  });
+});
+
 describe('hlc.ts', () => {
   it('points its 1-3 line header at sync.proto rule 5 for the bound; the clamp doc says the clamp is the server skew', () => {
     const headerLines = hlcSource.slice(0, hlcSource.indexOf('import {')).trimEnd().split('\n');
@@ -837,8 +871,8 @@ describe('README: the product kind (FIGURES-ONLY-1)', () => {
 });
 
 describe('package', () => {
-  it('is 0.5.0', () => {
-    expect(pkg.version).toBe('0.5.0');
+  it('is 0.6.0', () => {
+    expect(pkg.version).toBe('0.6.0');
   });
 
   it('runs the schema growth guard in verify, right after the proto breaking check', () => {

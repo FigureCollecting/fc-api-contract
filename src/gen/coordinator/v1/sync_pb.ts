@@ -192,7 +192,8 @@
 //  6. USER-OWNED FACET KEYS (0.3.0). The client may write only the keys in
 //     this table; every other key is server-owned and a Push of one is
 //     REJECTED facet_key_not_user_owned. {occ}, {cid} and {tag} are
-//     device-minted uuids and {head_id} is the spine product id, all spelled
+//     device-minted uuids and {head_id} is the spine product id (or a head the
+//     writer minted: LABELS below), all spelled
 //     as PostgreSQL renders a uuid: lowercase, dashed. {kind} is owned,
 //     ordered, wished or former. `default` is legal only as a collection id.
 //
@@ -206,6 +207,8 @@
 //         uf/{head_id}/score                {"score": 1..10}
 //         uf/{head_id}/note                 {"note": "<= 10,000 code points"}
 //         uf/{head_id}/wishability          {"wishability": 1..5}
+//         uf/{head_id}/label                {"name": "1..200 code points", "maker"?, "series"?, "scale"?, "edition"?}
+//         uf/{head_id}/refs                 {"links": [{"url", "label"?}], 1 to 10 links}
 //         uf/{head_id}/tag/{tag}            {}
 //         uf/{head_id}/ktag/{kind}/{tag}    {}
 //         coll/{kind}/{cid|default}/name    {"name": "1..100 code points"}
@@ -278,6 +281,25 @@
 //     copy that arrives later picks it up and one that leaves drops it with no
 //     write. The effective tags of a copy are its own, its figure's, and its
 //     figure's tags for its status. Tags never change a status or a filing.
+//
+//     LABELS. A figure the catalogue has no product for is held under a head
+//     the writer mints: any lowercase dashed uuid that is not a product id (a
+//     UUIDv5 under the writer's own namespace makes a re-run write the same
+//     head); a head GetProducts lists in `unresolved` is not an error
+//     (catalog.proto), so the figure is a figure all the same, and every other
+//     uf facet, tag, copy and photo choice of the figure works on it unchanged.
+//     uf/{head_id}/label gives it a name, and a maker, a series, a scale and an
+//     edition if the user knows them; it is shown only while the head has no
+//     card; a card always wins and the label is kept, hidden. A label is never
+//     an ER input: merging two labelled heads is the user's choice, never the
+//     server's.
+//
+//     REFERENCES. uf/{head_id}/refs keeps the pages a user holds for a figure (a
+//     shop page, a listing that no longer sells it, a photograph): 1 to 10 links,
+//     each only an http or https URL in RFC 3986 characters, with a label of its
+//     own if the user gave one. They are kept as written and never fetched by the
+//     service or by a client on its own; a client opens one only when the user
+//     taps it.
 //
 //     LIBRARY. A figure is in the library while any live user facet
 //     references it: a live occurrence's head or any live uf/{head_id} facet.

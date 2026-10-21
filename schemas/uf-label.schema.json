@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/uf-label.schema.json",
+  "title": "uf/{head_id}/label payload",
+  "description": "UPSERT payload of uf/{head_id}/label: the name a figure is shown under when the catalogue has no product for its head (a figure the user holds that no store lists: an unlicensed resin, a custom piece). The writer mints the head. Shown only while the head has no card; a card always wins and the label is kept, hidden. Serialized, at most 3,300 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "edited_at",
+    "tz"
+  ],
+  "properties": {
+    "name": {
+      "description": "1 to 200 Unicode code points: the figure's title as the user knows it. Private to the user: never logged.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "maker": {
+      "description": "1 to 100 Unicode code points: the manufacturer or studio. Omit it rather than send an empty one.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "series": {
+      "description": "1 to 100 Unicode code points: the series or franchise. Omit it rather than send an empty one.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "scale": {
+      "description": "1 to 20 Unicode code points: the scale as the card writes it, e.g. 1/6. Omit it rather than send an empty one.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20
+    },
+    "edition": {
+      "description": "1 to 100 Unicode code points: the version, edition or variant, e.g. Luxury ver. Omit it rather than send an empty one.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "edited_at": {
+      "description": "When the user made the edit, in the device's local time with its offset (at most ±18:00). Display only; never compared, never restamped.",
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,9})?(Z|[+-]((0\\d|1[0-7]):[0-5]\\d|18:00))$"
+    },
+    "tz": {
+      "description": "The device's IANA time zone at edit time, e.g. America/Chicago. Display only.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$"
+    }
+  }
+}
