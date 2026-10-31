@@ -935,8 +935,8 @@ describe('README: the product kind (FIGURES-ONLY-1)', () => {
 });
 
 describe('package', () => {
-  it('is 0.6.0', () => {
-    expect(pkg.version).toBe('0.6.0');
+  it('is 0.7.0', () => {
+    expect(pkg.version).toBe('0.7.0');
   });
 
   it('runs the schema growth guard in verify, right after the proto breaking check', () => {
