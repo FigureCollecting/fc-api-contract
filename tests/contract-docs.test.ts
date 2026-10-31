@@ -392,6 +392,64 @@ describe('README: the figure label and references (0.6.0)', () => {
   });
 });
 
+describe('sync.proto: origin_trace (0.7.0)', () => {
+  const field = () => prose(sync.slice(sync.indexOf('string commit_cursor = 6;'), sync.indexOf('optional string origin_trace = 7;')));
+
+  it('declares origin_trace as field 7 with presence, Push only, unset on Delta and in PushResult.current (rule 1)', () => {
+    expect(sync).toMatch(/optional string origin_trace = 7;/);
+    expect(field()).toMatch(/Push only: a random id for the user action that minted this edit, so a Push made long after the edit can be traced back to it \(0\.7\.0\)\. The edits one action mints carry the same value\. Unset on Delta and in PushResult\.current\./);
+  });
+
+  it('is a W3C trace-id from a CSPRNG, never derived from anything about the user (rule 2)', () => {
+    expect(field()).toMatch(/FORM\. A W3C trace-id: 32 lowercase hex characters, not all zero, drawn from a CSPRNG, and never derived from the device, the user, a key, the client_id, the version or a clock\./);
+  });
+
+  it('is set when the edit is minted and carried through every re-mint, as basis is (rule 3)', () => {
+    expect(field()).toMatch(/It is set when the edit is minted and never changed afterwards: a re-mint, after REJECTED version_future or after a rebase \(rule 5\), carries it forward, as it does basis\./);
+  });
+
+  it('is diagnostic only: never a REJECTED reason or an RPC error, the check order unchanged, a malformed value never echoed (rule 4)', () => {
+    expect(field()).toMatch(/DIAGNOSTIC ONLY\. A missing or malformed value \(anything but that form, whatever its length\) is ignored: it is never a REJECTED reason and never an RPC error, so the REJECTED checks and their order \(PushOutcome\) are unchanged\./);
+    expect(field()).toMatch(/The server may log a well-formed value with the Push; of a malformed one it logs only that it was malformed, never the value\./);
+    expect(field()).toMatch(/The value is client-chosen and unchecked: a client can copy another's, so a log join on it is a lead, never proof\./);
+    // The REJECTED list and the pinned order name no origin_trace code.
+    const rejected = prose(sync.slice(sync.indexOf('PUSH_OUTCOME_REVIEW = 4;'), sync.indexOf('PUSH_OUTCOME_REJECTED = 5;')));
+    expect(rejected).not.toMatch(/origin_trace|trace/);
+  });
+
+  it('is cleared before a batch is recorded or compared, in every wire format, so a retry with another or no value is a replay (rule 5)', () => {
+    expect(field()).toMatch(/NOT PART OF REPLAY IDENTITY\. The server clears it on every event before it records a batch under its client_id and before it compares a retry with the recorded batch, whatever the wire format\. The same client_id with the same events and a different or absent origin_trace is a replay \(PushRequest\.client_id\), not INVALID_ARGUMENT, so a retry that adds, changes or drops it after an app update or rollback is still a replay, and a server upgrade or rollback cannot strand a batch\./);
+    const clientId = prose(sync.slice(sync.indexOf('message PushRequest {'), sync.indexOf('string client_id = 1;')));
+    expect(clientId).toMatch(/the same client_id with different events is INVALID_ARGUMENT\. Events are compared with origin_trace cleared \(SyncEvent\.origin_trace\): the same client_id with the same events and a different or absent origin_trace is a replay\./i);
+    expect(errorEntry('a client_id already recorded')).toMatch(/^a client_id already recorded with different events -> INVALID_ARGUMENT: a replay must be the same batch, or its recorded outcomes would answer events it never carried\. origin_trace is cleared before the comparison, so it never makes two batches different \(SyncEvent\.origin_trace\)\.$/);
+  });
+
+  it('says a server built before 0.7.0 agrees only over JSON, so a client that sets it pushes JSON (red-team finding 10)', () => {
+    expect(field()).toMatch(/A server built before 0\.7\.0 does not know this field\. Over JSON it drops it on decode when it ignores unknown JSON fields, as connect-es does by default, and so compares as a 0\.7\.0 server does; over binary it keeps the field as an unknown one, re-encodes it and compares it\. So the rule assumes the JSON wire format: a client that sets origin_trace pushes JSON\./);
+  });
+
+  it('is never stored and never echoed (rule 6)', () => {
+    expect(field()).toMatch(/NEVER STORED, NEVER ECHOED\. The server keeps it nowhere: not with the facet, not in a held edit \(import\.proto HELD\), not in the record of a client_id; and no response carries it\./);
+  });
+
+  it('names every field the wire event carries where the header states the shape', () => {
+    const header = prose(sync.slice(0, sync.indexOf('SEVEN RULES THIS SHAPE ENCODES')));
+    expect(header).not.toMatch(/and nothing else/);
+    expect(header).toMatch(/THE WIRE EVENT is \{facet_key, version, op, payload\}\. Three more fields travel with it, and none is part of the client's merge: basis and origin_trace on Push \(the state the edit was made on, and the action that made it\) and commit_cursor on Delta \(rule 7\)\./);
+  });
+});
+
+describe('README: the origin trace (0.7.0)', () => {
+  it('says what the field is for, that it is diagnostic only and outside replay identity, and why a client pushes JSON', () => {
+    const text = readme.replace(/\s+/g, ' ');
+    expect(text).toMatch(/## Origin trace/);
+    expect(text).toMatch(/`SyncEvent\.origin_trace` \(0\.7\.0, additive: field 7, nothing moved and no payload schema changed\)/);
+    expect(text).toMatch(/diagnostic only/);
+    expect(text).toMatch(/not part of replay identity/);
+    expect(text).toMatch(/a client that sets it pushes JSON/);
+  });
+});
+
 describe('hlc.ts', () => {
   it('points its 1-3 line header at sync.proto rule 5 for the bound; the clamp doc says the clamp is the server skew', () => {
     const headerLines = hlcSource.slice(0, hlcSource.indexOf('import {')).trimEnd().split('\n');

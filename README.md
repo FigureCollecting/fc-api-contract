@@ -195,6 +195,16 @@ figure is shown under while it has no card, and a card always wins. `refs` keeps
 as the user wrote them, in RFC 3986 characters only, and nothing fetches them. Both schemas are closed: a
 property added later is a new facet, never a new property of these.
 
+## Origin trace
+
+`SyncEvent.origin_trace` (0.7.0, additive: field 7, nothing moved and no payload schema changed) is a
+random W3C trace id the client mints with an edit, one per user action, so a Push made hours later can be
+traced back to the action that made the edit. It is Push only and diagnostic only: a missing or malformed
+value is ignored and never rejected, and the server never stores or echoes it. It is not part of replay
+identity: the server clears it before it records or compares a batch, so a retry that adds, changes or drops
+it is still a replay. A server built before 0.7.0 drops the unknown field only over JSON (over binary it keeps
+it and would compare it), so a client that sets it pushes JSON.
+
 ## Two doctrines the messages encode
 
 **The coordinator passes the spine's answer through; it does not re-derive it.**

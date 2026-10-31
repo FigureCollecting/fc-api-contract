@@ -9,8 +9,11 @@
 //   Push    hand the server the edits made while offline
 //   Status  where the server's head is, and what its clock reads
 //
-// THE WIRE EVENT is {facet_key, version, op, payload} and nothing else. The
-// merge rule it serves is LWW-per-facet: the client applies an event when
+// THE WIRE EVENT is {facet_key, version, op, payload}. Three more fields
+// travel with it, and none is part of the client's merge: basis and
+// origin_trace on Push (the state the edit was made on, and the action that
+// made it) and commit_cursor on Delta (rule 7). The merge rule the event
+// serves is LWW-per-facet: the client applies an event when
 // `version > local[facet_key]`, and drops it otherwise. Per-facet, not
 // per-record — two devices editing different facets of the same record both
 // win, which is the property bare record-level LWW throws away. There is no
@@ -407,7 +410,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coordinator/v1/sync.proto.
  */
 export const file_coordinator_v1_sync: GenFile = /*@__PURE__*/
-  fileDesc("Chljb29yZGluYXRvci92MS9zeW5jLnByb3RvEg5jb29yZGluYXRvci52MSKZAQoJU3luY0V2ZW50EhEKCWZhY2V0X2tleRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEiIKAm9wGAMgASgOMhYuY29vcmRpbmF0b3IudjEuU3luY09wEg8KB3BheWxvYWQYBCABKAkSEgoFYmFzaXMYBSABKAlIAIgBARIVCg1jb21taXRfY3Vyc29yGAYgASgJQggKBl9iYXNpcyItCgxEZWx0YVJlcXVlc3QSDgoGY3Vyc29yGAEgASgJEg0KBWxpbWl0GAIgASgNImEKDURlbHRhUmVzcG9uc2USKQoGZXZlbnRzGAEgAygLMhkuY29vcmRpbmF0b3IudjEuU3luY0V2ZW50EhMKC25leHRfY3Vyc29yGAIgASgJEhAKCGhhc19tb3JlGAMgASgIIksKC1B1c2hSZXF1ZXN0EhEKCWNsaWVudF9pZBgBIAEoCRIpCgZldmVudHMYAiADKAsyGS5jb29yZGluYXRvci52MS5TeW5jRXZlbnQimgEKClB1c2hSZXN1bHQSEQoJZmFjZXRfa2V5GAEgASgJEiwKB291dGNvbWUYAiABKA4yGy5jb29yZGluYXRvci52MS5QdXNoT3V0Y29tZRIPCgd2ZXJzaW9uGAMgASgJEioKB2N1cnJlbnQYBCABKAsyGS5jb29yZGluYXRvci52MS5TeW5jRXZlbnQSDgoGcmVhc29uGAUgASgJIjsKDFB1c2hSZXNwb25zZRIrCgdyZXN1bHRzGAEgAygLMhouY29vcmRpbmF0b3IudjEuUHVzaFJlc3VsdCIPCg1TdGF0dXNSZXF1ZXN0IlAKDlN0YXR1c1Jlc3BvbnNlEg4KBmN1cnNvchgBIAEoCRIWCg5wZW5kaW5nX3JldmlldxgCIAEoBBIWCg5zZXJ2ZXJfbm93X2lzbxgDIAEoCSpJCgZTeW5jT3ASFwoTU1lOQ19PUF9VTlNQRUNJRklFRBAAEhIKDlNZTkNfT1BfVVBTRVJUEAESEgoOU1lOQ19PUF9ERUxFVEUQAirEAQoLUHVzaE91dGNvbWUSHAoYUFVTSF9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGAoUUFVTSF9PVVRDT01FX0FQUExJRUQQARIaChZQVVNIX09VVENPTUVfRFVQTElDQVRFEAISFgoSUFVTSF9PVVRDT01FX1NUQUxFEAMSFwoTUFVTSF9PVVRDT01FX1JFVklFVxAEEhkKFVBVU0hfT1VUQ09NRV9SRUpFQ1RFRBAFEhUKEVBVU0hfT1VUQ09NRV9IRUxEEAYy3wEKC1N5bmNTZXJ2aWNlEkQKBURlbHRhEhwuY29vcmRpbmF0b3IudjEuRGVsdGFSZXF1ZXN0Gh0uY29vcmRpbmF0b3IudjEuRGVsdGFSZXNwb25zZRJBCgRQdXNoEhsuY29vcmRpbmF0b3IudjEuUHVzaFJlcXVlc3QaHC5jb29yZGluYXRvci52MS5QdXNoUmVzcG9uc2USRwoGU3RhdHVzEh0uY29vcmRpbmF0b3IudjEuU3RhdHVzUmVxdWVzdBoeLmNvb3JkaW5hdG9yLnYxLlN0YXR1c1Jlc3BvbnNlYgZwcm90bzM");
+  fileDesc("Chljb29yZGluYXRvci92MS9zeW5jLnByb3RvEg5jb29yZGluYXRvci52MSLFAQoJU3luY0V2ZW50EhEKCWZhY2V0X2tleRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEiIKAm9wGAMgASgOMhYuY29vcmRpbmF0b3IudjEuU3luY09wEg8KB3BheWxvYWQYBCABKAkSEgoFYmFzaXMYBSABKAlIAIgBARIVCg1jb21taXRfY3Vyc29yGAYgASgJEhkKDG9yaWdpbl90cmFjZRgHIAEoCUgBiAEBQggKBl9iYXNpc0IPCg1fb3JpZ2luX3RyYWNlIi0KDERlbHRhUmVxdWVzdBIOCgZjdXJzb3IYASABKAkSDQoFbGltaXQYAiABKA0iYQoNRGVsdGFSZXNwb25zZRIpCgZldmVudHMYASADKAsyGS5jb29yZGluYXRvci52MS5TeW5jRXZlbnQSEwoLbmV4dF9jdXJzb3IYAiABKAkSEAoIaGFzX21vcmUYAyABKAgiSwoLUHVzaFJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEikKBmV2ZW50cxgCIAMoCzIZLmNvb3JkaW5hdG9yLnYxLlN5bmNFdmVudCKaAQoKUHVzaFJlc3VsdBIRCglmYWNldF9rZXkYASABKAkSLAoHb3V0Y29tZRgCIAEoDjIbLmNvb3JkaW5hdG9yLnYxLlB1c2hPdXRjb21lEg8KB3ZlcnNpb24YAyABKAkSKgoHY3VycmVudBgEIAEoCzIZLmNvb3JkaW5hdG9yLnYxLlN5bmNFdmVudBIOCgZyZWFzb24YBSABKAkiOwoMUHVzaFJlc3BvbnNlEisKB3Jlc3VsdHMYASADKAsyGi5jb29yZGluYXRvci52MS5QdXNoUmVzdWx0Ig8KDVN0YXR1c1JlcXVlc3QiUAoOU3RhdHVzUmVzcG9uc2USDgoGY3Vyc29yGAEgASgJEhYKDnBlbmRpbmdfcmV2aWV3GAIgASgEEhYKDnNlcnZlcl9ub3dfaXNvGAMgASgJKkkKBlN5bmNPcBIXChNTWU5DX09QX1VOU1BFQ0lGSUVEEAASEgoOU1lOQ19PUF9VUFNFUlQQARISCg5TWU5DX09QX0RFTEVURRACKsQBCgtQdXNoT3V0Y29tZRIcChhQVVNIX09VVENPTUVfVU5TUEVDSUZJRUQQABIYChRQVVNIX09VVENPTUVfQVBQTElFRBABEhoKFlBVU0hfT1VUQ09NRV9EVVBMSUNBVEUQAhIWChJQVVNIX09VVENPTUVfU1RBTEUQAxIXChNQVVNIX09VVENPTUVfUkVWSUVXEAQSGQoVUFVTSF9PVVRDT01FX1JFSkVDVEVEEAUSFQoRUFVTSF9PVVRDT01FX0hFTEQQBjLfAQoLU3luY1NlcnZpY2USRAoFRGVsdGESHC5jb29yZGluYXRvci52MS5EZWx0YVJlcXVlc3QaHS5jb29yZGluYXRvci52MS5EZWx0YVJlc3BvbnNlEkEKBFB1c2gSGy5jb29yZGluYXRvci52MS5QdXNoUmVxdWVzdBocLmNvb3JkaW5hdG9yLnYxLlB1c2hSZXNwb25zZRJHCgZTdGF0dXMSHS5jb29yZGluYXRvci52MS5TdGF0dXNSZXF1ZXN0Gh4uY29vcmRpbmF0b3IudjEuU3RhdHVzUmVzcG9uc2ViBnByb3RvMw");
 
 /**
  * ---------------------------------------------------------------------------
@@ -473,6 +476,49 @@ export type SyncEvent = Message<"coordinator.v1.SyncEvent"> & {
    * @generated from field: string commit_cursor = 6;
    */
   commitCursor: string;
+
+  /**
+   * Push only: a random id for the user action that minted this edit, so a
+   * Push made long after the edit can be traced back to it (0.7.0). The edits
+   * one action mints carry the same value. Unset on Delta and in
+   * PushResult.current.
+   *
+   * FORM. A W3C trace-id: 32 lowercase hex characters, not all zero, drawn
+   * from a CSPRNG, and never derived from the device, the user, a key, the
+   * client_id, the version or a clock.
+   *
+   * It is set when the edit is minted and never changed afterwards: a re-mint,
+   * after REJECTED version_future or after a rebase (rule 5), carries it
+   * forward, as it does basis.
+   *
+   * DIAGNOSTIC ONLY. A missing or malformed value (anything but that form,
+   * whatever its length) is ignored: it is never a REJECTED reason and never
+   * an RPC error, so the REJECTED checks and their order (PushOutcome) are
+   * unchanged. The server may log a well-formed value with the Push; of a
+   * malformed one it logs only that it was malformed, never the value. The
+   * value is client-chosen and unchecked: a client can copy another's, so a
+   * log join on it is a lead, never proof.
+   *
+   * NOT PART OF REPLAY IDENTITY. The server clears it on every event before it
+   * records a batch under its client_id and before it compares a retry with
+   * the recorded batch, whatever the wire format. The same client_id with the
+   * same events and a different or absent origin_trace is a replay
+   * (PushRequest.client_id), not INVALID_ARGUMENT, so a retry that adds,
+   * changes or drops it after an app update or rollback is still a replay,
+   * and a server upgrade or rollback cannot strand a batch. A server built
+   * before 0.7.0 does not know this field. Over JSON it drops it on decode
+   * when it ignores unknown JSON fields, as connect-es does by default, and so
+   * compares as a 0.7.0 server does; over binary it keeps the field as an
+   * unknown one, re-encodes it and compares it. So the rule assumes the JSON
+   * wire format: a client that sets origin_trace pushes JSON.
+   *
+   * NEVER STORED, NEVER ECHOED. The server keeps it nowhere: not with the
+   * facet, not in a held edit (import.proto HELD), not in the record of a
+   * client_id; and no response carries it.
+   *
+   * @generated from field: optional string origin_trace = 7;
+   */
+  originTrace?: string | undefined;
 };
 
 /**
@@ -575,8 +621,10 @@ export type PushRequest = Message<"coordinator.v1.PushRequest"> & {
    * and one first HELD is HELD again. `current` on every replayed user-owned
    * result is the facet as the
    * server holds it at the replay. The same client_id with different events
-   * is INVALID_ARGUMENT. This is what makes an unacknowledged push safe to
-   * retry on reconnect.
+   * is INVALID_ARGUMENT. Events are compared with origin_trace cleared
+   * (SyncEvent.origin_trace): the same client_id with the same events and a
+   * different or absent origin_trace is a replay. This is what makes an
+   * unacknowledged push safe to retry on reconnect.
    *
    * @generated from field: string client_id = 1;
    */
@@ -925,7 +973,9 @@ export const PushOutcomeSchema: GenEnum<PushOutcome> = /*@__PURE__*/
  *     non-idempotent push is worse than a rejected one.
  *   * a client_id already recorded with different events ->
  *     INVALID_ARGUMENT: a replay must be the same batch, or its recorded
- *     outcomes would answer events it never carried.
+ *     outcomes would answer events it never carried. origin_trace is cleared
+ *     before the comparison, so it never makes two batches different
+ *     (SyncEvent.origin_trace).
  *   * a request message over 16 MiB (16,777,216 bytes) -> RESOURCE_EXHAUSTED.
  *     The limit applies to the PushRequest as the server reads it: its bytes
  *     in the encoding sent, binary or JSON, after decompression. Nothing is
