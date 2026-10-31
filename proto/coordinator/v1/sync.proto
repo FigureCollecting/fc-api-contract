@@ -464,7 +464,7 @@ message SyncEvent {
   //
   // FORM. A W3C trace-id: 32 lowercase hex characters, not all zero, drawn
   // from a CSPRNG, and never derived from the device, the user, a key, the
-  // client_id, the version or a clock.
+  // client_id, the version or a clock. isTraceId() checks the form.
   //
   // It is set when the edit is minted and never changed afterwards: a re-mint,
   // after REJECTED version_future or after a rebase (rule 5), carries it

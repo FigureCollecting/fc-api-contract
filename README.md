@@ -14,12 +14,13 @@ published to GitHub Packages as `@figurecollecting/fc-api-contract`.
 
 The package ships a few **hand-written helpers**, and only for grammars that are part of the wire
 contract: the `version` token (`parseVersion`, `compareVersion`, `canonicalInstant`,
-`canonicalVersion`, and the `Hlc` that mints tokens) and the facet keys (`parseUserFacetKey`,
+`canonicalVersion`, and the `Hlc` that mints tokens), the facet keys (`parseUserFacetKey`,
 `parseServerFacetKey`, `buildFacetKey` and one builder per family, `parseCollectionRef`, and the
-MFC import's `canonicalMfcId`, `mfcImportOccName` and `importOccIdFromMac`). The coordinator and
-every client must order and validate these identically, so they live next to the protos with
-shared test files, `golden/version-vectors.json`, `golden/key-vectors.json` and
-`golden/import-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
+MFC import's `canonicalMfcId`, `mfcImportOccName` and `importOccIdFromMac`) and the origin trace id
+(`isTraceId`). The coordinator and every client must order and validate these identically, so they
+live next to the protos with shared test files, `golden/version-vectors.json`,
+`golden/key-vectors.json` and `golden/import-vectors.json`. Convenience wrappers and UI helpers
+still belong in `fc-shared`.
 
 ## The compatibility rule
 
@@ -82,6 +83,7 @@ src/gen/                             generated TypeScript — COMMITTED, never h
 src/index.ts                         re-export barrel
 src/version.ts, src/hlc.ts           version grammar, comparator, HLC
 src/sync-vocabulary.ts               facet-key grammar and builders, occurrence statuses, REJECTED reason codes
+src/origin-trace.ts                  the form of SyncEvent.origin_trace (isTraceId)
 golden/version-vectors.json          version cases every implementation tests against
 golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
 golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
@@ -203,7 +205,8 @@ traced back to the action that made the edit. It is Push only and diagnostic onl
 value is ignored and never rejected, and the server never stores or echoes it. It is not part of replay
 identity: the server clears it before it records or compares a batch, so a retry that adds, changes or drops
 it is still a replay. A server built before 0.7.0 drops the unknown field only over JSON (over binary it keeps
-it and would compare it), so a client that sets it pushes JSON.
+it and would compare it), so a client that sets it pushes JSON. `isTraceId()` checks the form, so the client
+that mints the id and the server that logs it agree on which values are malformed.
 
 ## Two doctrines the messages encode
 

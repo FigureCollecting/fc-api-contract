@@ -404,6 +404,12 @@ describe('sync.proto: origin_trace (0.7.0)', () => {
     expect(field()).toMatch(/FORM\. A W3C trace-id: 32 lowercase hex characters, not all zero, drawn from a CSPRNG, and never derived from the device, the user, a key, the client_id, the version or a clock\./);
   });
 
+  it('names the one check of the form, isTraceId(), in the proto and the README', () => {
+    expect(field()).toMatch(/or a clock\. isTraceId\(\) checks the form\./);
+    expect(readme).toMatch(/`isTraceId\(\)` checks the form/);
+    expect(readme.replace(/\s+/g, ' ')).toMatch(/and the origin trace id \(`isTraceId`\)/);
+  });
+
   it('is set when the edit is minted and carried through every re-mint, as basis is (rule 3)', () => {
     expect(field()).toMatch(/It is set when the edit is minted and never changed afterwards: a re-mint, after REJECTED version_future or after a rebase \(rule 5\), carries it forward, as it does basis\./);
   });
