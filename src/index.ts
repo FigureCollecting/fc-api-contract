@@ -1,11 +1,11 @@
 // coordinator.v1 — the client-facing wire contract.
 //
 // Wire types are generated from proto/ by protoc-gen-es and re-exported here.
-// The hand-written helpers (version, hlc, sync-vocabulary) exist because the
-// merge token's grammar and the facet-key grammar are part of the contract:
-// the coordinator and every client must order and validate them identically,
-// and golden/version-vectors.json and golden/key-vectors.json are the shared
-// tests. UI helpers stay in fc-shared.
+// The hand-written helpers (version, hlc, sync-vocabulary, origin-trace) exist
+// because the merge token's grammar, the facet-key grammar and the form of
+// origin_trace are part of the contract: the coordinator and every client must
+// order and validate them identically, and golden/version-vectors.json and
+// golden/key-vectors.json are the shared tests. UI helpers stay in fc-shared.
 
 export {
   CompareRequestSchema,
@@ -176,3 +176,5 @@ export type {
   UserFacetFamily,
   UserFacetKey,
 } from './sync-vocabulary.js';
+
+export { isTraceId } from './origin-trace.js';

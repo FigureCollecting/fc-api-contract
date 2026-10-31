@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { create, equals, fromBinary, fromJson, toBinary, toJson } from '@bufbuild/protobuf';
+import { clone, create, createFileRegistry, equals, fromBinary, fromJson, toBinary, toJson } from '@bufbuild/protobuf';
+import { FileDescriptorProtoSchema } from '@bufbuild/protobuf/wkt';
 import {
+  file_coordinator_v1_sync,
   DeltaRequestSchema,
   DeltaResponseSchema,
   PushOutcome,
@@ -27,7 +29,7 @@ const UPSERT = {
 describe('SyncEvent', () => {
   it('carries a basis on Push, with presence: absent is basis_missing, empty is "nothing applied yet"', () => {
     const fields = Object.fromEntries(SyncEventSchema.fields.map((f) => [f.name, f.number]));
-    expect(fields).toEqual({ facet_key: 1, version: 2, op: 3, payload: 4, basis: 5, commit_cursor: 6 });
+    expect(fields).toEqual({ facet_key: 1, version: 2, op: 3, payload: 4, basis: 5, commit_cursor: 6, origin_trace: 7 });
     const none = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, UPSERT)));
     expect(none.basis).toBeUndefined();
     const empty = fromBinary(SyncEventSchema, toBinary(SyncEventSchema, create(SyncEventSchema, { ...UPSERT, basis: '' })));
@@ -101,6 +103,87 @@ describe('SyncEvent', () => {
     expect(toBinary(SyncEventSchema, forward)).toEqual(
       toBinary(SyncEventSchema, create(SyncEventSchema, { ...UPSERT, op: 99 as SyncOp })),
     );
+  });
+});
+
+describe('SyncEvent.origin_trace (0.7.0)', () => {
+  const T1 = '4bf92f3577b34da6a3ce929d0e0e4736';
+  const T2 = '0af7651916cd43dd8448eb211c80319c';
+  const HEAD = {
+    ...UPSERT,
+    facetKey: occFacetKey(OCC, 'head'),
+    payload: JSON.stringify({ head_id: OCC, edited_at: '2026-09-14T06:29:58.500-05:00', tz: 'America/Chicago' }),
+  };
+  const batchInit = (traces: readonly (string | undefined)[]) => ({
+    clientId: 'dev-7f3a/batch-00020',
+    events: [UPSERT, HEAD].map((e, i) => ({
+      ...e,
+      basis: 'c:0000000042',
+      ...(traces[i] !== undefined && { originTrace: traces[i] }),
+    })),
+  });
+  const batch = (traces: readonly (string | undefined)[]) => create(PushRequestSchema, batchInit(traces));
+
+  // The reader a server built on 0.6.0 decodes a Push with: today's descriptor without field 7.
+  const v060 = () => {
+    const file = clone(FileDescriptorProtoSchema, file_coordinator_v1_sync.proto);
+    const event = file.messageType.find((m) => m.name === 'SyncEvent')!;
+    const synthetic = event.field.find((f) => f.number === 7)!.oneofIndex!;
+    // proto3 optional adds a synthetic oneof; origin_trace's is the last, so removing it moves no other index.
+    expect(synthetic).toBe(event.oneofDecl.length - 1);
+    event.field = event.field.filter((f) => f.number !== 7);
+    event.oneofDecl.splice(synthetic, 1);
+    const registry = createFileRegistry(file, () => undefined);
+    return { event: registry.getMessage('coordinator.v1.SyncEvent')!, push: registry.getMessage('coordinator.v1.PushRequest')! };
+  };
+
+  it('has presence: unset stays unset, and a set value survives binary and JSON', () => {
+    const none = create(SyncEventSchema, UPSERT);
+    expect(fromBinary(SyncEventSchema, toBinary(SyncEventSchema, none)).originTrace).toBeUndefined();
+    expect(fromJson(SyncEventSchema, toJson(SyncEventSchema, none)).originTrace).toBeUndefined();
+    const set = create(SyncEventSchema, { ...UPSERT, originTrace: T1 });
+    expect(fromBinary(SyncEventSchema, toBinary(SyncEventSchema, set)).originTrace).toBe(T1);
+    expect(fromJson(SyncEventSchema, toJson(SyncEventSchema, set)).originTrace).toBe(T1);
+    expect(toJson(SyncEventSchema, set)).toMatchObject({ originTrace: T1 });
+  });
+
+  it('adds no byte while unset, so a client that never sets it sends what a 0.6.0 client sends', () => {
+    const { event, push } = v060();
+    expect(event.fields.map((f) => f.number)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(toBinary(PushRequestSchema, batch([]))).toEqual(toBinary(push, create(push, batchInit([]))));
+  });
+
+  it('clearing it on every event gives the bytes of the batch sent without it, whatever the values were', () => {
+    const cleared = (req: ReturnType<typeof batch>) => {
+      const copy = clone(PushRequestSchema, req);
+      for (const e of copy.events) e.originTrace = undefined;
+      return toBinary(PushRequestSchema, copy);
+    };
+    const without = toBinary(PushRequestSchema, batch([]));
+    // On the wire the batches differ; the clear is what makes them one replay identity.
+    expect(toBinary(PushRequestSchema, batch([T1, T2]))).not.toEqual(without);
+    for (const traces of [[T1, T1], [T1, T2], [T2, undefined], [undefined, T1], ['zz', ''], [T1.repeat(64), T1.toUpperCase()]]) {
+      expect(cleared(batch(traces)), JSON.stringify(traces)).toEqual(without);
+    }
+    // Clearing an absent field changes nothing, so a batch recorded before 0.7.0 still matches its retry.
+    expect(cleared(batch([]))).toEqual(without);
+  });
+
+  it('is dropped by a 0.6.0 server reading JSON with unknown fields ignored, so it compares what a 0.7.0 server compares', () => {
+    const { push } = v060();
+    const json = toJson(PushRequestSchema, batch([T1, T2]));
+    // protobuf-es on its own refuses an unknown JSON key; connect-es ignores unknown JSON fields by default.
+    expect(() => fromJson(push, json)).toThrow(/originTrace/);
+    const old = fromJson(push, json, { ignoreUnknownFields: true });
+    expect(toBinary(push, old)).toEqual(toBinary(PushRequestSchema, batch([])));
+  });
+
+  it('is kept and re-written by a 0.6.0 server reading binary, which is why the replay rule assumes JSON', () => {
+    const { push } = v060();
+    const bytes = toBinary(PushRequestSchema, batch([T1, T2]));
+    const old = fromBinary(push, bytes);
+    expect(toBinary(push, old)).toEqual(bytes);
+    expect(toBinary(push, old)).not.toEqual(toBinary(PushRequestSchema, batch([])));
   });
 });
 
