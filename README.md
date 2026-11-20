@@ -177,6 +177,17 @@ never names one to the caller: a withheld primary is replaced by the first image
 reads as if the withheld image never existed. 0.4.0 adds the rule and `golden/display-vectors.json`;
 no field changed: the mask, the grounding fields and the physical dimensions shipped in 0.3.0.
 
+## Image tiers
+
+`ProductImage.tiers` and `ImageMask.tiers` (0.8.0, additive: fields 13 and 4, a repeated `ImageTier`, nothing
+moved) carry downscaled copies of a derivative and of its mask, so a client decodes the size it needs. A tier is
+the whole picture scaled to `long_edge_px`, never upscaled and never cropped, padded or rotated, so it keeps its
+parent's aspect; the rungs are 256, 512, 1,024 and 2,048 px below the parent's long edge plus one at its own
+size when that is at most 2,048 px (cap 4,096). A client composites a photo tier only with the mask tier of the
+same `long_edge_px`. A tier has no status of its own: whatever withholds an image withholds its tiers, and mask
+tiers travel inside the mask, so `no_mask` drops them (`golden/display-vectors.json` `tiers`). The address is
+the raw `sha256`, fetched at the public media base like `url`; an image without tiers is drawn from `url`.
+
 ## Product kind
 
 `ProductCard.kind` and `ProductCard.category` (0.5.0, additive: fields 15 and 16, an enum and nothing moved)
