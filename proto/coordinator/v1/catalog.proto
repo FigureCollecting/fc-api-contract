@@ -76,7 +76,8 @@
 // any share projection the contract adds, each with the viewer context of
 // its call. A withheld image is absent, its mask with it; a withheld mask is
 // unset and the fields derived from it are computed without it
-// (ProductImage). When the primary is withheld, the first image of the product
+// (ProductImage). The tiers of each are withheld with it (ImageTier). When
+// the primary is withheld, the first image of the product
 // shown to this caller, on whatever page it falls, is sent as the primary:
 // `primary` is set and its role stays the one the spine gave it, since no role
 // names the primary, so the list reads as if the withheld image never existed
@@ -355,6 +356,11 @@ message ProductImage {
   // The dominant color of the image as this caller is shown it, as
   // "#rrggbb", lowercase. Empty when unknown.
   string dominant_color = 12;
+
+  // The derivative's tiers (ImageTier, 0.8.0), in strictly ascending
+  // long_edge_px, at most 8. Empty when none is minted yet or when `url` is
+  // empty; the client then draws `url`.
+  repeated ImageTier tiers = 13;
 }
 
 // An alpha mask the client composites over its derivative at display time.
@@ -369,6 +375,12 @@ message ImageMask {
   // Content-addressed and immutable, cached like ProductImage.url. Empty
   // when no public media base is configured.
   string url = 3;
+
+  // The mask's tiers (ImageTier, 0.8.0), masks themselves, in strictly
+  // ascending long_edge_px, at most 8. They travel only inside the mask, so
+  // whatever withholds the mask withholds them. Empty when none is minted yet
+  // or when `url` is empty.
+  repeated ImageTier tiers = 4;
 }
 
 // The opaque pixels in the bottom contact band, the lowest 8 % of the image's
@@ -426,4 +438,80 @@ service CatalogService {
   rpc GetProducts(GetProductsRequest) returns (GetProductsResponse);
   rpc GetProductImages(GetProductImagesRequest) returns (GetProductImagesResponse);
   rpc SearchProducts(SearchProductsRequest) returns (SearchProductsResponse);
+}
+
+// ---------------------------------------------------------------------------
+// ImageTier — one sized tier (a rung) of a derivative or of its mask (0.8.0),
+// so a client decodes the size it needs rather than the full picture, and a
+// phone can keep the small ones offline. Carried by ProductImage.tiers and
+// ImageMask.tiers; declared last so the messages already shipped keep their
+// place in the generated descriptor.
+//
+// WHAT A TIER IS. A downscaled copy of its parent picture (the derivative or
+// its mask): the whole picture scaled uniformly so its long edge is
+// long_edge_px. NEVER UPSCALED: a tier is never past its parent's own long
+// edge. Never cropped, padded or rotated, so a tier has its parent's aspect
+// to within rounding (each side within 1 px of the parent's side scaled by
+// long_edge_px over the parent's long edge), and every fraction measured on
+// the full image (the grounding fields) holds on every tier.
+//
+// THE LADDER. The rungs are those of 256, 512, 1,024 and 2,048 px below the
+// parent's own long edge, plus one at the parent's own size when that is at
+// most 2,048 px, so a parent has at most four tiers today and never two of
+// one size. The contract does not fix the ladder, only the rules here: a
+// tier's long edge is at most 4,096 px, and a smaller rung, or a larger one
+// up to that cap, can come later without a contract change. A client picks
+// by long_edge_px and never assumes a rung is present.
+//
+// A MASK'S TIERS ARE MASKS: images whose alpha channel is the mask, as the
+// full mask's is, scaled from the full mask and never re-predicted. A mask
+// tier is sized from the derivative's width and height. PAIR BY
+// long_edge_px: a mask tier and the derivative tier with the same
+// long_edge_px have the same pixel size, and a client composites a
+// derivative tier only with the mask tier of the same long_edge_px. Where the
+// mask has no tier of that size yet, the client uses a size both have, or
+// the full derivative with the full mask.
+//
+// GEOMETRY NEVER COMES FROM A TIER: a client sizes the picture from
+// ProductImage width and height and the grounding fields, and stretches a
+// tier and its mask tier over that one box.
+//
+// TIERS HAVE NO STATUS OF THEIR OWN. They follow their parent: an image's
+// tiers are sent only with the image, and a mask's tiers travel only inside
+// its ImageMask, never beside the derivative's. So whatever withholds an
+// image withholds its tiers, and whatever withholds a mask withholds the
+// mask's tiers too (DISPLAY RESTRICTIONS; golden/display-vectors.json
+// `tiers` has the cases). A client that drops an image or a mask a fresh
+// list no longer carries drops their tiers with them.
+//
+// WHERE A TIER IS FETCHED. `url` is the public media base, a slash and the
+// derivative_id; a tier is served at that same base, a slash and the
+// lowercase hex of its sha256, content-addressed and immutable like `url`.
+// The address travels as raw bytes and no URL is sent, which keeps a list
+// small on a slow link. Tiers are sent only when the url of their image (or
+// mask) is. Every tier is WebP ('image/webp'), a mask's tier with the alpha
+// channel that is the mask.
+//
+// An image with no tiers (sent by a server built before 0.8.0, or not minted
+// yet) is drawn from `url` as before; a client built before 0.8.0 skips the
+// field and does the same.
+// ---------------------------------------------------------------------------
+message ImageTier {
+  // The rung: the tier's long edge in pixels, max(width, height). Never 0,
+  // never past the parent's own long edge and never over 4,096.
+  uint32 long_edge_px = 1;
+
+  // SHA-256 of the tier's bytes, raw (32 bytes): its content address on the
+  // public media base (WHERE A TIER IS FETCHED). Its address, not its
+  // identity: two parents may share the same tier bytes.
+  bytes sha256 = 2;
+
+  // The tier's pixel width and height.
+  uint32 width = 3;
+  uint32 height = 4;
+
+  // The tier's size at rest, in bytes: what lets a phone budget its offline
+  // storage before a fetch. 0 = unknown, and a size the spine holds over
+  // 4,294,967,295 (far past any 4,096 px WebP) is sent as unknown too.
+  uint32 bytes = 5;
 }

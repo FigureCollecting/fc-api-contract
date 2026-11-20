@@ -589,6 +589,56 @@ describe('catalog.proto', () => {
   });
 });
 
+describe('catalog.proto: image tiers (0.8.0)', () => {
+  const tierDoc = () => prose(catalog.slice(catalog.indexOf('// ImageTier — ')));
+
+  it('says a tier is never upscaled and keeps its parent\'s aspect, so the grounding holds on every tier', () => {
+    const doc = tierDoc();
+    expect(doc).toContain("NEVER UPSCALED: a tier is never past its parent's own long edge.");
+    expect(doc).toContain("Never cropped, padded or rotated, so a tier has its parent's aspect to within rounding (each side within 1 px of the parent's side scaled by long_edge_px over the parent's long edge), and every fraction measured on the full image (the grounding fields) holds on every tier.");
+  });
+
+  it('states the ladder as fc-ingest-contract 0.13.0 does, with the 4,096 cap', () => {
+    const doc = tierDoc();
+    expect(doc).toContain("The rungs are those of 256, 512, 1,024 and 2,048 px below the parent's own long edge, plus one at the parent's own size when that is at most 2,048 px, so a parent has at most four tiers today and never two of one size.");
+    expect(doc).toContain('a tier\'s long edge is at most 4,096 px');
+    expect(doc).toMatch(/never assumes a rung is present/);
+  });
+
+  it('pairs a mask tier with the derivative tier of the same long edge, sized from the derivative', () => {
+    const doc = tierDoc();
+    expect(doc).toContain("A MASK'S TIERS ARE MASKS: images whose alpha channel is the mask, as the full mask's is, scaled from the full mask and never re-predicted.");
+    expect(doc).toContain('PAIR BY long_edge_px: a mask tier and the derivative tier with the same long_edge_px have the same pixel size, and a client composites a derivative tier only with the mask tier of the same long_edge_px.');
+    expect(doc).toContain('GEOMETRY NEVER COMES FROM A TIER:');
+  });
+
+  it('withholds a tier with its parent: an image\'s tiers with the image, a mask\'s tiers inside the mask', () => {
+    const doc = tierDoc();
+    expect(doc).toContain("TIERS HAVE NO STATUS OF THEIR OWN. They follow their parent: an image's tiers are sent only with the image, and a mask's tiers travel only inside its ImageMask, never beside the derivative's.");
+    expect(doc).toContain("So whatever withholds an image withholds its tiers, and whatever withholds a mask withholds the mask's tiers too (DISPLAY RESTRICTIONS; golden/display-vectors.json `tiers` has the cases).");
+    const rule = prose(catalog.slice(catalog.indexOf('// DISPLAY RESTRICTIONS'), catalog.indexOf('syntax = "proto3";')));
+    expect(rule).toContain('The tiers of each are withheld with it (ImageTier).');
+  });
+
+  it('says where a tier is fetched, that it is WebP, and what an image without tiers means', () => {
+    const doc = tierDoc();
+    expect(doc).toContain('`url` is the public media base, a slash and the derivative_id; a tier is served at that same base, a slash and the lowercase hex of its sha256, content-addressed and immutable like `url`.');
+    expect(doc).toContain('Tiers are sent only when the url of their image (or mask) is.');
+    expect(doc).toContain("Every tier is WebP ('image/webp')");
+    expect(doc).toContain('An image with no tiers (sent by a server built before 0.8.0, or not minted yet) is drawn from `url` as before');
+  });
+});
+
+describe('README: image tiers (0.8.0)', () => {
+  it('names the fields and the rule', () => {
+    const text = readme.replace(/\s+/g, ' ');
+    expect(text).toContain('## Image tiers');
+    expect(text).toContain('`ProductImage.tiers` and `ImageMask.tiers` (0.8.0, additive: fields 13 and 4, a repeated `ImageTier`, nothing moved)');
+    expect(text).toMatch(/never upscaled/);
+    expect(text).toMatch(/withholds its tiers/);
+  });
+});
+
 describe('import.proto', () => {
   const header = () => prose(importProto.slice(0, importProto.indexOf('syntax = "proto3";')));
 

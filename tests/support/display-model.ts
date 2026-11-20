@@ -63,12 +63,28 @@ export interface ListCase {
   expect: { images: ShownImage[] };
 }
 
+export interface TierImage extends DisplayImage {
+  // The long edges of the derivative's tiers and of its mask's tiers, as the spine sends them (0.8.0).
+  tiers: number[];
+  mask_tiers: number[];
+}
+
+export interface TierCase {
+  name: string;
+  image: TierImage;
+  restrictions: Restriction[];
+  context: Context;
+  // What the caller is sent: ProductImage.tiers and ImageMask.tiers, by long edge.
+  expect: { tiers: number[]; mask_tiers: number[] };
+}
+
 export interface DisplayVectors {
   contexts: Context[];
   levels: Level[];
   scopes: Record<string, { withholds: Target; from: Context[] }>;
   cases: DisplayCase[];
   lists: ListCase[];
+  tiers: TierCase[];
 }
 
 export const displayVectors = JSON.parse(
@@ -133,4 +149,11 @@ export function evaluateList(c: Pick<ListCase, 'images' | 'restrictions' | 'cont
   return {
     images: shown.map((i, k) => ({ image_id: i.image_id, role: i.role, primary: i.primary || (promote && k === 0) })),
   };
+}
+
+// Tiers have no status of their own (ImageTier): the derivative's tiers are sent exactly when the image is, and the
+// mask's tiers travel inside the mask, so they are sent exactly when the mask is. Each list is sent as the spine held it.
+export function evaluateTiers(c: Pick<TierCase, 'image' | 'restrictions' | 'context'>, scopes: Scopes): TierCase['expect'] {
+  const o = evaluate(c, scopes);
+  return { tiers: o.image ? c.image.tiers : [], mask_tiers: o.mask ? c.image.mask_tiers : [] };
 }

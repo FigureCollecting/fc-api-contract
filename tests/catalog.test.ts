@@ -5,6 +5,7 @@ import {
   CatalogService,
   ContactBandSchema,
   ImageMaskSchema,
+  ImageTierSchema,
   ProductImageSchema,
   GetProductImagesRequestSchema,
   GetProductImagesResponseSchema,
@@ -225,13 +226,70 @@ describe('GetProductImages', () => {
     const numbers = Object.fromEntries(ProductImageSchema.fields.map((f) => [f.name, f.number]));
     expect(numbers).toEqual({
       derivative_id: 1, role: 2, primary: 3, content_type: 4, width: 5, height: 6, url: 7,
-      mask: 8, bottom_margin_frac: 9, contact_band: 10, thumbhash: 11, dominant_color: 12,
+      mask: 8, bottom_margin_frac: 9, contact_band: 10, thumbhash: 11, dominant_color: 12, tiers: 13,
     });
-    expect(ImageMaskSchema.fields.map((f) => f.name)).toEqual(['mask_id', 'content_type', 'url']);
+    expect(ImageMaskSchema.fields.map((f) => [f.name, f.number])).toEqual([['mask_id', 1], ['content_type', 2], ['url', 3], ['tiers', 4]]);
     expect(ContactBandSchema.fields.map((f) => [f.name, f.scalar])).toEqual([
       ['center_x_frac', ScalarType.DOUBLE],
       ['width_frac', ScalarType.DOUBLE],
     ]);
+  });
+});
+
+describe('ImageTier (0.8.0): the sized tiers of a derivative and of its mask', () => {
+  const sha = (fill: number) => new Uint8Array(32).fill(fill);
+  const tier = (edge: number, fill: number, w: number, h: number, bytes = 0) => ({ longEdgePx: edge, sha256: sha(fill), width: w, height: h, bytes });
+
+  it('declares long_edge_px, sha256, width, height and bytes at 1 to 5, each a plain scalar', () => {
+    expect(ImageTierSchema.typeName).toBe('coordinator.v1.ImageTier');
+    expect(ImageTierSchema.fields.map((f) => [f.name, f.number, f.fieldKind, f.scalar, f.proto.proto3Optional])).toEqual([
+      ['long_edge_px', 1, 'scalar', ScalarType.UINT32, false],
+      ['sha256', 2, 'scalar', ScalarType.BYTES, false],
+      ['width', 3, 'scalar', ScalarType.UINT32, false],
+      ['height', 4, 'scalar', ScalarType.UINT32, false],
+      ['bytes', 5, 'scalar', ScalarType.UINT32, false],
+    ]);
+  });
+
+  it('names no URL and no media type: the address is the raw sha-256 and every tier is WebP', () => {
+    expect(ImageTierSchema.fields.some((f) => /url|mime|content_type|_id$/i.test(f.name))).toBe(false);
+  });
+
+  it('adds ProductImage.tiers at 13 and ImageMask.tiers at 4, both a repeated ImageTier', () => {
+    for (const [schema, number] of [[ProductImageSchema, 13], [ImageMaskSchema, 4]] as const) {
+      const f = schema.fields.find((k) => k.name === 'tiers')!;
+      expect([f.number, f.fieldKind, f.fieldKind === 'list' ? f.listKind : undefined], schema.typeName).toEqual([number, 'list', 'message']);
+      expect(f.fieldKind === 'list' ? f.message : undefined, schema.typeName).toBe(ImageTierSchema);
+    }
+  });
+
+  it('round-trips an image\'s tiers and its mask\'s tiers, in order, over binary and JSON', () => {
+    const image = create(ProductImageSchema, {
+      derivativeId: 'b'.repeat(64),
+      width: 600,
+      height: 850,
+      url: 'https://images.figurecollecting.com/d/' + 'b'.repeat(64),
+      tiers: [tier(256, 1, 181, 256, 9_120), tier(512, 2, 361, 512, 30_311), tier(850, 3, 600, 850)],
+      mask: { maskId: 'c'.repeat(64), url: 'https://images.figurecollecting.com/d/' + 'c'.repeat(64), tiers: [tier(256, 4, 181, 256, 3_002)] },
+    });
+    for (const decoded of [
+      fromBinary(ProductImageSchema, toBinary(ProductImageSchema, image)),
+      fromJson(ProductImageSchema, toJson(ProductImageSchema, image)),
+    ]) {
+      expect(equals(ProductImageSchema, image, decoded)).toBe(true);
+      expect(decoded.tiers.map((t) => [t.longEdgePx, t.width, t.height, t.bytes])).toEqual([[256, 181, 256, 9_120], [512, 361, 512, 30_311], [850, 600, 850, 0]]);
+      expect(decoded.tiers.map((t) => t.sha256)).toEqual([sha(1), sha(2), sha(3)]);
+      expect(decoded.mask?.tiers.map((t) => [t.longEdgePx, t.width, t.height])).toEqual([[256, 181, 256]]);
+    }
+  });
+
+  it('decodes an image sent without tiers (an older server, or not minted yet) with none, so the client draws url as before', () => {
+    const decoded = fromBinary(ProductImageSchema, toBinary(ProductImageSchema, create(ProductImageSchema, {
+      derivativeId: 'b'.repeat(64),
+      mask: { maskId: 'c'.repeat(64) },
+    })));
+    expect(decoded.tiers).toEqual([]);
+    expect(decoded.mask?.tiers).toEqual([]);
   });
 });
 

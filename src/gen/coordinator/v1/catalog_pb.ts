@@ -76,7 +76,8 @@
 // any share projection the contract adds, each with the viewer context of
 // its call. A withheld image is absent, its mask with it; a withheld mask is
 // unset and the fields derived from it are computed without it
-// (ProductImage). When the primary is withheld, the first image of the product
+// (ProductImage). The tiers of each are withheld with it (ImageTier). When
+// the primary is withheld, the first image of the product
 // shown to this caller, on whatever page it falls, is sent as the primary:
 // `primary` is set and its role stays the one the spine gave it, since no role
 // names the primary, so the list reads as if the withheld image never existed
@@ -112,7 +113,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coordinator/v1/catalog.proto.
  */
 export const file_coordinator_v1_catalog: GenFile = /*@__PURE__*/
-  fileDesc("Chxjb29yZGluYXRvci92MS9jYXRhbG9nLnByb3RvEg5jb29yZGluYXRvci52MSJrCgpQcm9kdWN0UmVmEhEKB2hlYWRfaWQYASABKAlIABIQCgZndGluMTQYAiABKAlIABIxCgtzb3VyY2VfaXRlbRgDIAEoCzIaLmNvb3JkaW5hdG9yLnYxLlNvdXJjZUl0ZW1IAEIFCgNyZWYiLQoKU291cmNlSXRlbRIMCgRzaXRlGAEgASgJEhEKCW5hdGl2ZV9pZBgCIAEoCSIoCghDYXJkVGV4dBINCgV2YWx1ZRgBIAEoCRINCgVhc19vZhgCIAEoCSKEBQoLUHJvZHVjdENhcmQSDwoHaGVhZF9pZBgBIAEoCRIwCgxyZXF1ZXN0ZWRfYXMYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEicKBXRpdGxlGAMgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSLgoMbWFudWZhY3R1cmVyGAQgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKAoGc2VyaWVzGAUgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKwoJY2hhcmFjdGVyGAYgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSJwoFc2NhbGUYByABKAsyGC5jb29yZGluYXRvci52MS5DYXJkVGV4dBIsCgpyZWxlYXNlX3ltGAggASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSDwoHZ3RpbjE0cxgJIAMoCRIvCg1jb250ZW50X2xldmVsGAogASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSFgoOZGVyaXZhdGl2ZV9pZHMYCyADKAkSFgoJaGVpZ2h0X21tGAwgASgNSACIAQESFQoId2lkdGhfbW0YDSABKA1IAYgBARIVCghkZXB0aF9tbRgOIAEoDUgCiAEBEi4KBGtpbmQYDyABKA4yGy5jb29yZGluYXRvci52MS5Qcm9kdWN0S2luZEgDiAEBEioKCGNhdGVnb3J5GBAgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHRCDAoKX2hlaWdodF9tbUILCglfd2lkdGhfbW1CCwoJX2RlcHRoX21tQgcKBV9raW5kImUKEkdldFByb2R1Y3RzUmVxdWVzdBIoCgRyZWZzGAEgAygLMhouY29vcmRpbmF0b3IudjEuUHJvZHVjdFJlZhIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSKNAQoTR2V0UHJvZHVjdHNSZXNwb25zZRItCghwcm9kdWN0cxgBIAMoCzIbLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RDYXJkEi4KCnVucmVzb2x2ZWQYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEhcKD25leHRfcGFnZV90b2tlbhgDIAEoCSJSChdHZXRQcm9kdWN0SW1hZ2VzUmVxdWVzdBIQCghoZWFkX2lkcxgBIAMoCRIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSJkChhHZXRQcm9kdWN0SW1hZ2VzUmVzcG9uc2USLwoIcHJvZHVjdHMYASADKAsyHS5jb29yZGluYXRvci52MS5Qcm9kdWN0SW1hZ2VzEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJOCg1Qcm9kdWN0SW1hZ2VzEg8KB2hlYWRfaWQYASABKAkSLAoGaW1hZ2VzGAIgAygLMhwuY29vcmRpbmF0b3IudjEuUHJvZHVjdEltYWdlIsUCCgxQcm9kdWN0SW1hZ2USFQoNZGVyaXZhdGl2ZV9pZBgBIAEoCRIMCgRyb2xlGAIgASgJEg8KB3ByaW1hcnkYAyABKAgSFAoMY29udGVudF90eXBlGAQgASgJEg0KBXdpZHRoGAUgASgNEg4KBmhlaWdodBgGIAEoDRILCgN1cmwYByABKAkSJwoEbWFzaxgIIAEoCzIZLmNvb3JkaW5hdG9yLnYxLkltYWdlTWFzaxIfChJib3R0b21fbWFyZ2luX2ZyYWMYCSABKAFIAIgBARIxCgxjb250YWN0X2JhbmQYCiABKAsyGy5jb29yZGluYXRvci52MS5Db250YWN0QmFuZBIRCgl0aHVtYmhhc2gYCyABKAwSFgoOZG9taW5hbnRfY29sb3IYDCABKAlCFQoTX2JvdHRvbV9tYXJnaW5fZnJhYyI/CglJbWFnZU1hc2sSDwoHbWFza19pZBgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSCwoDdXJsGAMgASgJIjgKC0NvbnRhY3RCYW5kEhUKDWNlbnRlcl94X2ZyYWMYASABKAESEgoKd2lkdGhfZnJhYxgCIAEoASJNChVTZWFyY2hQcm9kdWN0c1JlcXVlc3QSDQoFcXVlcnkYASABKAkSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkiYAoWU2VhcmNoUHJvZHVjdHNSZXNwb25zZRItCghwcm9kdWN0cxgBIAMoCzIbLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RDYXJkEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSp0CgtQcm9kdWN0S2luZBIcChhQUk9EVUNUX0tJTkRfVU5TUEVDSUZJRUQQABIXChNQUk9EVUNUX0tJTkRfRklHVVJFEAESFgoSUFJPRFVDVF9LSU5EX0dPT0RTEAISFgoSUFJPRFVDVF9LSU5EX01FRElBEAMysAIKDkNhdGFsb2dTZXJ2aWNlElYKC0dldFByb2R1Y3RzEiIuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdHNSZXF1ZXN0GiMuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdHNSZXNwb25zZRJlChBHZXRQcm9kdWN0SW1hZ2VzEicuY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdEltYWdlc1JlcXVlc3QaKC5jb29yZGluYXRvci52MS5HZXRQcm9kdWN0SW1hZ2VzUmVzcG9uc2USXwoOU2VhcmNoUHJvZHVjdHMSJS5jb29yZGluYXRvci52MS5TZWFyY2hQcm9kdWN0c1JlcXVlc3QaJi5jb29yZGluYXRvci52MS5TZWFyY2hQcm9kdWN0c1Jlc3BvbnNlYgZwcm90bzM");
+  fileDesc("Chxjb29yZGluYXRvci92MS9jYXRhbG9nLnByb3RvEg5jb29yZGluYXRvci52MSJrCgpQcm9kdWN0UmVmEhEKB2hlYWRfaWQYASABKAlIABIQCgZndGluMTQYAiABKAlIABIxCgtzb3VyY2VfaXRlbRgDIAEoCzIaLmNvb3JkaW5hdG9yLnYxLlNvdXJjZUl0ZW1IAEIFCgNyZWYiLQoKU291cmNlSXRlbRIMCgRzaXRlGAEgASgJEhEKCW5hdGl2ZV9pZBgCIAEoCSIoCghDYXJkVGV4dBINCgV2YWx1ZRgBIAEoCRINCgVhc19vZhgCIAEoCSKEBQoLUHJvZHVjdENhcmQSDwoHaGVhZF9pZBgBIAEoCRIwCgxyZXF1ZXN0ZWRfYXMYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEicKBXRpdGxlGAMgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSLgoMbWFudWZhY3R1cmVyGAQgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKAoGc2VyaWVzGAUgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSKwoJY2hhcmFjdGVyGAYgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSJwoFc2NhbGUYByABKAsyGC5jb29yZGluYXRvci52MS5DYXJkVGV4dBIsCgpyZWxlYXNlX3ltGAggASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSDwoHZ3RpbjE0cxgJIAMoCRIvCg1jb250ZW50X2xldmVsGAogASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHQSFgoOZGVyaXZhdGl2ZV9pZHMYCyADKAkSFgoJaGVpZ2h0X21tGAwgASgNSACIAQESFQoId2lkdGhfbW0YDSABKA1IAYgBARIVCghkZXB0aF9tbRgOIAEoDUgCiAEBEi4KBGtpbmQYDyABKA4yGy5jb29yZGluYXRvci52MS5Qcm9kdWN0S2luZEgDiAEBEioKCGNhdGVnb3J5GBAgASgLMhguY29vcmRpbmF0b3IudjEuQ2FyZFRleHRCDAoKX2hlaWdodF9tbUILCglfd2lkdGhfbW1CCwoJX2RlcHRoX21tQgcKBV9raW5kImUKEkdldFByb2R1Y3RzUmVxdWVzdBIoCgRyZWZzGAEgAygLMhouY29vcmRpbmF0b3IudjEuUHJvZHVjdFJlZhIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSKNAQoTR2V0UHJvZHVjdHNSZXNwb25zZRItCghwcm9kdWN0cxgBIAMoCzIbLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RDYXJkEi4KCnVucmVzb2x2ZWQYAiADKAsyGi5jb29yZGluYXRvci52MS5Qcm9kdWN0UmVmEhcKD25leHRfcGFnZV90b2tlbhgDIAEoCSJSChdHZXRQcm9kdWN0SW1hZ2VzUmVxdWVzdBIQCghoZWFkX2lkcxgBIAMoCRIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSJkChhHZXRQcm9kdWN0SW1hZ2VzUmVzcG9uc2USLwoIcHJvZHVjdHMYASADKAsyHS5jb29yZGluYXRvci52MS5Qcm9kdWN0SW1hZ2VzEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJOCg1Qcm9kdWN0SW1hZ2VzEg8KB2hlYWRfaWQYASABKAkSLAoGaW1hZ2VzGAIgAygLMhwuY29vcmRpbmF0b3IudjEuUHJvZHVjdEltYWdlIu8CCgxQcm9kdWN0SW1hZ2USFQoNZGVyaXZhdGl2ZV9pZBgBIAEoCRIMCgRyb2xlGAIgASgJEg8KB3ByaW1hcnkYAyABKAgSFAoMY29udGVudF90eXBlGAQgASgJEg0KBXdpZHRoGAUgASgNEg4KBmhlaWdodBgGIAEoDRILCgN1cmwYByABKAkSJwoEbWFzaxgIIAEoCzIZLmNvb3JkaW5hdG9yLnYxLkltYWdlTWFzaxIfChJib3R0b21fbWFyZ2luX2ZyYWMYCSABKAFIAIgBARIxCgxjb250YWN0X2JhbmQYCiABKAsyGy5jb29yZGluYXRvci52MS5Db250YWN0QmFuZBIRCgl0aHVtYmhhc2gYCyABKAwSFgoOZG9taW5hbnRfY29sb3IYDCABKAkSKAoFdGllcnMYDSADKAsyGS5jb29yZGluYXRvci52MS5JbWFnZVRpZXJCFQoTX2JvdHRvbV9tYXJnaW5fZnJhYyJpCglJbWFnZU1hc2sSDwoHbWFza19pZBgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSCwoDdXJsGAMgASgJEigKBXRpZXJzGAQgAygLMhkuY29vcmRpbmF0b3IudjEuSW1hZ2VUaWVyIjgKC0NvbnRhY3RCYW5kEhUKDWNlbnRlcl94X2ZyYWMYASABKAESEgoKd2lkdGhfZnJhYxgCIAEoASJNChVTZWFyY2hQcm9kdWN0c1JlcXVlc3QSDQoFcXVlcnkYASABKAkSEQoJcGFnZV9zaXplGAIgASgNEhIKCnBhZ2VfdG9rZW4YAyABKAkiYAoWU2VhcmNoUHJvZHVjdHNSZXNwb25zZRItCghwcm9kdWN0cxgBIAMoCzIbLmNvb3JkaW5hdG9yLnYxLlByb2R1Y3RDYXJkEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJfCglJbWFnZVRpZXISFAoMbG9uZ19lZGdlX3B4GAEgASgNEg4KBnNoYTI1NhgCIAEoDBINCgV3aWR0aBgDIAEoDRIOCgZoZWlnaHQYBCABKA0SDQoFYnl0ZXMYBSABKA0qdAoLUHJvZHVjdEtpbmQSHAoYUFJPRFVDVF9LSU5EX1VOU1BFQ0lGSUVEEAASFwoTUFJPRFVDVF9LSU5EX0ZJR1VSRRABEhYKElBST0RVQ1RfS0lORF9HT09EUxACEhYKElBST0RVQ1RfS0lORF9NRURJQRADMrACCg5DYXRhbG9nU2VydmljZRJWCgtHZXRQcm9kdWN0cxIiLmNvb3JkaW5hdG9yLnYxLkdldFByb2R1Y3RzUmVxdWVzdBojLmNvb3JkaW5hdG9yLnYxLkdldFByb2R1Y3RzUmVzcG9uc2USZQoQR2V0UHJvZHVjdEltYWdlcxInLmNvb3JkaW5hdG9yLnYxLkdldFByb2R1Y3RJbWFnZXNSZXF1ZXN0GiguY29vcmRpbmF0b3IudjEuR2V0UHJvZHVjdEltYWdlc1Jlc3BvbnNlEl8KDlNlYXJjaFByb2R1Y3RzEiUuY29vcmRpbmF0b3IudjEuU2VhcmNoUHJvZHVjdHNSZXF1ZXN0GiYuY29vcmRpbmF0b3IudjEuU2VhcmNoUHJvZHVjdHNSZXNwb25zZWIGcHJvdG8z");
 
 /**
  * ---------------------------------------------------------------------------
@@ -633,6 +634,15 @@ export type ProductImage = Message<"coordinator.v1.ProductImage"> & {
    * @generated from field: string dominant_color = 12;
    */
   dominantColor: string;
+
+  /**
+   * The derivative's tiers (ImageTier, 0.8.0), in strictly ascending
+   * long_edge_px, at most 8. Empty when none is minted yet or when `url` is
+   * empty; the client then draws `url`.
+   *
+   * @generated from field: repeated coordinator.v1.ImageTier tiers = 13;
+   */
+  tiers: ImageTier[];
 };
 
 /**
@@ -670,6 +680,16 @@ export type ImageMask = Message<"coordinator.v1.ImageMask"> & {
    * @generated from field: string url = 3;
    */
   url: string;
+
+  /**
+   * The mask's tiers (ImageTier, 0.8.0), masks themselves, in strictly
+   * ascending long_edge_px, at most 8. They travel only inside the mask, so
+   * whatever withholds the mask withholds them. Empty when none is minted yet
+   * or when `url` is empty.
+   *
+   * @generated from field: repeated coordinator.v1.ImageTier tiers = 4;
+   */
+  tiers: ImageTier[];
 };
 
 /**
@@ -770,6 +790,113 @@ export type SearchProductsResponse = Message<"coordinator.v1.SearchProductsRespo
  */
 export const SearchProductsResponseSchema: GenMessage<SearchProductsResponse> = /*@__PURE__*/
   messageDesc(file_coordinator_v1_catalog, 13);
+
+/**
+ * ---------------------------------------------------------------------------
+ * ImageTier — one sized tier (a rung) of a derivative or of its mask (0.8.0),
+ * so a client decodes the size it needs rather than the full picture, and a
+ * phone can keep the small ones offline. Carried by ProductImage.tiers and
+ * ImageMask.tiers; declared last so the messages already shipped keep their
+ * place in the generated descriptor.
+ *
+ * WHAT A TIER IS. A downscaled copy of its parent picture (the derivative or
+ * its mask): the whole picture scaled uniformly so its long edge is
+ * long_edge_px. NEVER UPSCALED: a tier is never past its parent's own long
+ * edge. Never cropped, padded or rotated, so a tier has its parent's aspect
+ * to within rounding (each side within 1 px of the parent's side scaled by
+ * long_edge_px over the parent's long edge), and every fraction measured on
+ * the full image (the grounding fields) holds on every tier.
+ *
+ * THE LADDER. The rungs are those of 256, 512, 1,024 and 2,048 px below the
+ * parent's own long edge, plus one at the parent's own size when that is at
+ * most 2,048 px, so a parent has at most four tiers today and never two of
+ * one size. The contract does not fix the ladder, only the rules here: a
+ * tier's long edge is at most 4,096 px, and a smaller rung, or a larger one
+ * up to that cap, can come later without a contract change. A client picks
+ * by long_edge_px and never assumes a rung is present.
+ *
+ * A MASK'S TIERS ARE MASKS: images whose alpha channel is the mask, as the
+ * full mask's is, scaled from the full mask and never re-predicted. A mask
+ * tier is sized from the derivative's width and height. PAIR BY
+ * long_edge_px: a mask tier and the derivative tier with the same
+ * long_edge_px have the same pixel size, and a client composites a
+ * derivative tier only with the mask tier of the same long_edge_px. Where the
+ * mask has no tier of that size yet, the client uses a size both have, or
+ * the full derivative with the full mask.
+ *
+ * GEOMETRY NEVER COMES FROM A TIER: a client sizes the picture from
+ * ProductImage width and height and the grounding fields, and stretches a
+ * tier and its mask tier over that one box.
+ *
+ * TIERS HAVE NO STATUS OF THEIR OWN. They follow their parent: an image's
+ * tiers are sent only with the image, and a mask's tiers travel only inside
+ * its ImageMask, never beside the derivative's. So whatever withholds an
+ * image withholds its tiers, and whatever withholds a mask withholds the
+ * mask's tiers too (DISPLAY RESTRICTIONS; golden/display-vectors.json
+ * `tiers` has the cases). A client that drops an image or a mask a fresh
+ * list no longer carries drops their tiers with them.
+ *
+ * WHERE A TIER IS FETCHED. `url` is the public media base, a slash and the
+ * derivative_id; a tier is served at that same base, a slash and the
+ * lowercase hex of its sha256, content-addressed and immutable like `url`.
+ * The address travels as raw bytes and no URL is sent, which keeps a list
+ * small on a slow link. Tiers are sent only when the url of their image (or
+ * mask) is. Every tier is WebP ('image/webp'), a mask's tier with the alpha
+ * channel that is the mask.
+ *
+ * An image with no tiers (sent by a server built before 0.8.0, or not minted
+ * yet) is drawn from `url` as before; a client built before 0.8.0 skips the
+ * field and does the same.
+ * ---------------------------------------------------------------------------
+ *
+ * @generated from message coordinator.v1.ImageTier
+ */
+export type ImageTier = Message<"coordinator.v1.ImageTier"> & {
+  /**
+   * The rung: the tier's long edge in pixels, max(width, height). Never 0,
+   * never past the parent's own long edge and never over 4,096.
+   *
+   * @generated from field: uint32 long_edge_px = 1;
+   */
+  longEdgePx: number;
+
+  /**
+   * SHA-256 of the tier's bytes, raw (32 bytes): its content address on the
+   * public media base (WHERE A TIER IS FETCHED). Its address, not its
+   * identity: two parents may share the same tier bytes.
+   *
+   * @generated from field: bytes sha256 = 2;
+   */
+  sha256: Uint8Array;
+
+  /**
+   * The tier's pixel width and height.
+   *
+   * @generated from field: uint32 width = 3;
+   */
+  width: number;
+
+  /**
+   * @generated from field: uint32 height = 4;
+   */
+  height: number;
+
+  /**
+   * The tier's size at rest, in bytes: what lets a phone budget its offline
+   * storage before a fetch. 0 = unknown, and a size the spine holds over
+   * 4,294,967,295 (far past any 4,096 px WebP) is sent as unknown too.
+   *
+   * @generated from field: uint32 bytes = 5;
+   */
+  bytes: number;
+};
+
+/**
+ * Describes the message coordinator.v1.ImageTier.
+ * Use `create(ImageTierSchema)` to create a new message.
+ */
+export const ImageTierSchema: GenMessage<ImageTier> = /*@__PURE__*/
+  messageDesc(file_coordinator_v1_catalog, 14);
 
 /**
  * ---------------------------------------------------------------------------
