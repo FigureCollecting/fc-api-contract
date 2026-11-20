@@ -595,7 +595,15 @@ describe('catalog.proto: image tiers (0.8.0)', () => {
   it('says a tier is never upscaled and keeps its parent\'s aspect, so the grounding holds on every tier', () => {
     const doc = tierDoc();
     expect(doc).toContain("NEVER UPSCALED: a tier is never past its parent's own long edge.");
-    expect(doc).toContain("Never cropped, padded or rotated, so a tier has its parent's aspect to within rounding (each side within 1 px of the parent's side scaled by long_edge_px over the parent's long edge), and every fraction measured on the full image (the grounding fields) holds on every tier.");
+    expect(doc).toContain("Never cropped, padded or rotated, so a tier has its parent's aspect to within rounding, and every fraction measured on the full image (the grounding fields) holds on every tier.");
+  });
+
+  it('promises the size rules as ingest enforces them: rounded, 1 px, and only when the parent\'s size is known', () => {
+    const doc = tierDoc();
+    expect(doc).toContain("When the parent's size is known (ProductImage width and height both above 0), each side of a tier is within 1 px of the parent's side scaled to long_edge_px and ROUNDED, round(W * long_edge_px / L) for the width, L being the parent's long edge, and no tier is past L.");
+    expect(doc).toContain('When the size is 0 (unknown), ingest skips both checks, so neither is promised.');
+    expect(doc).not.toMatch(/have the same pixel size/);
+    expect(doc).toContain('Their pixel sizes may differ (180x256 and 182x256 can both pass), so a client does not assume the same size.');
   });
 
   it('states the ladder as fc-ingest-contract 0.13.0 does, with the 4,096 cap', () => {
@@ -608,7 +616,7 @@ describe('catalog.proto: image tiers (0.8.0)', () => {
   it('pairs a mask tier with the derivative tier of the same long edge, sized from the derivative', () => {
     const doc = tierDoc();
     expect(doc).toContain("A MASK'S TIERS ARE MASKS: images whose alpha channel is the mask, as the full mask's is, scaled from the full mask and never re-predicted.");
-    expect(doc).toContain('PAIR BY long_edge_px: a mask tier and the derivative tier with the same long_edge_px have the same pixel size, and a client composites a derivative tier only with the mask tier of the same long_edge_px.');
+    expect(doc).toContain('PAIR BY long_edge_px: a mask tier and the derivative tier with the same long_edge_px pair, and a client composites a derivative tier only with the mask tier of the same long_edge_px.');
     expect(doc).toContain('GEOMETRY NEVER COMES FROM A TIER:');
   });
 

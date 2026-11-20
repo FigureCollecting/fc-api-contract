@@ -64,6 +64,8 @@ export interface ListCase {
 }
 
 export interface TierImage extends DisplayImage {
+  // The parent's long edge, max(width, height) of the derivative; 0 = unknown (ingest then skips its size checks).
+  parent_long_edge: number;
   // The long edges of the derivative's tiers and of its mask's tiers, as the spine sends them (0.8.0).
   tiers: number[];
   mask_tiers: number[];
@@ -152,8 +154,11 @@ export function evaluateList(c: Pick<ListCase, 'images' | 'restrictions' | 'cont
 }
 
 // Tiers have no status of their own (ImageTier): the derivative's tiers are sent exactly when the image is, and the
-// mask's tiers travel inside the mask, so they are sent exactly when the mask is. Each list is sent as the spine held it.
+// mask's tiers travel inside the mask, so they are sent exactly when the mask is. Each list is sent as the spine held it,
+// less any tier past the parent's own long edge (dropped alone; the edge itself is the native rung and stays; an unknown
+// parent size, 0, drops nothing).
 export function evaluateTiers(c: Pick<TierCase, 'image' | 'restrictions' | 'context'>, scopes: Scopes): TierCase['expect'] {
   const o = evaluate(c, scopes);
-  return { tiers: o.image ? c.image.tiers : [], mask_tiers: o.mask ? c.image.mask_tiers : [] };
+  const within = (list: number[]) => list.filter((e) => c.image.parent_long_edge === 0 || e <= c.image.parent_long_edge);
+  return { tiers: o.image ? within(c.image.tiers) : [], mask_tiers: o.mask ? within(c.image.mask_tiers) : [] };
 }

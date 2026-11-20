@@ -45,13 +45,25 @@ describe('golden tier vectors (catalog.proto ImageTier)', () => {
     expect(tierCases.some((c) => c.restrictions.length > 0 && outcome(c).image && outcome(c).mask && c.expect.mask_tiers.length > 0)).toBe(true);
   });
 
-  it('hold only ladders the rule allows: strictly ascending, at most four, none past 4,096, no mask tiers without a mask', () => {
+  it('hold only ladders the rule allows: strictly ascending, at most the cap of 8, none past 4,096, no mask tiers without a mask', () => {
     for (const c of tierCases)
       for (const list of [c.image.tiers, c.image.mask_tiers]) {
         expect(list.every((e, k) => Number.isInteger(e) && e > 0 && e <= 4096 && (k === 0 || e > list[k - 1]!)), c.name).toBe(true);
-        expect(list.length, c.name).toBeLessThanOrEqual(4);
+        expect(list.length, c.name).toBeLessThanOrEqual(8);
       }
     for (const c of tierCases.filter((k) => !k.image.has_mask)) expect(c.image.mask_tiers, c.name).toEqual([]);
+  });
+
+  it('drop a tier past the parent\'s long edge, keep the one at it, and keep everything when the size is unknown', () => {
+    const past = tierCases.filter((c) => [...c.image.tiers, ...c.image.mask_tiers].some((e) => e > c.image.parent_long_edge && c.image.parent_long_edge > 0));
+    expect(past.length).toBeGreaterThan(0);
+    for (const c of past) for (const e of [...c.expect.tiers, ...c.expect.mask_tiers]) expect(e, c.name).toBeLessThanOrEqual(c.image.parent_long_edge);
+    expect(tierCases.some((c) => c.expect.tiers.includes(c.image.parent_long_edge) && c.image.tiers.some((e) => e > c.image.parent_long_edge))).toBe(true);
+    expect(tierCases.some((c) => c.image.parent_long_edge === 0 && c.expect.tiers.length > 0)).toBe(true);
+  });
+
+  it('carry a case where the photo and mask ladders differ, both lists non-empty', () => {
+    expect(tierCases.some((c) => c.image.tiers.length > 0 && c.image.mask_tiers.length > 0 && JSON.stringify(c.image.tiers) !== JSON.stringify(c.image.mask_tiers) && outcome(c).mask)).toBe(true);
   });
 
   it('have unique names', () => {
@@ -73,6 +85,19 @@ const TIER_MUTANTS: Record<string, (c: TierCase) => TierCase['expect']> = {
   'sends the mask tiers as the image tiers when the mask has none yet': (c) => {
     const o = evaluateTiers(c, SCOPES);
     return { ...o, mask_tiers: outcome(c).mask && o.mask_tiers.length === 0 ? o.tiers : o.mask_tiers };
+  },
+  'keeps a tier past the parent\'s long edge': (c) => {
+    const o = outcome(c);
+    return { tiers: o.image ? c.image.tiers : [], mask_tiers: o.mask ? c.image.mask_tiers : [] };
+  },
+  'drops the tier at the parent\'s long edge': (c) => {
+    const o = evaluateTiers(c, SCOPES);
+    return { tiers: o.tiers.filter((e) => e < c.image.parent_long_edge || c.image.parent_long_edge === 0), mask_tiers: o.mask_tiers.filter((e) => e < c.image.parent_long_edge || c.image.parent_long_edge === 0) };
+  },
+  'drops every tier of a parent whose size is unknown': (c) => (c.image.parent_long_edge === 0 ? { tiers: [], mask_tiers: [] } : evaluateTiers(c, SCOPES)),
+  'sends the photo ladder as the mask ladder whenever the mask has tiers': (c) => {
+    const o = evaluateTiers(c, SCOPES);
+    return { ...o, mask_tiers: o.mask_tiers.length > 0 ? o.tiers : [] };
   },
   'fails open on an unrecognised scope': (c) => evaluateTiers({ ...c, restrictions: c.restrictions.filter((r) => Object.hasOwn(SCOPES, r.scope)) }, SCOPES),
 };
