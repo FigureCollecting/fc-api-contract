@@ -258,6 +258,57 @@
       ],
       "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
       "expect": { "shown": null, "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "three merged heads, the newest pick on the second absorbed head: it decides, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:01:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:02:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+      "expect": { "shown": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "write_to": "3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "equal versions, a pick on the lower head and a tombstone on the higher: the lower head decides, so the pick shows",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" },
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "equal versions, a tombstone on the lower head and a pick on the higher: the lower head decides, so the default shows",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the same instant and counter from two devices, the higher device id on the higher head: the device id decides",
+      "card": { "head_id": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "two picks one microsecond apart, the later on the higher head: the microsecond decides",
+      "card": { "head_id": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000001Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
     }
   ]
 }

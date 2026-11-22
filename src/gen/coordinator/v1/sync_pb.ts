@@ -353,13 +353,14 @@
 //     with the greater version (rule 5) replaces the other on every device.
 //     The server refuses a version more than 5 minutes past its own clock at
 //     push time (version_future). That bounds a push, not an edit: an edit
-//     minted on a clock that jumped ahead and pushed once real time has
-//     caught up is accepted at its version, and it outranks later edits from
-//     other devices until real time catches up with that version, the
-//     trade-off rule 5 states. A value is replaced whole: two looks are never merged field by field, nor two
-//     lists of searches. A DELETE is the app's default (the default theme,
-//     the default look, an empty list) and wins or loses by its version like
-//     any value.
+//     minted on a clock that jumped ahead, and pushed once real time is within
+//     5 minutes of it, is accepted at its version. Until real time reaches that
+//     version, it outranks every edit another device minted before it had that
+//     edit; an edit minted after a Delta carried it lands above it (THE FACET
+//     FLOOR). That is the trade-off rule 5 states. A value is replaced whole:
+//     two looks are never merged field by field, nor two lists of searches. A
+//     DELETE is the app's default (the default theme, the default look, an
+//     empty list) and wins or loses by its version like any value.
 //     FIRST SIGN-IN. A device that holds values from before 0.9.0 pushes each
 //     once, after its first Delta, and only for a key the account has no
 //     event for, live or tombstoned; where the account has one, the account's

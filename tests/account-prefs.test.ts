@@ -281,7 +281,8 @@ describe('sync.proto and README: the account preferences', () => {
     expect(rule6).toMatch(/LAST WRITER WINS PER KEY, for all four as for every facet: the event with the greater version \(rule 5\) replaces the other on every device/);
     expect(rule6).toMatch(/A value is replaced whole: two looks are never merged field by field, nor two lists of searches/);
     expect(rule6).toMatch(/A DELETE is the app's default \(the default theme, the default look, an empty list\)/);
-    expect(rule6).toMatch(/The server refuses a version more than 5 minutes past its own clock at push time \(version_future\)\. That bounds a push, not an edit: an edit minted on a clock that jumped ahead and pushed once real time has caught up is accepted at its version, and it outranks later edits from other devices until real time catches up with that version, the trade-off rule 5 states/);
+    expect(rule6).toMatch(/The server refuses a version more than 5 minutes past its own clock at push time \(version_future\)\. That bounds a push, not an edit: an edit minted on a clock that jumped ahead, and pushed once real time is within 5 minutes of it, is accepted at its version\. Until real time reaches that version, it outranks every edit another device minted before it had that edit; an edit minted after a Delta carried it lands above it \(THE FACET FLOOR\)\. That is the trade-off rule 5 states/);
+    expect(rule6).not.toMatch(/outranks later edits from other devices until/);
     expect(rule6).not.toMatch(/a fast clock gains at most that/);
     expect(rule6).not.toMatch(/no device wins by running fast/);
   });
