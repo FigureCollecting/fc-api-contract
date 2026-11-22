@@ -1,5 +1,5 @@
 {
-  "$comment": "Golden vectors for the photo pick, photo/{head_id}/pick (sync.proto rule 6 PHOTO PICK). Every implementation (this package, fc-coordinator's Push validation, fc-mobile) must agree with every case. `pushes`: one pushed SyncEvent each, on `key`. `op` is the SyncOp; the payload on the wire is JSON.stringify(`body`), or `raw` exactly as written when the case has one. `expect` is \"accepted\" or \"payload_invalid\", and `why` says which check refuses: \"schema\" (schemas/photo-pick.schema.json does not validate the payload, or it is not JSON) or \"delete_payload\" (a DELETE carries a payload). A DELETE with an empty payload is accepted and means \"use the default\". `shown`: what a client shows for a figure. `pick` is the derivative_id of the live pick, or null when there is none (never made, or deleted); `images` is the derivative_ids of the figure's GetProductImages list as this viewer is sent it, in order; `expect` is the id shown as the pick: the pick's when `images` carries it, else null, and null reads exactly as no pick (the default is shown, the facet is kept). `lastWriterWins`: the events of one user on one figure's pick; a reader applies an event iff its version is greater than the one it holds (compareVersion), so in EVERY arrival order, repeats included, the pick ends as `expect`: the derivative_id, or null for the default.",
+  "$comment": "Golden vectors for the photo pick, photo/{head_id}/pick (sync.proto rule 6 PHOTO PICK). Every implementation (this package, fc-coordinator's Push validation, fc-mobile) must agree with every case. `pushes`: one pushed SyncEvent each, on `key`. `op` is the SyncOp; the payload on the wire is JSON.stringify(`body`), or `raw` exactly as written when the case has one. `expect` is \"accepted\" or \"payload_invalid\", and `why` says which check refuses: \"schema\" (schemas/photo-pick.schema.json does not validate the payload, or it is not JSON) or \"delete_payload\" (a DELETE carries a payload). A DELETE with an empty payload is accepted and means \"use the default\". `shown`: what a client shows for a figure. `pick` is the derivative_id of the live pick, or null when there is none (never made, or deleted); `images` is the derivative_ids of the figure's GetProductImages list as this viewer is sent it, in order; `expect` is the id shown as the pick: the pick's when `images` carries it, else null, and null reads exactly as no pick (the default is shown, the facet is kept). `lastWriterWins`: the events of one user on one figure's pick; a reader applies an event iff its version is greater than the one it holds (compareVersion), so in EVERY arrival order, repeats included, the pick ends as `expect`: the derivative_id, or null for the default. `merged`: one card after an ER merge (sync.proto ER MERGES). `card` is its head_id and the head ids of its requested_as; `events` is the one event the reader holds on each pick key, live or tombstoned, picks on figures outside the card included; `images` is the merged figure's list. Among the events of card.head_id and every requested_as head, the greatest version decides, the lower head_id (bytewise) between equal versions; `expect.shown` is the decider's id when it is a live pick the list carries, else null (a tombstone, a pick the list lacks, or no event; never an older pick in its place); `expect.write_to` is the head whose key a new pick or a \"use default\" is written to: the decider's, or card.head_id when no head of the card holds an event.",
   "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick",
   "parsedKey": { "family": "photo/pick", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" },
   "pushes": [
@@ -138,6 +138,96 @@
         { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
       ],
       "expect": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    }
+  ],
+  "merged": [
+    {
+      "name": "a pick on the absorbed head only: shown on the merged figure, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "use default on the survivor after the merge sticks: the absorbed head's older pick is never resurrected",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "a later pick on the absorbed head (from a device that had not seen the merge) outranks an older use default",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the deciding pick is not in the merged figure's image list: no pick, and an older pick the list carries is not shown in its place",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "two heads at equal versions (one import's writes under heads merged later): the lower head id decides",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the survivor is not among requested_as (the client asked by the absorbed id): the survivor's own newer pick still decides",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "a newer pick on a head outside the card (a figure not merged) is ignored",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/9b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T13:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "no event on any head of the card: the default, and a write goes to card.head_id",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/9b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T13:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "a tombstone on the absorbed head decides: the default over an older pick, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-21T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
     }
   ]
 }

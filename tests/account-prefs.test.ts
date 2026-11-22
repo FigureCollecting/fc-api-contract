@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   ACCOUNT_PREFS,
@@ -215,6 +216,44 @@ describe('account preference schemas', () => {
     expect(valid('pref/recents', { searches: ['🎎'.repeat(201)], ...DISPLAY })).toBe(false);
     expect(schemaOf('pref/recents').description).toMatch(/never an empty list/);
   });
+
+  // The rule the item pattern must enforce, in plain JavaScript: trimmed as String.prototype.trim trims (the same
+  // white space as the regex \s), not empty, 1..200 code points, no control character (Cc) and no lone surrogate (Cs).
+  const searchOk = (s: string) => s !== '' && s === s.trim() && [...s].length <= 200 && !/[\p{Cc}\p{Cs}]/u.test(s);
+
+  it('pref/recents takes a search exactly when it is trimmed, not empty, and has no control character or lone surrogate', () => {
+    const one = (s: string) => valid('pref/recents', { searches: [s], ...DISPLAY });
+    const edge = fc.constantFrom(' ', '\t', '\n', '\r', '\v', '\f', ' ', ' ', ' ', ' ', '　', '﻿', '\u0000', '\u001b', '\u007f', '\u0085', '\u009f', '\ud800', '\udfff', '​', '‍', '‮', 'a', '初', '🎎');
+    const search = fc.oneof(
+      fc.string({ unit: 'grapheme', maxLength: 12 }),
+      fc.string({ unit: 'binary', maxLength: 12 }),
+      fc.array(edge, { maxLength: 6 }).map((xs) => xs.join('')),
+      fc.tuple(fc.array(edge, { maxLength: 2 }), fc.string({ unit: 'grapheme', minLength: 1, maxLength: 8 }), fc.array(edge, { maxLength: 2 })).map(([a, b, c]) => a.join('') + b + c.join('')),
+    );
+    let accepted = 0;
+    let refused = 0;
+    fc.assert(
+      fc.property(search, (s) => {
+        expect(one(s), JSON.stringify(s)).toBe(searchOk(s));
+        if (searchOk(s)) accepted++;
+        else refused++;
+      }),
+      { numRuns: 4000 },
+    );
+    expect(accepted).toBeGreaterThan(400);
+    expect(refused).toBeGreaterThan(400);
+    for (const s of ['rem', 'a b', '初音ミク', '🎎', '👩‍🎤', 'x', '​', 'a b']) expect(one(s), JSON.stringify(s)).toBe(true);
+    for (const s of [' rem', 'rem ', '   ', '　rem', 'rem ', '﻿rem', 'a\u0000b', 'a\u001b[2Jb', 'a\r\nb', 'a\u007fb', 'a\u0085b', '\ud800', 'a\udc00b', ''])
+      expect(one(s), JSON.stringify(s)).toBe(false);
+  });
+
+  it('pref/recents says what the schema enforces and what only the client keeps', () => {
+    const s = JSON.parse(read('schemas/pref-recents.schema.json')) as { description: string; properties: { searches: { description: string; items: { description: string; pattern: string } } } };
+    expect(s.properties.searches.items.pattern).toBe('^[^\\p{Cc}\\p{Cs}\\s](?:[^\\p{Cc}\\p{Cs}]*[^\\p{Cc}\\p{Cs}\\s])?$');
+    expect(s.properties.searches.items.description).toMatch(/trimmed \(no leading or trailing white space\), not empty, 1 to 200 Unicode code points, with no control character and no lone surrogate/);
+    expect(s.properties.searches.description).toMatch(/no two the same; a client also keeps no two that differ only in case \(compared by toLowerCase\), keeping the newer: the schema checks exact duplicates only/);
+    expect(s.description).toMatch(/The server keeps only the latest list, and a DELETE removes it: no history of past searches is retained \(sync\.proto rule 6 RETENTION\)/);
+  });
 });
 
 describe('sync.proto and README: the account preferences', () => {
@@ -239,7 +278,19 @@ describe('sync.proto and README: the account preferences', () => {
     expect(rule6).toMatch(/LAST WRITER WINS PER KEY, for all four as for every facet: the event with the greater version \(rule 5\) replaces the other on every device/);
     expect(rule6).toMatch(/A value is replaced whole: two looks are never merged field by field, nor two lists of searches/);
     expect(rule6).toMatch(/A DELETE is the app's default \(the default theme, the default look, an empty list\)/);
-    expect(rule6).toMatch(/the server bounds a device's clock \(version_future\)/);
+    expect(rule6).toMatch(/The server refuses a version more than 5 minutes past its own clock \(version_future\), so a fast clock gains at most that: an edit from a device running up to 5 minutes fast outranks a later edit from a device on the right time, the trade-off rule 5 states/);
+    expect(rule6).not.toMatch(/no device wins by running fast/);
+  });
+
+  it('keeps only the latest value of each account preference: a replaced value and a deleted one are erased', () => {
+    expect(rule6).toMatch(/RETENTION \(0\.9\.0\)\. For pref\/theme, pref\/case and pref\/recents the server keeps only the latest value per key, so no history of past searches, looks or themes is retained/);
+    expect(rule6).toMatch(/the replaced event keeps its place in the feed, so no cursor or commit_cursor \(rule 7\) moves, but it becomes a tombstone at its own version with an empty payload/);
+    expect(rule6).toMatch(/A DELETE removes the stored value the same way and keeps only its own tombstone \(key and version, no payload\)/);
+    expect(rule6).toMatch(/The record of a client_id \(PushRequest\.client_id\) keeps no payload of these keys either/);
+    expect(rule6).toMatch(/This is the one exception to the soft-delete rule \(SYNC_OP_DELETE\): nothing else is erased, and no event is removed from the feed \(rule 7\)/);
+    const deleteDoc = prose(sync.slice(sync.indexOf('enum SyncOp'), sync.indexOf('SYNC_OP_DELETE = 2;')));
+    expect(deleteDoc).toMatch(/The account preferences are the one exception: their replaced and deleted values are erased \(rule 6 RETENTION\)/);
+    expect(prose(readme)).toMatch(/The server keeps only the latest value of each of the three: a replaced value is erased, and a DELETE erases the stored one, so no history of past searches is kept/);
   });
 
   it('has a device push what it holds once, on first sign-in, and only where the account has nothing', () => {

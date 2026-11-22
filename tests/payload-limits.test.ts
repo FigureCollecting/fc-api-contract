@@ -71,8 +71,9 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
   'photo/pick': { derivative_id: 'f'.repeat(64), ...WIDEST },
   'pref/theme': { theme: 'system', ...WIDEST },
   'pref/case': { pattern: 'a'.repeat(128), ceiling_tenths_mm: 100000, clearance_tenths_mm: 10000, wall: 'a'.repeat(32), wall_custom: '#ffffff', arrange: 'a'.repeat(64), show_estimated: false, ...WIDEST },
-  // ten distinct searches, each 200 code points JSON.stringify writes as six bytes (U+000E..U+0017 have no short escape)
-  'pref/recents': { searches: Array.from({ length: 10 }, (_, i) => '\u0001'.repeat(199) + String.fromCharCode(0x0e + i)), ...WIDEST },
+  // ten distinct searches, each 200 code points outside the BMP (four bytes each): the schema refuses control
+  // characters and lone surrogates, the only code points JSON.stringify writes in more
+  'pref/recents': { searches: Array.from({ length: 10 }, (_, i) => '🎎'.repeat(199) + String.fromCodePoint(0x1f600 + i)), ...WIDEST },
   'occ/origin': ORIGIN,
   'imp/figure': {
     rev: 'A'.repeat(128),
@@ -213,8 +214,30 @@ describe('maxJsonBytes', () => {
     expect(maxJsonBytes({ type: 'string', pattern: '^(?:)*a$' })).toBe(2 + 1);
   });
 
+  it('costs no code point but a control character (Cc) or a lone surrogate (Cs) more than four bytes', () => {
+    const cc = /^[\p{Cc}\p{Cs}]$/u;
+    let max = 0;
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      const s = String.fromCodePoint(cp);
+      if (cc.test(s)) continue;
+      max = Math.max(max, Buffer.byteLength(JSON.stringify(s), 'utf8') - 2);
+    }
+    expect(max).toBe(4);
+  });
+
+  it('bounds a class that excludes both Cc and Cs at four bytes a character, and any other \\p or \\s use at six', () => {
+    expect(maxJsonBytes({ type: 'string', pattern: '^[^\\p{Cc}\\p{Cs}]{2}$' })).toBe(2 + 8);
+    expect(maxJsonBytes({ type: 'string', pattern: '^[^\\p{Cs}\\s\\p{Cc}]{2}$' })).toBe(2 + 8);
+    expect(maxJsonBytes({ type: 'string', pattern: '^[^\\p{Cc}]{2}$' })).toBe(2 + 12);
+    expect(maxJsonBytes({ type: 'string', pattern: '^[^\\p{Cs}\\s]{2}$' })).toBe(2 + 12);
+    expect(maxJsonBytes({ type: 'string', pattern: '^[\\p{Cc}\\p{Cs}]{2}$' })).toBe(2 + 12);
+    expect(maxJsonBytes({ type: 'string', pattern: '^\\s\\p{Cc}$' })).toBe(2 + 12);
+    expect(maxJsonBytes({ type: 'string', pattern: '^[a\\s]$' })).toBe(2 + 6);
+    expect(maxJsonBytes({ type: 'string', maxLength: 5, pattern: '^[^\\p{Cc}\\p{Cs}\\s](?:[^\\p{Cc}\\p{Cs}]*[^\\p{Cc}\\p{Cs}\\s])?$' })).toBe(2 + 20);
+  });
+
   it('refuses a pattern construct it does not model instead of guessing', () => {
-    for (const pattern of ['^\\s$', '^a{x}$', '^[a$', '^(a$', '^a)$', '^[a-\\d]$', '^a^b$', '^?$'])
+    for (const pattern of ['^\\S$', '^\\p{L}$', '^\\p{Cc$', '^\\P{Cc}$', '^[^\\p{Lu}]$', '^a{x}$', '^[a$', '^(a$', '^a)$', '^[a-\\d]$', '^a^b$', '^?$'])
       expect(() => patternSpan(pattern), pattern).toThrow(SyntaxError);
   });
 });

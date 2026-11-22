@@ -217,10 +217,12 @@ user chose to show for a figure ("Use for me"), synced like any other facet. Its
 `derivative_id`, as `ProductImage.derivative_id` carries it: 64 lowercase hex characters. It is never an
 address, so nothing a device pushes is ever fetched and no host has to be checked. Last writer wins across
 devices, and "use default" is a DELETE. A client shows a pick only while the figure's image list carries an
-image with that id, and draws it from that entry; otherwise it shows the default as if there were no pick, so
-a pick never shows a withheld image. A pick by itself puts no figure in the library.
+image with that id, and draws it from that entry (its tiers when it has them, else its url); otherwise it shows
+the default as if there were no pick, so a pick never shows a withheld image. A pick by itself puts no figure in
+the library. After an ER merge the newest pick event across the merged heads decides, a "use default" included,
+so an older pick on an absorbed figure never comes back.
 `golden/photo-pick-vectors.json` has the pushes (valid, bad shape, uppercase, wrong length, DELETE), what is
-shown for a pick that is or is no longer in the list, and the last-writer-wins orders.
+shown for a pick that is or is no longer in the list, the last-writer-wins orders and the merged cases.
 
 ## Account preferences
 
@@ -230,8 +232,11 @@ of the display case and the recent searches, one key each per account. One rule 
 per key by `version`, a value is replaced whole (two case looks or two lists of searches are never merged), and
 a DELETE is the app's default. The case's tab order, the depth control's shape and the dismissed do-not-fit
 list stay on the device and are not in the payload. A device that holds values from before 0.9.0 pushes each
-once, after its first Delta, and only for a key the account has no event for. `golden/account-pref-vectors.json`
-has the pushes and the last-writer-wins orders for each family.
+once, after its first Delta, and only for a key the account has no event for. The server keeps only the latest
+value of each of the three: a replaced value is erased, and a DELETE erases the stored one, so no history of
+past searches is kept (`sync.proto` rule 6 RETENTION). A search is trimmed, not empty, at most 200 code points,
+with no control character or lone surrogate. `golden/account-pref-vectors.json` has the pushes and the
+last-writer-wins orders for each family.
 
 ## Origin trace
 

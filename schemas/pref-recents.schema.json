@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://figurecollecting.com/schemas/coordinator/v1/pref-recents.schema.json",
   "title": "pref/recents payload",
-  "description": "UPSERT payload of pref/recents: the account's recent searches, the same on every device it signs in on. Last writer wins, and the list is one value: two devices' lists are never merged. Clearing the list is a DELETE with an empty payload, never an empty list. Serialized, at most 12,166 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "description": "UPSERT payload of pref/recents: the account's recent searches, the same on every device it signs in on. Last writer wins, and the list is one value: two devices' lists are never merged. Clearing the list is a DELETE with an empty payload, never an empty list. The server keeps only the latest list, and a DELETE removes it: no history of past searches is retained (sync.proto rule 6 RETENTION). Serialized, at most 8,166 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,16 +12,17 @@
   ],
   "properties": {
     "searches": {
-      "description": "1 to 10 distinct searches, the newest first.",
+      "description": "1 to 10 searches, the newest first, no two the same; a client also keeps no two that differ only in case (compared by toLowerCase), keeping the newer: the schema checks exact duplicates only.",
       "type": "array",
       "minItems": 1,
       "maxItems": 10,
       "uniqueItems": true,
       "items": {
-        "description": "What the user searched for, as typed and trimmed: 1 to 200 Unicode code points. Private to the user: never logged.",
+        "description": "What the user searched for, trimmed (no leading or trailing white space), not empty, 1 to 200 Unicode code points, with no control character and no lone surrogate. Private to the user: never logged.",
         "type": "string",
         "minLength": 1,
-        "maxLength": 200
+        "maxLength": 200,
+        "pattern": "^[^\\p{Cc}\\p{Cs}\\s](?:[^\\p{Cc}\\p{Cs}]*[^\\p{Cc}\\p{Cs}\\s])?$"
       }
     },
     "edited_at": {

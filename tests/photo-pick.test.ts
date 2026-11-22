@@ -36,12 +36,23 @@ interface PickEvent {
   version: string;
   derivative_id?: string;
 }
+interface KeyedPickEvent extends PickEvent {
+  key: string;
+}
+interface MergedCase {
+  name: string;
+  card: { head_id: string; requested_as: string[] };
+  events: KeyedPickEvent[];
+  images: string[];
+  expect: { shown: string | null; write_to: string };
+}
 interface Vectors {
   key: string;
   parsedKey: { family: 'photo/pick'; headId: string };
   pushes: Push[];
   shown: { name: string; pick: string | null; images: string[]; expect: string | null }[];
   lastWriterWins: { name: string; events: PickEvent[]; expect: string | null }[];
+  merged: MergedCase[];
 }
 const vectors = JSON.parse(read('golden/photo-pick-vectors.json')) as Vectors;
 
@@ -284,6 +295,96 @@ describe('golden photo-pick vectors: last writer wins', () => {
   });
 });
 
+describe('golden photo-pick vectors: ER merges', () => {
+  // A merged figure's pick (sync.proto ER MERGES): among the pick events of card.head_id and every requested_as head,
+  // tombstones included, the greatest version decides, the lower head id between equal versions. A live decider is
+  // shown under the list rule, a tombstone shows the default, and nothing older stands in for either. A new pick or a
+  // "use default" goes to the decider's head, or card.head_id when no head holds an event.
+  type Resolver = (c: MergedCase) => MergedCase['expect'];
+  const headOf = (e: KeyedPickEvent) => (parseUserFacetKey(e.key) as { headId: string }).headId;
+  const heads = (c: MergedCase) => new Set([c.card.head_id, ...c.card.requested_as]);
+  const byVersionThenHead = (x: KeyedPickEvent, y: KeyedPickEvent) => compareVersion(y.version, x.version) || (headOf(x) < headOf(y) ? -1 : headOf(x) > headOf(y) ? 1 : 0);
+  const showIf = (e: KeyedPickEvent | undefined, images: string[]) => (e?.op === 'UPSERT' && images.includes(e.derivative_id!) ? e.derivative_id! : null);
+  const reference: Resolver = (c) => {
+    const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort(byVersionThenHead)[0];
+    return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+  };
+  // Lazy readings a client or server might take; each must fail at least one case.
+  const lazy: Record<string, Resolver> = {
+    'the card head only': (c) => ({ shown: showIf(c.events.find((e) => headOf(e) === c.card.head_id), c.images), write_to: c.card.head_id }),
+    'the uf rule by analogy (live picks only, tombstones ignored)': (c) => {
+      const live = c.events.filter((e) => heads(c).has(headOf(e)) && e.op === 'UPSERT').sort(byVersionThenHead)[0];
+      return { shown: showIf(live, c.images), write_to: live === undefined ? c.card.head_id : headOf(live) };
+    },
+    'fall back to the newest pick the list carries': (c) => {
+      const all = c.events.filter((e) => heads(c).has(headOf(e))).sort(byVersionThenHead);
+      const shown = all.filter((e) => e.op === 'UPSERT' && c.images.includes(e.derivative_id!))[0];
+      return { shown: shown?.derivative_id ?? null, write_to: reference(c).write_to };
+    },
+    'the higher head id between equal versions': (c) => {
+      const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort((x, y) => compareVersion(y.version, x.version) || (headOf(x) > headOf(y) ? -1 : 1))[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'requested_as only, card.head_id ignored': (c) => {
+      const decider = c.events.filter((e) => c.card.requested_as.includes(headOf(e))).sort(byVersionThenHead)[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'every pick the user holds, merged or not': (c) => {
+      const decider = [...c.events].sort(byVersionThenHead)[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'writes always to card.head_id': (c) => ({ ...reference(c), write_to: c.card.head_id }),
+  };
+
+  it('has two-figure cases, each keyed by photo/{head_id}/pick on canonical versions', () => {
+    expect(vectors.merged.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(vectors.merged.map((c) => c.name)).size).toBe(vectors.merged.length);
+    for (const c of vectors.merged) {
+      expect(heads(c).size, c.name).toBeGreaterThanOrEqual(2);
+      for (const e of c.events) {
+        expect(e.key, c.name).toBe(photoPickKey(headOf(e)));
+        expect(isCanonicalVersion(e.version), c.name).toBe(true);
+        if (e.op === 'UPSERT') expect(e.derivative_id, c.name).toMatch(ID);
+        else expect(e.derivative_id, c.name).toBeUndefined();
+      }
+      expect(new Set(c.events.map((e) => e.key)).size, `${c.name}: one event per key`).toBe(c.events.length);
+      for (const id of c.images) expect(id, c.name).toMatch(ID);
+    }
+  });
+
+  it.each(vectors.merged.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    expect(reference(c)).toEqual(c.expect);
+  });
+
+  it.each(Object.keys(lazy))('a lazy reading fails at least one case: %s', (name) => {
+    expect(vectors.merged.filter((c) => JSON.stringify(lazy[name]!(c)) !== JSON.stringify(c.expect)).map((c) => c.name)).not.toEqual([]);
+  });
+
+  it('makes "use default" stick: after it, no older pick on any merged head is shown, and a new pick is', () => {
+    let n = 0;
+    for (const c of vectors.merged) {
+      const top = [...c.events].sort((x, y) => compareVersion(y.version, x.version))[0];
+      const above = (by: number) => `2027-01-01T00:00:0${by}.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e`;
+      expect(top === undefined || compareVersion(above(0), top.version) > 0, c.name).toBe(true);
+      const { write_to } = reference(c);
+      const without = (cs: KeyedPickEvent[]) => cs.filter((e) => e.key !== photoPickKey(write_to));
+      const useDefault: MergedCase = { ...c, events: [...without(c.events), { key: photoPickKey(write_to), op: 'DELETE', version: above(1) }] };
+      expect(reference(useDefault), c.name).toEqual({ shown: null, write_to });
+      if (c.images.length === 0) continue;
+      const repick: MergedCase = { ...c, events: [...without(useDefault.events), { key: photoPickKey(write_to), op: 'UPSERT', version: above(2), derivative_id: c.images.at(-1)! }] };
+      expect(reference(repick).shown, c.name).toBe(c.images.at(-1));
+      n++;
+    }
+    expect(n).toBeGreaterThanOrEqual(6);
+  });
+
+  it('covers the cases the rule decides', () => {
+    const names = vectors.merged.map((c) => c.name).join(' | ');
+    for (const re of [/use default on the survivor/, /absorbed head only/, /later pick on the absorbed head/, /not in the merged figure's image list/, /equal versions/, /not among requested_as/, /outside the card/, /no event on any head/, /tombstone on the absorbed head/])
+      expect(names).toMatch(re);
+  });
+});
+
 describe('sync.proto and README: the photo pick', () => {
   const sync = read('proto/coordinator/v1/sync.proto');
   const rule6 = prose(sync.slice(sync.indexOf(' 6. USER-OWNED FACET KEYS'), sync.indexOf(' 7. TRANSACTIONS, AND WHAT IS DEFERRED')));
@@ -307,14 +408,31 @@ describe('sync.proto and README: the photo pick', () => {
   });
 
   it('shows a pick only from the figure\'s own image list, and keeps it out of the library', () => {
-    expect(rule6).toMatch(/A client shows a pick only while the figure's GetProductImages list carries an image with that derivative_id, and draws it from that entry's url/);
+    expect(rule6).toMatch(/A client shows a pick only while the figure's GetProductImages list carries an image with that derivative_id, and draws it from that entry: from its tiers when it has them \(catalog\.proto WHERE A TIER IS FETCHED\), else from its url/);
+    expect(rule6).not.toMatch(/draws it from that entry's url/);
     expect(rule6).toMatch(/it shows the default, exactly as if there were no pick, and keeps the facet/);
     expect(rule6).toMatch(/The server checks the id's form only/);
     expect(rule6).toMatch(/A pick is a display preference and never a library reference/);
   });
 
+  it('ER MERGES says how a merged figure\'s pick is read and written, so "use default" sticks', () => {
+    const er = prose(sync.slice(sync.indexOf('ER MERGES.'), sync.indexOf('THE IMPORT, ON A CLIENT')));
+    expect(er).toMatch(/A photo pick is one value per merged figure, decided by its events, tombstones included: among the picks of card\.head_id and of every head in requested_as, the event with the greatest version decides, the lower head_id \(bytewise\) between equal versions/);
+    expect(er).toMatch(/a "use default" outranks every older pick on any merged head and is never undone by one/);
+    expect(er).toMatch(/A deciding pick whose image the merged figure's list lacks reads as no pick: an older pick is never shown in its place/);
+    expect(er).toMatch(/A new pick or a "use default" is written to the deciding event's head \(card\.head_id when no head has one\)/);
+    expect(er).toMatch(/golden\/photo-pick-vectors\.json `merged` has the cases/);
+  });
+
+  it('catalog.proto says ProductImage.derivative_id is 64 lowercase hex, the form the pick schema and `shown` rely on', () => {
+    const catalog = read('proto/coordinator/v1/catalog.proto');
+    expect(catalog).toMatch(/\/\/ Hex SHA-256 of the derivative bytes: 64 lowercase hex characters\.\n {2}string derivative_id = 1;/);
+  });
+
   it('README names the facet and its vectors, and package.json exports the vectors', () => {
     expect(readme).toMatch(/## Photo pick/);
+    expect(prose(readme)).toMatch(/draws it from that entry \(its tiers when it has them, else its url\)/);
+    expect(prose(readme)).toMatch(/After an ER merge the newest pick event across the merged heads decides, a "use default" included/);
     expect(readme).toMatch(/`photo\/\{head_id\}\/pick` \(0\.9\.0, additive: one new key, no field and no existing schema changed\)/);
     expect(readme).toContain('golden/photo-pick-vectors.json');
     expect(readme).not.toContain('isPublicImageUrl');

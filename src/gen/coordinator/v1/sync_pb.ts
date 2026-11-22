@@ -324,15 +324,16 @@
 //     wins or loses by its version like any pick, and while it stands the
 //     figure shows its primary on every device. A client shows a pick only
 //     while the figure's GetProductImages list carries an image with that
-//     derivative_id, and draws it from that entry's url; when the list has
-//     none (the image is gone, or a display restriction withholds it from
-//     this viewer: catalog.proto DISPLAY RESTRICTIONS) it shows the default,
-//     exactly as if there were no pick, and keeps the facet. The server
-//     checks the id's form only: it does not ask whether the figure has such
-//     an image, so that rule is the client's. A pick is a display preference
-//     and never a library reference: it puts no figure in the library by
-//     itself.
-//     golden/photo-pick-vectors.json has the cases.
+//     derivative_id, and draws it from that entry: from its tiers when it has
+//     them (catalog.proto WHERE A TIER IS FETCHED), else from its url; when
+//     the list has none (the image is gone, or a display restriction withholds
+//     it from this viewer: catalog.proto DISPLAY RESTRICTIONS) it shows the
+//     default, exactly as if there were no pick, and keeps the facet. The
+//     server checks the id's form only: it does not ask whether the figure
+//     has such an image, so that rule is the client's. A pick is a display
+//     preference and never a library reference: it puts no figure in the
+//     library by itself. After an ER merge the pick is read as ER MERGES
+//     says. golden/photo-pick-vectors.json has the cases.
 //
 //     ACCOUNT PREFERENCES (0.9.0; Ross, 2026-11-21). The photo picks, the case
 //     look, the theme and the recent searches belong to the account, not to a
@@ -349,17 +350,36 @@
 //     device is not in these payloads: the order of the case's tabs, the depth
 //     control's shape and the dismissed do-not-fit list.
 //     LAST WRITER WINS PER KEY, for all four as for every facet: the event
-//     with the greater version (rule 5) replaces the other on every device,
-//     and the server bounds a device's clock (version_future), so no device
-//     wins by running fast. A value is replaced whole: two looks are never
-//     merged field by field, nor two lists of searches. A DELETE is the app's
-//     default (the default theme, the default look, an empty list) and wins
-//     or loses by its version like any value.
+//     with the greater version (rule 5) replaces the other on every device.
+//     The server refuses a version more than 5 minutes past its own clock
+//     (version_future), so a fast clock gains at most that: an edit from a
+//     device running up to 5 minutes fast outranks a later edit from a
+//     device on the right time, the trade-off rule 5 states. A value is
+//     replaced whole: two looks are never merged field by field, nor two
+//     lists of searches. A DELETE is the app's default (the default theme,
+//     the default look, an empty list) and wins or loses by its version like
+//     any value.
 //     FIRST SIGN-IN. A device that holds values from before 0.9.0 pushes each
 //     once, after its first Delta, and only for a key the account has no
 //     event for, live or tombstoned; where the account has one, the account's
 //     value replaces the device's. Recent searches are private to the user:
 //     neither the coordinator nor a client logs them.
+//     RETENTION (0.9.0). For pref/theme, pref/case and pref/recents the server
+//     keeps only the latest value per key, so no history of past searches,
+//     looks or themes is retained. When an event of one of these keys is
+//     replaced (an event with a greater version is applied to the key), the
+//     server erases the replaced value: the replaced event keeps its place in
+//     the feed, so no cursor or commit_cursor (rule 7) moves, but it becomes a
+//     tombstone at its own version with an empty payload. A DELETE removes the
+//     stored value the same way and keeps only its own tombstone (key and
+//     version, no payload). The record of a client_id (PushRequest.client_id)
+//     keeps no payload of these keys either: a digest of the events is enough
+//     to tell a retry. Every replay still ends at the latest value: a reader
+//     that holds the replaced value holds its version and drops the tombstone
+//     (not greater), and one that does not applies it and then, later in the
+//     feed, the event that replaced it. This is the one exception to the
+//     soft-delete rule (SYNC_OP_DELETE): nothing else is erased, and no event
+//     is removed from the feed (rule 7).
 //     golden/account-pref-vectors.json has the cases.
 //
 //     LIBRARY. A figure is in the library while any live user facet
@@ -395,6 +415,18 @@
 //     several GetProducts calls groups cards by head_id across every call and
 //     page and unions their requested_as; the display, write-target and
 //     delete rules apply to that union.
+//     A photo pick is one value per merged figure, decided by its events,
+//     tombstones included: among the picks of card.head_id and of every head
+//     in requested_as, the event with the greatest version decides, the lower
+//     head_id (bytewise) between equal versions. A live pick that decides is
+//     shown under PHOTO PICK's list rule; a tombstone that decides shows the
+//     default, so a "use default" outranks every older pick on any merged
+//     head and is never undone by one. A deciding pick whose image the merged
+//     figure's list lacks reads as no pick: an older pick is never shown in
+//     its place. A new pick or a "use default" is written to the deciding
+//     event's head (card.head_id when no head has one), so the facet floor
+//     mints it above every pick of the figure.
+//     golden/photo-pick-vectors.json `merged` has the cases.
 //
 //     THE IMPORT, ON A CLIENT (import.proto THE SERVER DECIDES). A client
 //     decides nothing about an import and never compares anything with MFC: it
@@ -885,6 +917,8 @@ export enum SyncOp {
    * Tombstone the facet. A SOFT delete — the estate's retention policy is
    * soft-delete only, so this marks the facet absent at `version` and never
    * instructs anyone to destroy rows. `payload` is empty for a tombstone.
+   * The account preferences are the one exception: their replaced and
+   * deleted values are erased (rule 6 RETENTION).
    *
    * @generated from enum value: SYNC_OP_DELETE = 2;
    */
