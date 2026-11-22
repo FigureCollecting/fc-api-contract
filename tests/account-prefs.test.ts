@@ -248,7 +248,10 @@ describe('account preference schemas', () => {
   });
 
   it('pref/recents says what the schema enforces and what only the client keeps', () => {
-    const s = JSON.parse(read('schemas/pref-recents.schema.json')) as { description: string; properties: { searches: { description: string; items: { description: string; pattern: string } } } };
+    const s = JSON.parse(read('schemas/pref-recents.schema.json')) as { description: string; properties: { searches: { description: string; items: { description: string; pattern: string; minLength: number; maxLength: number } } } };
+    // The pattern alone refuses the empty string, but "not empty" and the length must hold without the regex engine:
+    // a validator that cannot compile \p (no u flag) still enforces them.
+    expect([s.properties.searches.items.minLength, s.properties.searches.items.maxLength]).toEqual([1, 200]);
     expect(s.properties.searches.items.pattern).toBe('^[^\\p{Cc}\\p{Cs}\\s](?:[^\\p{Cc}\\p{Cs}]*[^\\p{Cc}\\p{Cs}\\s])?$');
     expect(s.properties.searches.items.description).toMatch(/trimmed \(no leading or trailing white space\), not empty, 1 to 200 Unicode code points, with no control character and no lone surrogate/);
     expect(s.properties.searches.description).toMatch(/no two the same; a client also keeps no two that differ only in case \(compared by toLowerCase\), keeping the newer: the schema checks exact duplicates only/);
