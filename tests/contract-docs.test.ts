@@ -1011,6 +1011,7 @@ describe('package', () => {
       './golden/key-vectors.json',
       './golden/import-vectors.json',
       './golden/display-vectors.json',
+      './golden/photo-pick-vectors.json',
       './schemas/*',
     ]) {
       expect(pkg.exports, key).toHaveProperty([key]);

@@ -16,11 +16,11 @@ The package ships a few **hand-written helpers**, and only for grammars that are
 contract: the `version` token (`parseVersion`, `compareVersion`, `canonicalInstant`,
 `canonicalVersion`, and the `Hlc` that mints tokens), the facet keys (`parseUserFacetKey`,
 `parseServerFacetKey`, `buildFacetKey` and one builder per family, `parseCollectionRef`, and the
-MFC import's `canonicalMfcId`, `mfcImportOccName` and `importOccIdFromMac`) and the origin trace id
-(`isTraceId`). The coordinator and every client must order and validate these identically, so they
-live next to the protos with shared test files, `golden/version-vectors.json`,
-`golden/key-vectors.json` and `golden/import-vectors.json`. Convenience wrappers and UI helpers
-still belong in `fc-shared`.
+MFC import's `canonicalMfcId`, `mfcImportOccName` and `importOccIdFromMac`), the public image address
+(`isPublicImageUrl`) and the origin trace id (`isTraceId`). The coordinator and every client
+must order and validate these identically, so they live next to the protos with shared test files,
+`golden/version-vectors.json`, `golden/key-vectors.json`, `golden/import-vectors.json` and
+`golden/photo-pick-vectors.json`. Convenience wrappers and UI helpers still belong in `fc-shared`.
 
 ## The compatibility rule
 
@@ -84,10 +84,12 @@ src/index.ts                         re-export barrel
 src/version.ts, src/hlc.ts           version grammar, comparator, HLC
 src/sync-vocabulary.ts               facet-key grammar and builders, occurrence statuses, REJECTED reason codes
 src/origin-trace.ts                  the form of SyncEvent.origin_trace (isTraceId)
+src/public-image.ts                  the public address of a derivative, on one media base (isPublicImageUrl)
 golden/version-vectors.json          version cases every implementation tests against
 golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
 golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
 golden/display-vectors.json          display restriction cases: scope, level and viewer context
+golden/photo-pick-vectors.json       photo pick pushes (valid, malformed, foreign, over-long, DELETE) and last-writer-wins orders
 schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
 scripts/buf-breaking.sh              buf breaking against the previous v* tag
 scripts/schema-growth.ts             no published payload schema gains a property
@@ -207,6 +209,18 @@ which is not an error; the label (`name`, and `maker`, `series`, `scale`, `editi
 figure is shown under while it has no card, and a card always wins. `refs` keeps up to ten http or https links
 as the user wrote them, in RFC 3986 characters only, and nothing fetches them. Both schemas are closed: a
 property added later is a new facet, never a new property of these.
+
+## Photo pick
+
+`photo/{head_id}/pick` (0.8.0, additive: one new key, no field and no existing schema changed) is the photo a
+user chose to show for a figure ("Use for me"), synced like any other facet. Its payload is the public address
+of one derivative, as `ProductImage.url` carries it: the media base, a slash and 64 lowercase hex characters,
+https only. The schema checks that form; `isPublicImageUrl(url, mediaBase)` also checks that the address is on
+the server's own media base, and a Push of any other is REJECTED `payload_invalid`. Last writer wins across
+devices, and "use default" is a DELETE. A client shows a pick only while the figure's image list carries that
+address, so a pick never shows a withheld image, and a pick by itself puts no figure in the library.
+`golden/photo-pick-vectors.json` has the pushes (valid, malformed, foreign host, over-long, DELETE) and the
+last-writer-wins orders.
 
 ## Origin trace
 

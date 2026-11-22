@@ -68,6 +68,7 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
     ...WIDEST,
   },
   'pref/import': { import_policy: 'FAVOR_APP', disposition_list: '9'.repeat(20), ...WIDEST },
+  'photo/pick': { url: `https://${'a'.repeat(439)}/${'f'.repeat(64)}`, ...WIDEST },
   'occ/origin': ORIGIN,
   'imp/figure': {
     rev: 'A'.repeat(128),

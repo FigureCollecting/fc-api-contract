@@ -38,6 +38,7 @@ export const USER_FACET_FAMILIES = [
   'tag/name',
   'res/answer',
   'pref/import',
+  'photo/pick',
 ] as const;
 export type UserFacetFamily = (typeof USER_FACET_FAMILIES)[number];
 
@@ -75,7 +76,8 @@ export type UserFacetKey =
   | { family: 'coll/name'; collKind: CollectionKind; collId: string }
   | { family: 'tag/name'; tagId: string }
   | { family: 'res/answer'; site: string; headId: string }
-  | { family: 'pref/import'; site: string };
+  | { family: 'pref/import'; site: string }
+  | { family: 'photo/pick'; headId: string };
 
 export type ServerFacetKey =
   | { family: 'occ/origin'; occId: string }
@@ -107,6 +109,7 @@ export const USER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<UserFacetFamily, string
   'tag/name': 'schemas/tag-name.schema.json',
   'res/answer': 'schemas/res-answer.schema.json',
   'pref/import': 'schemas/pref-import.schema.json',
+  'photo/pick': 'schemas/photo-pick.schema.json',
 };
 
 /** Package-relative path of each server-owned family's payload JSON Schema. */
@@ -209,6 +212,12 @@ const RULES: readonly Rule[] = [
     from: (g) => ({ family: 'pref/import', site: g.site! }),
   },
   {
+    family: 'photo/pick',
+    owner: 'user',
+    pattern: new RegExp(`^photo/(?<head>${UUID})/pick$`),
+    from: (g) => ({ family: 'photo/pick', headId: g.head! }),
+  },
+  {
     family: 'occ/origin',
     owner: 'server',
     pattern: new RegExp(`^occ/(?<occ>${UUID})/origin$`),
@@ -307,6 +316,13 @@ export function answerKey(site: string, headId: string): string {
 export function importPrefKey(site: string): string {
   return `pref/${siteOf(site)}/import`;
 }
+/**
+ * The photo the user chose to show for a figure: photo/{head_id}/pick (sync.proto rule 6 PHOTO PICK).
+ * Last writer wins across devices; "use default" is a DELETE of this key.
+ */
+export function photoPickKey(headId: string): string {
+  return `photo/${uuid(headId, 'a head id')}/pick`;
+}
 
 /** Build the canonical key of any family. parse(buildFacetKey(x)) deep-equals x with its ids lowercased. */
 export function buildFacetKey(key: FacetKey): string {
@@ -335,6 +351,8 @@ export function buildFacetKey(key: FacetKey): string {
       return answerKey(k.site as string, k.headId as string);
     case 'pref/import':
       return importPrefKey(k.site as string);
+    case 'photo/pick':
+      return photoPickKey(k.headId as string);
     case 'imp/import':
       return importMarkerKey(k.site as string);
     case 'imp/figure':

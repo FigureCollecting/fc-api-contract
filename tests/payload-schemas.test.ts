@@ -119,6 +119,9 @@ describe('payload schemas', () => {
     ['res/answer', { item: 'align', rev: 'A3:x', choice: 'dismiss', ...DISPLAY }],
     ['pref/import', { import_policy: 'ASK', ...DISPLAY }],
     ['pref/import', { import_policy: 'FAVOR_MFC', disposition_list: '206369', ...DISPLAY }],
+    ['photo/pick', { url: `https://images.figurecollecting.com/d/${'0123456789abcdef'.repeat(4)}`, ...DISPLAY }],
+    ['photo/pick', { url: `https://media.example.test:8443/public/img_v1/${'f'.repeat(64)}`, ...DISPLAY }],
+    ['photo/pick', { url: `https://${'a'.repeat(439)}/${'f'.repeat(64)}`, ...DISPLAY }], // 512 characters
     ['imp/figure', CARD],
     ['imp/figure', { ...CARD, kind: 'divergence', fields: { score: { status: 'nochange' }, note: { app: 'mine', mfc: 'theirs', status: 'nochange' }, wishability: { status: 'nochange' } } }],
     ['imp/held', { rev: 'H:5', held: [{ key: `occ/${UUID2}/status`, payload: JSON.stringify({ status: 'former', ...DISPLAY }), version: VERSION, reason: 'late_after_knowing' }] }],
@@ -227,6 +230,14 @@ describe('payload schemas', () => {
     ['pref/import', 'no import policy', { ...DISPLAY }],
     ['pref/import', 'an mfc_only preference (0.3.0 applies and lists every change only MFC made; there is no HOLD)', { import_policy: 'ASK', mfc_only: 'HOLD', ...DISPLAY }],
     ['pref/import', 'a list id with a leading zero', { import_policy: 'ASK', disposition_list: '0206369', ...DISPLAY }],
+    ['photo/pick', 'no url', { ...DISPLAY }],
+    ['photo/pick', 'an empty url (use default is a DELETE)', { url: '', ...DISPLAY }],
+    ['photo/pick', 'a null url (use default is a DELETE)', { url: null, ...DISPLAY }],
+    ['photo/pick', 'an http url', { url: `http://images.figurecollecting.com/d/${'f'.repeat(64)}`, ...DISPLAY }],
+    ['photo/pick', 'a url with a query', { url: `https://images.figurecollecting.com/d/${'f'.repeat(64)}?w=1`, ...DISPLAY }],
+    ['photo/pick', 'a url past 512 characters', { url: `https://${'a'.repeat(440)}/${'f'.repeat(64)}`, ...DISPLAY }],
+    ['photo/pick', 'a derivative id alone', { url: 'f'.repeat(64), ...DISPLAY }],
+    ['photo/pick', 'a derivative id beside the url', { url: `https://images.figurecollecting.com/d/${'f'.repeat(64)}`, derivative_id: 'f'.repeat(64), ...DISPLAY }],
     ['imp/figure', 'an unknown kind', { ...CARD, kind: 'maybe' }],
     ['imp/figure', 'a held MFC change (no such item in 0.3.0)', { ...CARD, kind: 'mfc_change' }],
     ['imp/figure', 'no wished counts', { ...CARD, counts: { owned: ZERO, ordered: ZERO } }],
@@ -269,6 +280,7 @@ describe('payload schemas', () => {
     'tag/name': { name: 'red' },
     'res/answer': { item: 'figure', rev: 'D:1', choice: 'keep' },
     'pref/import': { import_policy: 'ASK' },
+    'photo/pick': { url: `https://images.figurecollecting.com/d/${'f'.repeat(64)}` },
   };
   const BAD_DISPLAY = [
     ['month 13', { edited_at: '2026-13-14T06:29:58-05:00', tz: DISPLAY.tz }],

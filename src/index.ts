@@ -156,6 +156,7 @@ export {
   parseServerFacetKey,
   parseUserFacetKey,
   payloadSchemaPath,
+  photoPickKey,
   tagNameKey,
   ufFacetKey,
   ufKindTagKey,
@@ -180,3 +181,5 @@ export type {
 } from './sync-vocabulary.js';
 
 export { isTraceId } from './origin-trace.js';
+
+export { PUBLIC_IMAGE_URL_MAX_LENGTH, PUBLIC_IMAGE_URL_PATTERN, isPublicImageUrl } from './public-image.js';

@@ -27,6 +27,7 @@
     "./golden/key-vectors.json": "./golden/key-vectors.json",
     "./golden/import-vectors.json": "./golden/import-vectors.json",
     "./golden/display-vectors.json": "./golden/display-vectors.json",
+    "./golden/photo-pick-vectors.json": "./golden/photo-pick-vectors.json",
     "./schemas/*": "./schemas/*",
     "./package.json": "./package.json"
   },

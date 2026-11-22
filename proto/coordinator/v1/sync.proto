@@ -222,6 +222,7 @@
 //                                            "copies"?, "fields"?}
 //         pref/{site}/import                {"import_policy": "ASK"|"FAVOR_APP"|
 //                                            "FAVOR_MFC", "disposition_list"?}
+//         photo/{head_id}/pick              {"url": "<media base>/<64 hex>"}
 //
 //     Every payload in this table also carries edited_at (ISO-8601 with the
 //     device's local offset) and tz (IANA name), for display only; {} carries
@@ -303,6 +304,26 @@
 //     own if the user gave one. They are kept as written and never fetched by the
 //     service or by a client on its own; a client opens one only when the user
 //     taps it.
+//
+//     PHOTO PICK (0.8.0). photo/{head_id}/pick is the photo the user chose to
+//     show for the figure {head_id} ("Use for me"), in place of its primary.
+//     Its payload is the public address of one derivative, exactly as
+//     ProductImage.url carries it (catalog.proto): the public media base, a
+//     slash and the derivative_id, 64 lowercase hex characters, over https,
+//     with no credentials, query or fragment. A server accepts only an address
+//     on its own media base (isPublicImageUrl) and answers any other REJECTED
+//     payload_invalid, so nothing but a public image is ever fetched for a
+//     pick. LAST WRITER WINS: there is one pick per user and figure, the event
+//     with the greater version replaces the other on every device, and two
+//     picks are never merged. "Use default" is a DELETE: the tombstone wins or
+//     loses by its version like any pick, and while it stands the figure shows
+//     its primary on every device. A client shows a picked photo only while
+//     the figure's GetProductImages list carries that address; when the list
+//     does not (the image is gone, or a display restriction withholds it from
+//     this viewer: catalog.proto DISPLAY RESTRICTIONS) it shows the default
+//     and keeps the facet. A pick is a display preference and never a library
+//     reference: it puts no figure in the library by itself.
+//     golden/photo-pick-vectors.json has the cases.
 //
 //     LIBRARY. A figure is in the library while any live user facet
 //     references it: a live occurrence's head or any live uf/{head_id} facet.
