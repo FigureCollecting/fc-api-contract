@@ -3,61 +3,60 @@ import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import * as contract from '../src/index.js';
 import {
   FACET_KEY_GRAMMARS,
-  PUBLIC_IMAGE_URL_MAX_LENGTH,
-  PUBLIC_IMAGE_URL_PATTERN,
   USER_FACET_FAMILIES,
   USER_FACET_PAYLOAD_SCHEMAS,
   buildFacetKey,
   compareVersion,
   isCanonicalVersion,
-  isPublicImageUrl,
   parseServerFacetKey,
   parseUserFacetKey,
   payloadSchemaPath,
   photoPickKey,
 } from '../src/index.js';
 
-// The photo pick (sync.proto rule 6 PHOTO PICK): photo/{head_id}/pick, the photo a user chose to show for a figure.
-// golden/photo-pick-vectors.json is what the coordinator's Push validation and the client both replay.
+// The photo pick (sync.proto rule 6 PHOTO PICK): photo/{head_id}/pick, the photo a user chose to show for a figure,
+// named by its derivative_id and never by an address. golden/photo-pick-vectors.json is what the coordinator's Push
+// validation and the client both replay.
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const prose = (text: string) => text.replace(/^\s*(\/\/|\*) ?/gm, '').replace(/\s+/g, ' ');
 
 interface Push {
   name: string;
   op: 'UPSERT' | 'DELETE';
-  mediaBase?: string;
   body?: Record<string, unknown>;
   raw?: string;
   expect: 'accepted' | 'payload_invalid';
-  why?: 'schema' | 'foreign' | 'delete_payload';
+  why?: 'schema' | 'delete_payload';
 }
 interface PickEvent {
   op: 'UPSERT' | 'DELETE';
   version: string;
-  url?: string;
+  derivative_id?: string;
 }
 interface Vectors {
-  mediaBase: string;
   key: string;
   parsedKey: { family: 'photo/pick'; headId: string };
   pushes: Push[];
+  shown: { name: string; pick: string | null; images: string[]; expect: string | null }[];
   lastWriterWins: { name: string; events: PickEvent[]; expect: string | null }[];
 }
 const vectors = JSON.parse(read('golden/photo-pick-vectors.json')) as Vectors;
 
 const HEAD = '5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b';
-const BASE = 'https://images.figurecollecting.com/d';
 const HEX = '0123456789abcdef'.repeat(4);
+const ID = /^[0-9a-f]{64}$/;
 const DISPLAY = { edited_at: '2026-11-21T10:15:00-06:00', tz: 'America/Chicago' };
 
 const schema = JSON.parse(read('schemas/photo-pick.schema.json')) as {
   description: string;
   required: string[];
-  properties: { url: { maxLength: number; pattern: string; description: string } };
+  properties: Record<string, { pattern?: string; description?: string }>;
 };
-const valid = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
+const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
+const valid = (payload: unknown): boolean => validate(payload) === true;
 
 describe('photo/pick: the key', () => {
   it('is a user-owned family, with a grammar and a payload schema of its own', () => {
@@ -84,6 +83,7 @@ describe('photo/pick: the key', () => {
     ['no head', 'photo/pick'],
     ['an empty head', 'photo//pick'],
     ['a trailing segment (a pick is per figure, never per copy or per device)', `photo/${HEAD}/pick/0`],
+    ['the image id in the key (it is the payload: one pick per figure)', `photo/${HEAD}/pick/${HEX}`],
     ['a trailing slash', `photo/${HEAD}/pick/`],
     ['another suffix', `photo/${HEAD}/choice`],
     ['an uppercase family', `PHOTO/${HEAD}/pick`],
@@ -113,107 +113,54 @@ describe('photo/pick: the key', () => {
   });
 });
 
-describe('isPublicImageUrl: the address ProductImage.url carries, on this server\'s media base', () => {
-  it('accepts exactly <base>/<64 lowercase hex>', () => {
-    expect(isPublicImageUrl(`${BASE}/${HEX}`, BASE)).toBe(true);
-    expect(isPublicImageUrl(`${BASE}/${'f'.repeat(64)}`, BASE)).toBe(true);
+describe('photo-pick payload schema', () => {
+  it('is closed and carries the image id, the display fields and nothing else', () => {
+    expect(schema.required).toEqual(['derivative_id', 'edited_at', 'tz']);
+    expect(Object.keys(schema.properties)).toEqual(['derivative_id', 'edited_at', 'tz']);
+    expect(schema.properties.derivative_id!.pattern).toBe('^[0-9a-f]{64}$');
+    expect(valid({ derivative_id: HEX, ...DISPLAY })).toBe(true);
+    expect(valid({ derivative_id: HEX, ...DISPLAY, mask_id: HEX })).toBe(false);
   });
 
-  it('reads the base as the coordinator and the spine do: trailing slashes trimmed and nothing else', () => {
-    expect(isPublicImageUrl(`${BASE}/${HEX}`, `${BASE}/`)).toBe(true);
-    expect(isPublicImageUrl(`${BASE}/${HEX}`, `${BASE}///`)).toBe(true);
-    expect(isPublicImageUrl(`${BASE}/${HEX}`, ` ${BASE}`)).toBe(false);
-    expect(isPublicImageUrl(`${BASE}/${HEX}`, BASE.toUpperCase())).toBe(false);
+  it('carries no address: a url is neither the id nor a property beside it', () => {
+    expect(valid({ url: `https://images.figurecollecting.com/d/${HEX}`, ...DISPLAY })).toBe(false);
+    expect(valid({ derivative_id: `https://images.figurecollecting.com/d/${HEX}`, ...DISPLAY })).toBe(false);
+    expect(valid({ derivative_id: HEX, url: `https://images.figurecollecting.com/d/${HEX}`, ...DISPLAY })).toBe(false);
+    expect(schema.properties).not.toHaveProperty('url');
   });
 
-  it.each([
-    ['another host', `https://evil.example/d/${HEX}`],
-    ['the media host as a prefix of another', `https://images.figurecollecting.com.evil.example/d/${HEX}`],
-    ['another path on the media host', `https://images.figurecollecting.com/o/${HEX}`],
-    ['a path below the base', `${BASE}/x/${HEX}`],
-    ['a path above the base', `https://images.figurecollecting.com/${HEX}`],
-    ['a base that only starts like it', `${BASE}d/${HEX}`],
-    ['another port', `https://images.figurecollecting.com:8443/d/${HEX}`],
-    ['http', `http://images.figurecollecting.com/d/${HEX}`],
-    ['a query', `${BASE}/${HEX}?w=1`],
-    ['a fragment', `${BASE}/${HEX}#x`],
-    ['63 hex characters', `${BASE}/${HEX.slice(1)}`],
-    ['65 hex characters', `${BASE}/${HEX}0`],
-    ['uppercase hex', `${BASE}/${HEX.toUpperCase()}`],
-    ['a trailing newline', `${BASE}/${HEX}\n`],
-    ['the base alone', BASE],
-    ['the base and a slash', `${BASE}/`],
-    ['empty', ''],
-  ])('refuses %s', (_why, url) => {
-    expect(isPublicImageUrl(url, BASE)).toBe(false);
+  it('states last writer wins, the DELETE and that the id names ProductImage.derivative_id', () => {
+    expect(schema.description).toMatch(/Last writer wins/);
+    expect(schema.description).toMatch(/"Use default" is a DELETE with an empty payload/);
+    expect(schema.properties.derivative_id!.description).toMatch(/ProductImage\.derivative_id/);
+    expect(schema.properties.derivative_id!.description).toMatch(/Never an address/);
   });
 
-  it.each([
-    ['null', null],
-    ['undefined', undefined],
-    ['a number', 7],
-    ['a list holding the address', [`${BASE}/${HEX}`]],
-    ['a URL object', new URL(`${BASE}/${HEX}`)],
-    ['an object that prints as the address', { toString: () => `${BASE}/${HEX}` }],
-  ])('refuses a value that is %s, not a string', (_why, value) => {
-    expect(isPublicImageUrl(value, BASE)).toBe(false);
-  });
-
-  it.each([
-    ['empty (images off)', ''],
-    ['only slashes', '///'],
-    ['null', null],
-    ['undefined', undefined],
-    ['a number', 7],
-  ])('refuses every address when the base is %s', (_why, base) => {
-    expect(isPublicImageUrl(`${BASE}/${HEX}`, base as never)).toBe(false);
-    expect(isPublicImageUrl(`/${HEX}`, base as never)).toBe(false);
-    expect(isPublicImageUrl(`https:///${HEX}`, base as never)).toBe(false);
-  });
-
-  it('refuses an http base even for an address on it: a public image is https', () => {
-    const base = 'http://images.figurecollecting.com/d';
-    expect(isPublicImageUrl(`${base}/${HEX}`, base)).toBe(false);
-  });
-
-  it('refuses an address past the length the schema allows, even on a base that long', () => {
-    const fits = `https://h.example/${'p'.repeat(PUBLIC_IMAGE_URL_MAX_LENGTH - 18 - 1 - 64)}`;
-    expect(`${fits}/${HEX}`).toHaveLength(PUBLIC_IMAGE_URL_MAX_LENGTH);
-    expect(isPublicImageUrl(`${fits}/${HEX}`, fits)).toBe(true);
-    expect(isPublicImageUrl(`${fits}p/${HEX}`, `${fits}p`)).toBe(false);
-  });
-
-  it('shares its form and its length with the schema, so the helper and a schema validator never disagree on a url', () => {
-    expect(schema.properties.url.pattern).toBe(PUBLIC_IMAGE_URL_PATTERN);
-    expect(schema.properties.url.maxLength).toBe(PUBLIC_IMAGE_URL_MAX_LENGTH);
-    expect(PUBLIC_IMAGE_URL_MAX_LENGTH).toBe(512);
-  });
-
-  it('never accepts a url the schema refuses, whatever the base', () => {
-    const hex = fc.stringMatching(/^[0-9a-f]{64}$/);
-    const base = fc.oneof(
-      fc.constantFrom(BASE, `${BASE}/`, 'https://media.example.test:8443/a/b', 'https://h', 'http://h/d', 'https://h/../d', 'https://h/d?x=1', 'https://H/d', 'https://u:p@h/d', '', '/', 'https://'),
-      fc.webUrl(),
+  it('accepts exactly the strings of 64 lowercase hex characters', () => {
+    const near = fc.oneof(
+      fc.stringMatching(/^[0-9a-f]{64}$/),
+      fc.stringMatching(/^[0-9a-fA-F]{60,68}$/),
+      fc.stringMatching(/^[0-9a-f]{0,130}$/),
+      fc.stringMatching(/^[0-9a-f]{64}$/).map((h) => `${h}\n`),
+      fc.stringMatching(/^[0-9a-f]{63}$/).chain((h) => fc.string({ minLength: 1, maxLength: 1 }).map((c) => h + c)),
       fc.string(),
-    );
-    const tail = fc.oneof(
-      { arbitrary: hex, weight: 5 },
-      { arbitrary: fc.oneof(hex.map((h) => h.toUpperCase()), hex.map((h) => `${h}?x`), hex.map((h) => `x/${h}`), hex.map((h) => `../${h}`), fc.string()), weight: 5 },
     );
     let accepted = 0;
     fc.assert(
-      fc.property(base, tail, fc.boolean(), (b, t, slash) => {
-        const url = `${b}${slash ? '/' : ''}${t}`;
-        if (!isPublicImageUrl(url, b)) return;
-        accepted++;
-        expect(valid({ url, ...DISPLAY }), url).toBe(true);
-        expect(url.startsWith('https://'), url).toBe(true);
-        expect(url, url).not.toMatch(/[?#@\\%\s]|\/\.{1,2}\//);
-        expect(url.slice(url.lastIndexOf('/') + 1), url).toMatch(/^[0-9a-f]{64}$/);
+      fc.property(near, (id) => {
+        const ok = valid({ derivative_id: id, ...DISPLAY });
+        expect(ok, JSON.stringify(id)).toBe(ID.test(id));
+        if (ok) accepted++;
       }),
-      { numRuns: 5000 },
+      { numRuns: 3000 },
     );
-    expect(accepted).toBeGreaterThan(100);
+    expect(accepted).toBeGreaterThan(300);
+  });
+});
+
+describe('the contract ships no address check for a pick', () => {
+  it('exports nothing that takes a media base or a url: a pick is an id, so no host is ever compared', () => {
+    for (const name of ['isPublicImageUrl', 'PUBLIC_IMAGE_URL_PATTERN', 'PUBLIC_IMAGE_URL_MAX_LENGTH']) expect(contract).not.toHaveProperty(name);
   });
 });
 
@@ -227,9 +174,7 @@ describe('golden photo-pick vectors: pushes', () => {
     } catch {
       return { expect: 'payload_invalid', why: 'schema' };
     }
-    if (!valid(payload)) return { expect: 'payload_invalid', why: 'schema' };
-    const url = (payload as { url: string }).url;
-    return isPublicImageUrl(url, p.mediaBase ?? vectors.mediaBase) ? { expect: 'accepted' } : { expect: 'payload_invalid', why: 'foreign' };
+    return valid(payload) ? { expect: 'accepted' } : { expect: 'payload_invalid', why: 'schema' };
   };
 
   it('carries each case exactly one way: a body or a raw payload, and a reason exactly when it is refused', () => {
@@ -245,43 +190,63 @@ describe('golden photo-pick vectors: pushes', () => {
     expect(outcome(p)).toEqual(p.why === undefined ? { expect: p.expect } : { expect: p.expect, why: p.why });
   });
 
-  it('covers a valid pick, a malformed url, a foreign host, an over-long address and the DELETE', () => {
+  it('covers a valid pick, a bad id shape, uppercase hex, a wrong length and the DELETE', () => {
     const count = (prefix: string, expect_: Push['expect'], why?: Push['why']) =>
       vectors.pushes.filter((p) => p.name.startsWith(prefix) && p.expect === expect_ && p.why === why).length;
-    expect(count('a pick', 'accepted')).toBeGreaterThanOrEqual(4);
-    expect(count('malformed', 'payload_invalid', 'schema')).toBeGreaterThanOrEqual(30);
-    expect(count('foreign', 'payload_invalid', 'foreign')).toBeGreaterThanOrEqual(10);
-    expect(count('over-long', 'payload_invalid', 'schema')).toBe(1);
+    expect(count('a pick', 'accepted')).toBe(3);
+    expect(count('bad shape', 'payload_invalid', 'schema')).toBeGreaterThanOrEqual(20);
+    expect(count('uppercase hex', 'payload_invalid', 'schema')).toBe(2);
+    expect(count('wrong length', 'payload_invalid', 'schema')).toBe(5);
     expect(count('DELETE', 'accepted')).toBe(1);
     expect(count('DELETE', 'payload_invalid', 'delete_payload')).toBe(2);
-    expect(vectors.pushes.filter((p) => !/^(a pick|the longest|malformed|foreign|over-long|DELETE)/.test(p.name))).toEqual([]);
+    expect(vectors.pushes.filter((p) => !/^(a pick|bad shape|uppercase hex|wrong length|DELETE)/.test(p.name))).toEqual([]);
   });
 
-  it('puts the length boundary at 512 and 513 characters, the base the same but for one character', () => {
-    const longest = vectors.pushes.find((p) => p.name.startsWith('the longest'))!;
-    const over = vectors.pushes.find((p) => p.name.startsWith('over-long'))!;
-    expect(String(longest.body!.url)).toHaveLength(512);
-    expect(String(over.body!.url)).toHaveLength(513);
-    expect(longest.expect).toBe('accepted');
-    expect(over.mediaBase).toBe(`${longest.mediaBase}p`);
-    expect(String(over.body!.url).startsWith(`${over.mediaBase}/`)).toBe(true);
+  it('writes each wrong-length and uppercase case as what its name says, and nothing else wrong with it', () => {
+    const id = (p: Push) => String(p.body!.derivative_id);
+    for (const p of vectors.pushes.filter((q) => q.name.startsWith('wrong length'))) {
+      const m = /(\d+) characters/.exec(p.name);
+      expect(id(p), p.name).toHaveLength(m === null ? 0 : Number(m[1]));
+      expect(id(p), p.name).toMatch(/^[0-9a-f]*$/);
+    }
+    for (const p of vectors.pushes.filter((q) => q.name.startsWith('uppercase hex'))) {
+      expect(id(p), p.name).toHaveLength(64);
+      expect(id(p), p.name).not.toMatch(ID);
+      expect(id(p).toLowerCase(), p.name).toMatch(ID);
+    }
+    for (const p of vectors.pushes.filter((q) => / in 64 characters/.test(q.name))) expect(id(p), p.name).toHaveLength(64);
+    for (const p of vectors.pushes.filter((q) => q.expect === 'accepted' && q.op === 'UPSERT')) expect(id(p), p.name).toMatch(ID);
+  });
+});
+
+describe('golden photo-pick vectors: what is shown', () => {
+  // The client rule: a pick is shown only while the figure's image list carries its id; otherwise it reads as no pick.
+  const shown = (pick: string | null, images: readonly string[]): string | null => (pick !== null && images.includes(pick) ? pick : null);
+
+  it.each(vectors.shown.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    expect(shown(c.pick, c.images)).toBe(c.expect);
   });
 
-  it('refuses every foreign address by the base alone: each one passes the schema, and is accepted on its own base', () => {
-    for (const p of vectors.pushes.filter((q) => q.why === 'foreign')) {
-      expect(valid(p.body), p.name).toBe(true);
-      const url = String(p.body!.url);
-      expect(isPublicImageUrl(url, url.slice(0, url.lastIndexOf('/'))), p.name).toBe(true);
+  it('writes every id in the cases as a derivative id, and never shows one the list lacks', () => {
+    for (const c of vectors.shown) {
+      for (const id of [...c.images, ...(c.pick === null ? [] : [c.pick])]) expect(id, c.name).toMatch(ID);
+      expect(new Set(c.images).size, c.name).toBe(c.images.length);
+      if (c.expect !== null) expect(c.images, c.name).toContain(c.expect);
+      if (c.expect !== null) expect(c.expect, c.name).toBe(c.pick);
     }
   });
 
-  it('never has the helper accept a url the schema refuses', () => {
-    for (const p of vectors.pushes.filter((q) => q.why === 'schema' && typeof q.body?.url === 'string')) {
-      const url = p.body!.url as string;
-      if (valid({ url, ...DISPLAY })) continue; // refused for something other than its url (a missing or extra property)
-      expect(isPublicImageUrl(url, p.mediaBase ?? vectors.mediaBase), p.name).toBe(false);
-      expect(isPublicImageUrl(url, url.slice(0, url.lastIndexOf('/'))), p.name).toBe(false);
-    }
+  it('covers a pick in the list, a pick no longer in it, an empty list and no pick, and a missing pick reads as no pick', () => {
+    const cases = vectors.shown;
+    expect(cases.filter((c) => c.pick !== null && c.expect === c.pick).length).toBeGreaterThanOrEqual(2);
+    const gone = cases.filter((c) => c.pick !== null && c.expect === null);
+    expect(gone.length).toBeGreaterThanOrEqual(3);
+    expect(gone.some((c) => /no longer in the figure's image list/.test(c.name) && c.images.length > 0)).toBe(true);
+    expect(gone.some((c) => c.images.length === 0)).toBe(true);
+    const none = cases.filter((c) => c.pick === null);
+    expect(none).toHaveLength(1);
+    // "shown as no pick": the outcome of a pick the list lacks is the outcome of having no pick at all
+    for (const c of gone) expect(c.expect).toBe(none[0]!.expect);
   });
 });
 
@@ -291,16 +256,16 @@ describe('golden photo-pick vectors: last writer wins', () => {
   const settle = (events: PickEvent[]) => {
     let held: PickEvent | undefined;
     for (const e of events) if (held === undefined || compareVersion(e.version, held.version) > 0) held = e;
-    return held === undefined || held.op === 'DELETE' ? null : held.url;
+    return held === undefined || held.op === 'DELETE' ? null : held.derivative_id;
   };
 
-  it('uses canonical device versions, a url on every UPSERT and none on a DELETE', () => {
+  it('uses canonical device versions, an id on every UPSERT and none on a DELETE', () => {
     expect(vectors.lastWriterWins.length).toBeGreaterThanOrEqual(6);
     for (const c of vectors.lastWriterWins)
       for (const e of c.events) {
         expect(isCanonicalVersion(e.version), `${c.name}: ${e.version}`).toBe(true);
-        if (e.op === 'UPSERT') expect(isPublicImageUrl(e.url, vectors.mediaBase), c.name).toBe(true);
-        else expect(e.url, c.name).toBeUndefined();
+        if (e.op === 'UPSERT') expect(e.derivative_id, c.name).toMatch(ID);
+        else expect(e.derivative_id, c.name).toBeUndefined();
       }
   });
 
@@ -319,16 +284,6 @@ describe('golden photo-pick vectors: last writer wins', () => {
   });
 });
 
-describe('photo-pick payload schema', () => {
-  it('is closed, requires the url and the display fields, and states the DELETE', () => {
-    expect(schema.required).toEqual(['url', 'edited_at', 'tz']);
-    expect(valid({ url: `${BASE}/${HEX}`, ...DISPLAY })).toBe(true);
-    expect(valid({ url: `${BASE}/${HEX}`, ...DISPLAY, mask: `${BASE}/${HEX}` })).toBe(false);
-    expect(schema.description).toMatch(/"Use default" is a DELETE with an empty payload/);
-    expect(schema.description).toMatch(/Last writer wins/);
-  });
-});
-
 describe('sync.proto and README: the photo pick', () => {
   const sync = read('proto/coordinator/v1/sync.proto');
   const rule6 = prose(sync.slice(sync.indexOf(' 6. USER-OWNED FACET KEYS'), sync.indexOf(' 7. TRANSACTIONS, AND WHAT IS DEFERRED')));
@@ -336,13 +291,14 @@ describe('sync.proto and README: the photo pick', () => {
   const pkg = JSON.parse(read('package.json')) as { exports: Record<string, string> };
 
   it('lists the key in the user-owned table with its payload', () => {
-    expect(rule6).toContain('photo/{head_id}/pick {"url": "<media base>/<64 hex>"}');
+    expect(rule6).toContain('photo/{head_id}/pick {"derivative_id": "64 lowercase hex"}');
   });
 
-  it('says what the address is and that a server accepts only one on its own media base', () => {
+  it('says the pick is an image id, never an address, so no host is trusted or compared', () => {
     expect(rule6).toMatch(/PHOTO PICK \(0\.9\.0\)\. photo\/\{head_id\}\/pick is the photo the user chose to show for the figure \{head_id\}/);
-    expect(rule6).toMatch(/exactly as ProductImage\.url carries it \(catalog\.proto\): the public media base, a slash and the derivative_id, 64 lowercase hex characters, over https, with no credentials, query or fragment/);
-    expect(rule6).toMatch(/A server accepts only an address on its own media base \(isPublicImageUrl\) and answers any other REJECTED payload_invalid/);
+    expect(rule6).toMatch(/Its payload names one derivative by its derivative_id, as ProductImage\.derivative_id carries it \(catalog\.proto\): the 64 lowercase hex characters of the SHA-256 of its bytes/);
+    expect(rule6).toMatch(/Never an address: a pick carries no url, host or path, so nothing a device pushes is ever fetched/);
+    expect(rule6).not.toMatch(/isPublicImageUrl|media base \(isPublic/);
   });
 
   it('states last writer wins and that "use default" is a DELETE', () => {
@@ -350,16 +306,19 @@ describe('sync.proto and README: the photo pick', () => {
     expect(rule6).toMatch(/"Use default" is a DELETE: the tombstone wins or loses by its version like any pick, and while it stands the figure shows its primary on every device/);
   });
 
-  it('keeps a pick from showing what the image list no longer carries, and out of the library', () => {
-    expect(rule6).toMatch(/A client shows a picked photo only while the figure's GetProductImages list carries that address/);
+  it('shows a pick only from the figure\'s own image list, and keeps it out of the library', () => {
+    expect(rule6).toMatch(/A client shows a pick only while the figure's GetProductImages list carries an image with that derivative_id, and draws it from that entry's url/);
+    expect(rule6).toMatch(/it shows the default, exactly as if there were no pick, and keeps the facet/);
+    expect(rule6).toMatch(/The server checks the id's form only/);
     expect(rule6).toMatch(/A pick is a display preference and never a library reference/);
   });
 
-  it('README names the facet, its vectors and the helper, and package.json exports the vectors', () => {
+  it('README names the facet and its vectors, and package.json exports the vectors', () => {
     expect(readme).toMatch(/## Photo pick/);
     expect(readme).toMatch(/`photo\/\{head_id\}\/pick` \(0\.9\.0, additive: one new key, no field and no existing schema changed\)/);
     expect(readme).toContain('golden/photo-pick-vectors.json');
-    expect(readme).toContain('isPublicImageUrl');
+    expect(readme).not.toContain('isPublicImageUrl');
+    expect(readme).not.toContain('src/public-image.ts');
     expect(pkg.exports['./golden/photo-pick-vectors.json']).toBe('./golden/photo-pick-vectors.json');
   });
 });

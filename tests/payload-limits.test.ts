@@ -68,7 +68,7 @@ const WORST: Record<UserFacetFamily | ServerFamily, object> = {
     ...WIDEST,
   },
   'pref/import': { import_policy: 'FAVOR_APP', disposition_list: '9'.repeat(20), ...WIDEST },
-  'photo/pick': { url: `https://${'a'.repeat(439)}/${'f'.repeat(64)}`, ...WIDEST },
+  'photo/pick': { derivative_id: 'f'.repeat(64), ...WIDEST },
   'pref/theme': { theme: 'system', ...WIDEST },
   'pref/case': { pattern: 'a'.repeat(128), ceiling_tenths_mm: 100000, clearance_tenths_mm: 10000, wall: 'a'.repeat(32), wall_custom: '#ffffff', arrange: 'a'.repeat(64), show_estimated: false, ...WIDEST },
   // ten distinct searches, each 200 code points JSON.stringify writes as six bytes (U+000E..U+0017 have no short escape)
