@@ -358,6 +358,11 @@ describe('golden photo-pick vectors: ER merges', () => {
       if (shown === null && decider?.op === 'UPSERT') shown = showIf(c.events.find((e) => headOf(e) === c.card.head_id), c.images);
       return { shown, write_to: decider === undefined ? c.card.head_id : headOf(decider) };
     },
+    'the survivor plus the last absorbed head only': (c) => {
+      const other = c.card.requested_as.filter((h) => h !== c.card.head_id).at(-1);
+      const decider = c.events.filter((e) => [c.card.head_id, other].includes(headOf(e))).sort(byVersionThenHead)[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
     'the survivor plus one absorbed head only': (c) => {
       const other = c.card.requested_as.find((h) => h !== c.card.head_id);
       const decider = c.events.filter((e) => [c.card.head_id, other].includes(headOf(e))).sort(byVersionThenHead)[0];
@@ -431,7 +436,7 @@ describe('golden photo-pick vectors: ER merges', () => {
 
   it('covers the cases the rule decides', () => {
     const names = vectors.merged.map((c) => c.name).join(' | ');
-    for (const re of [/use default on the survivor/, /absorbed head only/, /later pick on the absorbed head/, /not in the merged figure's image list/, /equal versions/, /not among requested_as/, /outside the card/, /no event on any head/, /tombstone on the absorbed head/, /lower head is the survivor/, /higher counter on the higher head/, /survivor's older pick is in the list/, /three merged heads/, /a pick on the lower head and a tombstone on the higher/, /a tombstone on the lower head and a pick on the higher/, /the device id decides/, /the microsecond decides/])
+    for (const re of [/use default on the survivor/, /absorbed head only/, /later pick on the absorbed head/, /not in the merged figure's image list/, /equal versions/, /not among requested_as/, /outside the card/, /no event on any head/, /tombstone on the absorbed head/, /lower head is the survivor/, /higher counter on the higher head/, /survivor's older pick is in the list/, /three merged heads, the newest pick on the second absorbed head/, /three merged heads, the newest pick on the first absorbed head/, /a pick on the lower head and a tombstone on the higher/, /a tombstone on the lower head and a pick on the higher/, /the device id decides/, /the microsecond decides/])
       expect(names).toMatch(re);
   });
 });
