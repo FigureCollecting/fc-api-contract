@@ -60,9 +60,8 @@ const schema = JSON.parse(read('schemas/photo-pick.schema.json')) as {
 const valid = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 
 describe('photo/pick: the key', () => {
-  it('is the seventeenth user-owned family, with a grammar and a payload schema of its own', () => {
+  it('is a user-owned family, with a grammar and a payload schema of its own', () => {
     expect(USER_FACET_FAMILIES).toContain('photo/pick');
-    expect(USER_FACET_FAMILIES).toHaveLength(17);
     const grammar = FACET_KEY_GRAMMARS.filter((g) => g.family === 'photo/pick');
     expect(grammar.map((g) => g.owner)).toEqual(['user']);
     expect(USER_FACET_PAYLOAD_SCHEMAS['photo/pick']).toBe('schemas/photo-pick.schema.json');
@@ -341,7 +340,7 @@ describe('sync.proto and README: the photo pick', () => {
   });
 
   it('says what the address is and that a server accepts only one on its own media base', () => {
-    expect(rule6).toMatch(/PHOTO PICK \(0\.8\.0\)\. photo\/\{head_id\}\/pick is the photo the user chose to show for the figure \{head_id\}/);
+    expect(rule6).toMatch(/PHOTO PICK \(0\.9\.0\)\. photo\/\{head_id\}\/pick is the photo the user chose to show for the figure \{head_id\}/);
     expect(rule6).toMatch(/exactly as ProductImage\.url carries it \(catalog\.proto\): the public media base, a slash and the derivative_id, 64 lowercase hex characters, over https, with no credentials, query or fragment/);
     expect(rule6).toMatch(/A server accepts only an address on its own media base \(isPublicImageUrl\) and answers any other REJECTED payload_invalid/);
   });
@@ -358,7 +357,7 @@ describe('sync.proto and README: the photo pick', () => {
 
   it('README names the facet, its vectors and the helper, and package.json exports the vectors', () => {
     expect(readme).toMatch(/## Photo pick/);
-    expect(readme).toMatch(/`photo\/\{head_id\}\/pick` \(0\.8\.0, additive: one new key, no field and no existing schema changed\)/);
+    expect(readme).toMatch(/`photo\/\{head_id\}\/pick` \(0\.9\.0, additive: one new key, no field and no existing schema changed\)/);
     expect(readme).toContain('golden/photo-pick-vectors.json');
     expect(readme).toContain('isPublicImageUrl');
     expect(pkg.exports['./golden/photo-pick-vectors.json']).toBe('./golden/photo-pick-vectors.json');

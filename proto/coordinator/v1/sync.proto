@@ -223,6 +223,13 @@
 //         pref/{site}/import                {"import_policy": "ASK"|"FAVOR_APP"|
 //                                            "FAVOR_MFC", "disposition_list"?}
 //         photo/{head_id}/pick              {"url": "<media base>/<64 hex>"}
+//         pref/theme                        {"theme": "dark"|"light"|"system"}
+//         pref/case                         {"pattern", "ceiling_tenths_mm",
+//                                            "clearance_tenths_mm", "wall",
+//                                            "wall_custom", "arrange",
+//                                            "show_estimated"}
+//         pref/recents                      {"searches": ["1..200 code points"],
+//                                            1 to 10, newest first}
 //
 //     Every payload in this table also carries edited_at (ISO-8601 with the
 //     device's local offset) and tz (IANA name), for display only; {} carries
@@ -305,7 +312,7 @@
 //     service or by a client on its own; a client opens one only when the user
 //     taps it.
 //
-//     PHOTO PICK (0.8.0). photo/{head_id}/pick is the photo the user chose to
+//     PHOTO PICK (0.9.0). photo/{head_id}/pick is the photo the user chose to
 //     show for the figure {head_id} ("Use for me"), in place of its primary.
 //     Its payload is the public address of one derivative, exactly as
 //     ProductImage.url carries it (catalog.proto): the public media base, a
@@ -324,6 +331,34 @@
 //     and keeps the facet. A pick is a display preference and never a library
 //     reference: it puts no figure in the library by itself.
 //     golden/photo-pick-vectors.json has the cases.
+//
+//     ACCOUNT PREFERENCES (0.9.0; Ross, 2026-11-21). The photo picks, the case
+//     look, the theme and the recent searches belong to the account, not to a
+//     device: a device shows what the account holds, whichever device wrote
+//     it. The photo pick is keyed per figure (PHOTO PICK); pref/theme,
+//     pref/case and pref/recents are one key each per account. pref/theme is
+//     the app theme, where "system" follows each device's own light or dark
+//     setting at display time. pref/case is the look of the display case: the
+//     cabinets that line the wall, the ceiling, the clearance above a figure,
+//     the wall's colour, the order the figures stand in and whether estimated
+//     sizes are outlined. Its ids are the app's own: a reader that does not
+//     know one shows its default for that field and keeps the facet.
+//     pref/recents is the recent searches, newest first. What stays on the
+//     device is not in these payloads: the order of the case's tabs, the depth
+//     control's shape and the dismissed do-not-fit list.
+//     LAST WRITER WINS PER KEY, for all four as for every facet: the event
+//     with the greater version (rule 5) replaces the other on every device,
+//     and the server bounds a device's clock (version_future), so no device
+//     wins by running fast. A value is replaced whole: two looks are never
+//     merged field by field, nor two lists of searches. A DELETE is the app's
+//     default (the default theme, the default look, an empty list) and wins
+//     or loses by its version like any value.
+//     FIRST SIGN-IN. A device that holds values from before 0.9.0 pushes each
+//     once, after its first Delta, and only for a key the account has no
+//     event for, live or tombstoned; where the account has one, the account's
+//     value replaces the device's. Recent searches are private to the user:
+//     neither the coordinator nor a client logs them.
+//     golden/account-pref-vectors.json has the cases.
 //
 //     LIBRARY. A figure is in the library while any live user facet
 //     references it: a live occurrence's head or any live uf/{head_id} facet.

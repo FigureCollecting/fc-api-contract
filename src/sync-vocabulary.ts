@@ -21,6 +21,13 @@ export type OccField = (typeof OCC_FIELDS)[number];
 export const UF_FIELDS = ['score', 'note', 'wishability', 'label', 'refs'] as const;
 export type UfField = (typeof UF_FIELDS)[number];
 
+/**
+ * The preferences that belong to the account, not to a device (sync.proto rule 6 ACCOUNT PREFERENCES):
+ * one key each per account, pref/{name}. The photo pick, the fourth, is keyed per figure (photoPickKey).
+ */
+export const ACCOUNT_PREFS = ['theme', 'case', 'recents'] as const;
+export type AccountPref = (typeof ACCOUNT_PREFS)[number];
+
 export const USER_FACET_FAMILIES = [
   'occ/head',
   'occ/status',
@@ -39,6 +46,9 @@ export const USER_FACET_FAMILIES = [
   'res/answer',
   'pref/import',
   'photo/pick',
+  'pref/theme',
+  'pref/case',
+  'pref/recents',
 ] as const;
 export type UserFacetFamily = (typeof USER_FACET_FAMILIES)[number];
 
@@ -77,7 +87,8 @@ export type UserFacetKey =
   | { family: 'tag/name'; tagId: string }
   | { family: 'res/answer'; site: string; headId: string }
   | { family: 'pref/import'; site: string }
-  | { family: 'photo/pick'; headId: string };
+  | { family: 'photo/pick'; headId: string }
+  | { family: `pref/${AccountPref}` };
 
 export type ServerFacetKey =
   | { family: 'occ/origin'; occId: string }
@@ -110,6 +121,9 @@ export const USER_FACET_PAYLOAD_SCHEMAS: Readonly<Record<UserFacetFamily, string
   'res/answer': 'schemas/res-answer.schema.json',
   'pref/import': 'schemas/pref-import.schema.json',
   'photo/pick': 'schemas/photo-pick.schema.json',
+  'pref/theme': 'schemas/pref-theme.schema.json',
+  'pref/case': 'schemas/pref-case.schema.json',
+  'pref/recents': 'schemas/pref-recents.schema.json',
 };
 
 /** Package-relative path of each server-owned family's payload JSON Schema. */
@@ -158,6 +172,12 @@ const uf = (field: UfField): Rule => ({
   owner: 'user',
   pattern: new RegExp(`^uf/(?<head>${UUID})/${field}$`),
   from: (g) => ({ family: `uf/${field}`, headId: g.head! }),
+});
+const pref = (name: AccountPref): Rule => ({
+  family: `pref/${name}`,
+  owner: 'user',
+  pattern: new RegExp(`^pref/${name}$`),
+  from: () => ({ family: `pref/${name}` }),
 });
 const imp = (item: ImportItem): Rule => ({
   family: `imp/${item}`,
@@ -217,6 +237,7 @@ const RULES: readonly Rule[] = [
     pattern: new RegExp(`^photo/(?<head>${UUID})/pick$`),
     from: (g) => ({ family: 'photo/pick', headId: g.head! }),
   },
+  ...ACCOUNT_PREFS.map(pref),
   {
     family: 'occ/origin',
     owner: 'server',
@@ -323,6 +344,13 @@ export function importPrefKey(site: string): string {
 export function photoPickKey(headId: string): string {
   return `photo/${uuid(headId, 'a head id')}/pick`;
 }
+/**
+ * One of the account's preferences: pref/theme, pref/case or pref/recents (sync.proto rule 6 ACCOUNT
+ * PREFERENCES). One key per account, last writer wins; a DELETE is the app's default.
+ */
+export function accountPrefKey(name: AccountPref): string {
+  return `pref/${oneOf(ACCOUNT_PREFS, name, 'an account preference')}`;
+}
 
 /** Build the canonical key of any family. parse(buildFacetKey(x)) deep-equals x with its ids lowercased. */
 export function buildFacetKey(key: FacetKey): string {
@@ -353,6 +381,10 @@ export function buildFacetKey(key: FacetKey): string {
       return importPrefKey(k.site as string);
     case 'photo/pick':
       return photoPickKey(k.headId as string);
+    case 'pref/theme':
+    case 'pref/case':
+    case 'pref/recents':
+      return accountPrefKey(family.slice(5) as AccountPref);
     case 'imp/import':
       return importMarkerKey(k.site as string);
     case 'imp/figure':

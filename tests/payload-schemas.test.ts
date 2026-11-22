@@ -281,6 +281,9 @@ describe('payload schemas', () => {
     'res/answer': { item: 'figure', rev: 'D:1', choice: 'keep' },
     'pref/import': { import_policy: 'ASK' },
     'photo/pick': { url: `https://images.figurecollecting.com/d/${'f'.repeat(64)}` },
+    'pref/theme': { theme: 'dark' },
+    'pref/case': { pattern: 'ikea-klingsbo', ceiling_tenths_mm: 24384, clearance_tenths_mm: 254, wall: 'cream', wall_custom: '#d8d2c4', arrange: 'series-scale-name', show_estimated: false },
+    'pref/recents': { searches: ['rem'] },
   };
   const BAD_DISPLAY = [
     ['month 13', { edited_at: '2026-13-14T06:29:58-05:00', tz: DISPLAY.tz }],

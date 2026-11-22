@@ -90,6 +90,7 @@ golden/key-vectors.json              facet-key and MFC-id cases every implementa
 golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
 golden/display-vectors.json          display restriction cases: scope, level and viewer context
 golden/photo-pick-vectors.json       photo pick pushes (valid, malformed, foreign, over-long, DELETE) and last-writer-wins orders
+golden/account-pref-vectors.json     theme, case look and recent searches: pushes and last-writer-wins orders per family
 schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
 scripts/buf-breaking.sh              buf breaking against the previous v* tag
 scripts/schema-growth.ts             no published payload schema gains a property
@@ -212,7 +213,7 @@ property added later is a new facet, never a new property of these.
 
 ## Photo pick
 
-`photo/{head_id}/pick` (0.8.0, additive: one new key, no field and no existing schema changed) is the photo a
+`photo/{head_id}/pick` (0.9.0, additive: one new key, no field and no existing schema changed) is the photo a
 user chose to show for a figure ("Use for me"), synced like any other facet. Its payload is the public address
 of one derivative, as `ProductImage.url` carries it: the media base, a slash and 64 lowercase hex characters,
 https only. The schema checks that form; `isPublicImageUrl(url, mediaBase)` also checks that the address is on
@@ -221,6 +222,17 @@ devices, and "use default" is a DELETE. A client shows a pick only while the fig
 address, so a pick never shows a withheld image, and a pick by itself puts no figure in the library.
 `golden/photo-pick-vectors.json` has the pushes (valid, malformed, foreign host, over-long, DELETE) and the
 last-writer-wins orders.
+
+## Account preferences
+
+`pref/theme`, `pref/case` and `pref/recents` (0.9.0, additive: three new keys, no field and no existing schema changed)
+join the photo pick as what belongs to the account, not to a device (Ross, 2026-11-21): the app theme, the look
+of the display case and the recent searches, one key each per account. One rule for all four: last writer wins
+per key by `version`, a value is replaced whole (two case looks or two lists of searches are never merged), and
+a DELETE is the app's default. The case's tab order, the depth control's shape and the dismissed do-not-fit
+list stay on the device and are not in the payload. A device that holds values from before 0.9.0 pushes each
+once, after its first Delta, and only for a key the account has no event for. `golden/account-pref-vectors.json`
+has the pushes and the last-writer-wins orders for each family.
 
 ## Origin trace
 
