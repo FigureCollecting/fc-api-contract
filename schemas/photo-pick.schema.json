@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/photo-pick.schema.json",
+  "title": "photo/{head_id}/pick payload",
+  "description": "UPSERT payload of photo/{head_id}/pick: the photo the user chose to show for the figure, named by its image id. Last writer wins: the pick with the greater version replaces the other on every device. \"Use default\" is a DELETE with an empty payload, never an empty or null id. A client shows the pick only while the figure's image list carries that id. Serialized, at most 206 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "derivative_id",
+    "edited_at",
+    "tz"
+  ],
+  "properties": {
+    "derivative_id": {
+      "description": "The picked image, as ProductImage.derivative_id names it: the 64 lowercase hex characters of the SHA-256 of the derivative's bytes. Never an address: no scheme, host, path or extension.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "edited_at": {
+      "description": "When the user made the edit, in the device's local time with its offset (at most ±18:00). Display only; never compared, never restamped.",
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,9})?(Z|[+-]((0\\d|1[0-7]):[0-5]\\d|18:00))$"
+    },
+    "tz": {
+      "description": "The device's IANA time zone at edit time, e.g. America/Chicago. Display only.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$"
+    }
+  }
+}

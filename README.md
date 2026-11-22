@@ -88,6 +88,8 @@ golden/version-vectors.json          version cases every implementation tests ag
 golden/key-vectors.json              facet-key and MFC-id cases every implementation tests against
 golden/import-vectors.json           replayed server scenarios, re-imports and review cases (R1-R8)
 golden/display-vectors.json          display restriction cases: scope, level and viewer context
+golden/photo-pick-vectors.json       photo pick pushes (valid, bad id, DELETE), what is shown, and last-writer-wins orders
+golden/account-pref-vectors.json     theme, case look and recent searches: pushes and last-writer-wins orders per family
 schemas/                             JSON Schemas for the facet payloads, one per family, closed forever
 scripts/buf-breaking.sh              buf breaking against the previous v* tag
 scripts/schema-growth.ts             no published payload schema gains a property
@@ -207,6 +209,34 @@ which is not an error; the label (`name`, and `maker`, `series`, `scale`, `editi
 figure is shown under while it has no card, and a card always wins. `refs` keeps up to ten http or https links
 as the user wrote them, in RFC 3986 characters only, and nothing fetches them. Both schemas are closed: a
 property added later is a new facet, never a new property of these.
+
+## Photo pick
+
+`photo/{head_id}/pick` (0.9.0, additive: one new key, no field and no existing schema changed) is the photo a
+user chose to show for a figure ("Use for me"), synced like any other facet. Its payload names the image by its
+`derivative_id`, as `ProductImage.derivative_id` carries it: 64 lowercase hex characters. It is never an
+address, so nothing a device pushes is ever fetched and no host has to be checked. Last writer wins across
+devices, and "use default" is a DELETE. A client shows a pick only while the figure's image list carries an
+image with that id, and draws it from that entry (its tiers when it has them, else its url); otherwise it shows
+the default as if there were no pick, so a pick never shows a withheld image. A pick by itself puts no figure in
+the library. After an ER merge the newest pick event across the merged heads decides, a "use default" included,
+so an older pick on an absorbed figure never comes back.
+`golden/photo-pick-vectors.json` has the pushes (valid, bad shape, uppercase, wrong length, DELETE), what is
+shown for a pick that is or is no longer in the list, the last-writer-wins orders and the merged cases.
+
+## Account preferences
+
+`pref/theme`, `pref/case` and `pref/recents` (0.9.0, additive: three new keys, no field and no existing schema changed)
+join the photo pick as what belongs to the account, not to a device (Ross, 2026-11-21): the app theme, the look
+of the display case and the recent searches, one key each per account. One rule for all four: last writer wins
+per key by `version`, a value is replaced whole (two case looks or two lists of searches are never merged), and
+a DELETE is the app's default. The case's tab order, the depth control's shape and the dismissed do-not-fit
+list stay on the device and are not in the payload. A device that holds values from before 0.9.0 pushes each
+once, after its first Delta, and only for a key the account has no event for. The server keeps only the latest
+value of each of the three: a replaced value is erased, and a DELETE erases the stored one, so no history of
+past searches is kept (`sync.proto` rule 6 RETENTION). A search is trimmed, not empty, at most 200 code points,
+with no control character or lone surrogate. `golden/account-pref-vectors.json` has the pushes and the
+last-writer-wins orders for each family.
 
 ## Origin trace
 

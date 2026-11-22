@@ -1,0 +1,325 @@
+{
+  "$comment": "Golden vectors for the photo pick, photo/{head_id}/pick (sync.proto rule 6 PHOTO PICK). Every implementation (this package, fc-coordinator's Push validation, fc-mobile) must agree with every case. `pushes`: one pushed SyncEvent each, on `key`. `op` is the SyncOp; the payload on the wire is JSON.stringify(`body`), or `raw` exactly as written when the case has one. `expect` is \"accepted\" or \"payload_invalid\", and `why` says which check refuses: \"schema\" (schemas/photo-pick.schema.json does not validate the payload, or it is not JSON) or \"delete_payload\" (a DELETE carries a payload). A DELETE with an empty payload is accepted and means \"use the default\". `shown`: what a client shows for a figure. `pick` is the derivative_id of the live pick, or null when there is none (never made, or deleted); `images` is the derivative_ids of the figure's GetProductImages list as this viewer is sent it, in order; `expect` is the id shown as the pick: the pick's when `images` carries it, else null, and null reads exactly as no pick (the default is shown, the facet is kept). `lastWriterWins`: the events of one user on one figure's pick; a reader applies an event iff its version is greater than the one it holds (compareVersion), so in EVERY arrival order, repeats included, the pick ends as `expect`: the derivative_id, or null for the default. `merged`: one card after an ER merge (sync.proto ER MERGES). `card` is its head_id and the head ids of its requested_as; `events` is the one event the reader holds on each pick key, live or tombstoned, picks on figures outside the card included; `images` is the merged figure's list. Among the events of card.head_id and every requested_as head, the greatest version decides, the lower head_id (bytewise) between equal versions; `expect.shown` is the decider's id when it is a live pick the list carries, else null (a tombstone, a pick the list lacks, or no event; never an older pick in its place); `expect.write_to` is the head whose key a new pick or a \"use default\" is written to: the decider's, or card.head_id when no head of the card holds an event.",
+  "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick",
+  "parsedKey": { "family": "photo/pick", "headId": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" },
+  "pushes": [
+    { "name": "a pick", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "accepted" },
+    { "name": "a pick of an id that is all digits", "op": "UPSERT", "body": { "derivative_id": "0000000000000000000000000000000000000000000000000000000000000000", "edited_at": "2026-11-21T16:15:00Z", "tz": "UTC" }, "expect": "accepted" },
+    { "name": "a pick of an id that is all letters", "op": "UPSERT", "body": { "derivative_id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "accepted" },
+
+    { "name": "uppercase hex", "op": "UPSERT", "body": { "derivative_id": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "uppercase hex: one letter", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeF", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+
+    { "name": "wrong length: 63 characters", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "wrong length: 65 characters", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "wrong length: 32 characters (an md5, a trace id)", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "wrong length: 128 characters (two ids run together)", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "wrong length: empty (use default is a DELETE)", "op": "UPSERT", "body": { "derivative_id": "", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+
+    { "name": "bad shape: a letter past f", "op": "UPSERT", "body": { "derivative_id": "g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: the address, as a device kept it before 0.9.0", "op": "UPSERT", "body": { "derivative_id": "https://images.figurecollecting.com/d/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a path before the id", "op": "UPSERT", "body": { "derivative_id": "d/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a sha256: prefix", "op": "UPSERT", "body": { "derivative_id": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a 0x prefix in 64 characters", "op": "UPSERT", "body": { "derivative_id": "0x23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a file extension", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.webp", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a query", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef?w=256", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: dashes in 64 characters", "op": "UPSERT", "body": { "derivative_id": "01234567-89ab-cdef-0123-456789abcdef0123456789abcdef0123456789ab", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: the figure's head id", "op": "UPSERT", "body": { "derivative_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: base64 of a sha256", "op": "UPSERT", "body": { "derivative_id": "ASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4mrze8=", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a leading space", "op": "UPSERT", "body": { "derivative_id": " 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a trailing newline (a pattern's $ must not match before it)", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: full-width digits", "op": "UPSERT", "body": { "derivative_id": "０123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: null (use default is a DELETE)", "op": "UPSERT", "body": { "derivative_id": null, "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a number", "op": "UPSERT", "body": { "derivative_id": 123456789, "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: a list holding the id", "op": "UPSERT", "body": { "derivative_id": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"], "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: no id", "op": "UPSERT", "body": { "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: the id under another name", "op": "UPSERT", "body": { "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: an address beside the id (the schema is closed; no address is ever pushed)", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "url": "https://evil.example/d/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: the display fields missing", "op": "UPSERT", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: an UPSERT with an empty payload (use default is a DELETE)", "op": "UPSERT", "raw": "", "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: the bare id, not JSON", "op": "UPSERT", "raw": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "expect": "payload_invalid", "why": "schema" },
+    { "name": "bad shape: the id as a JSON string, not an object", "op": "UPSERT", "raw": "\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"", "expect": "payload_invalid", "why": "schema" },
+
+    { "name": "DELETE: use the default", "op": "DELETE", "raw": "", "expect": "accepted" },
+    { "name": "DELETE with a payload", "op": "DELETE", "body": { "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "edited_at": "2026-11-21T10:15:00-06:00", "tz": "America/Chicago" }, "expect": "payload_invalid", "why": "delete_payload" },
+    { "name": "DELETE with an empty object", "op": "DELETE", "raw": "{}", "expect": "payload_invalid", "why": "delete_payload" }
+  ],
+  "shown": [
+    {
+      "name": "the pick is in the figure's image list: it is shown",
+      "pick": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "images": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      "expect": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    },
+    {
+      "name": "the pick is the list's first image: it is shown",
+      "pick": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "images": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"],
+      "expect": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    {
+      "name": "the pick is no longer in the figure's image list (the image is gone, or withheld from this viewer): shown as no pick",
+      "pick": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "images": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      "expect": null
+    },
+    {
+      "name": "the pick is another figure's image, never in this figure's list: shown as no pick",
+      "pick": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "images": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"],
+      "expect": null
+    },
+    {
+      "name": "the figure's image list is empty (no card, images off, or every image withheld): shown as no pick",
+      "pick": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "images": [],
+      "expect": null
+    },
+    {
+      "name": "the list carries an id that differs from the pick in one character: shown as no pick",
+      "pick": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "images": ["fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543211"],
+      "expect": null
+    },
+    {
+      "name": "no pick (never made, or deleted): no pick",
+      "pick": null,
+      "images": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"],
+      "expect": null
+    }
+  ],
+  "lastWriterWins": [
+    {
+      "name": "two devices pick; the later pick wins",
+      "events": [
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+        { "op": "UPSERT", "version": "2026-11-21T16:15:01.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" }
+      ],
+      "expect": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    },
+    {
+      "name": "the same instant: the higher counter wins, whatever the device",
+      "events": [
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000002#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000001#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" }
+      ],
+      "expect": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    {
+      "name": "the same instant and counter: the greater device id wins, the same on both devices",
+      "events": [
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" }
+      ],
+      "expect": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    },
+    {
+      "name": "a pick, then use default on another device: the default, and the older pick never comes back",
+      "events": [
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+        { "op": "DELETE", "version": "2026-11-21T16:20:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a" }
+      ],
+      "expect": null
+    },
+    {
+      "name": "use default, then a later pick: the pick",
+      "events": [
+        { "op": "DELETE", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" },
+        { "op": "UPSERT", "version": "2026-11-21T16:20:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" }
+      ],
+      "expect": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    },
+    {
+      "name": "pick, use default, pick again across three devices: the last pick",
+      "events": [
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+        { "op": "DELETE", "version": "2026-11-21T16:20:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a" },
+        { "op": "UPSERT", "version": "2026-11-21T16:25:00.000000Z#0000000000#1d2e3f405a6b4c7d8e9f0a1b2c3d4e5f", "derivative_id": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" },
+        { "op": "UPSERT", "version": "2026-11-21T16:15:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
+      ],
+      "expect": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    }
+  ],
+  "merged": [
+    {
+      "name": "a pick on the absorbed head only: shown on the merged figure, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "use default on the survivor after the merge sticks: the absorbed head's older pick is never resurrected",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "a later pick on the absorbed head (from a device that had not seen the merge) outranks an older use default",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the deciding pick is not in the merged figure's image list: no pick, and an older pick the list carries is not shown in its place",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "two heads at equal versions (one import's writes under heads merged later): the lower head id decides",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "equal versions where the lower head is the survivor, first in events and in requested_as, and holds the higher image id: the lower head id still decides",
+      "card": { "head_id": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the same instant on two heads, the higher counter on the higher head: the whole version decides, not the instant, so the higher counter wins",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000001#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000002#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the newer pick on the absorbed head names an image the list lacks, and the survivor's older pick is in the list: no pick, and the next write goes to the absorbed head",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:05.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:01.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the survivor is not among requested_as (the client asked by the absorbed id): the survivor's own newer pick still decides",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "a newer pick on a head outside the card (a figure not merged) is ignored",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/9b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T13:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "no event on any head of the card: the default, and a write goes to card.head_id",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/9b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T13:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "a tombstone on the absorbed head decides: the default over an older pick, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-21T12:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-21T11:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "three merged heads, the newest pick on the second absorbed head: it decides, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:01:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:02:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+      "expect": { "shown": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "write_to": "3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "equal versions, a pick on the lower head and a tombstone on the higher: the lower head decides, so the pick shows",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" },
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "equal versions, a tombstone on the lower head and a pick on the higher: the lower head decides, so the default shows",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "DELETE", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": null, "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "the same instant and counter from two devices, the higher device id on the higher head: the device id decides",
+      "card": { "head_id": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "two picks one microsecond apart, the later on the higher head: the microsecond decides",
+      "card": { "head_id": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000001Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      "expect": { "shown": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "write_to": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    },
+    {
+      "name": "three merged heads, the newest pick on the first absorbed head: it decides, and the next write goes there",
+      "card": { "head_id": "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "requested_as": ["1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b", "3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b"] },
+      "events": [
+        { "key": "photo/1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:02:00.000000Z#0000000000#9c1e3a5b7d9f1b3d5f7a9c1e3b5d7f9a", "derivative_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "key": "photo/5b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:01:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "key": "photo/3b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b/pick", "op": "UPSERT", "version": "2026-11-20T10:00:00.000000Z#0000000000#0f3a5c7e9b1d2f4a6c8e0b2d4f6a8c0e", "derivative_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+      ],
+      "images": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+      "expect": { "shown": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "write_to": "1b0c7c7e-2f1d-4c1e-9a1b-3c4d5e6f7a8b" }
+    }
+  ]
+}

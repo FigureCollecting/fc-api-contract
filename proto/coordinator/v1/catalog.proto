@@ -302,7 +302,7 @@ message ProductImages {
 // One derivative the client may show. The original's content address, its
 // object key and the capture that observed it are not on this surface.
 message ProductImage {
-  // Hex SHA-256 of the derivative bytes.
+  // Hex SHA-256 of the derivative bytes: 64 lowercase hex characters.
   string derivative_id = 1;
 
   // The spine's role for the image: "gallery", "other", "thumbnail", "user" or
