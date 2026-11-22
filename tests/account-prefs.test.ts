@@ -281,7 +281,8 @@ describe('sync.proto and README: the account preferences', () => {
     expect(rule6).toMatch(/LAST WRITER WINS PER KEY, for all four as for every facet: the event with the greater version \(rule 5\) replaces the other on every device/);
     expect(rule6).toMatch(/A value is replaced whole: two looks are never merged field by field, nor two lists of searches/);
     expect(rule6).toMatch(/A DELETE is the app's default \(the default theme, the default look, an empty list\)/);
-    expect(rule6).toMatch(/The server refuses a version more than 5 minutes past its own clock \(version_future\), so a fast clock gains at most that: an edit from a device running up to 5 minutes fast outranks a later edit from a device on the right time, the trade-off rule 5 states/);
+    expect(rule6).toMatch(/The server refuses a version more than 5 minutes past its own clock at push time \(version_future\)\. That bounds a push, not an edit: an edit minted on a clock that jumped ahead and pushed once real time has caught up is accepted at its version, and it outranks later edits from other devices until real time catches up with that version, the trade-off rule 5 states/);
+    expect(rule6).not.toMatch(/a fast clock gains at most that/);
     expect(rule6).not.toMatch(/no device wins by running fast/);
   });
 
@@ -290,10 +291,12 @@ describe('sync.proto and README: the account preferences', () => {
     expect(rule6).toMatch(/the replaced event keeps its place in the feed, so no cursor or commit_cursor \(rule 7\) moves, but it becomes a tombstone at its own version with an empty payload/);
     expect(rule6).toMatch(/A DELETE removes the stored value the same way and keeps only its own tombstone \(key and version, no payload\)/);
     expect(rule6).toMatch(/The record of a client_id \(PushRequest\.client_id\) keeps no payload of these keys either/);
+    expect(rule6).toMatch(/Every replay still ends at the latest value: a reader that holds the replaced value holds its version and drops the tombstone \(not greater\), and one that does not applies it and then, later in the feed, the event that replaced it/);
     expect(rule6).toMatch(/This is the one exception to the soft-delete rule \(SYNC_OP_DELETE\): nothing else is erased, and no event is removed from the feed \(rule 7\)/);
     const deleteDoc = prose(sync.slice(sync.indexOf('enum SyncOp'), sync.indexOf('SYNC_OP_DELETE = 2;')));
     expect(deleteDoc).toMatch(/The account preferences are the one exception: their replaced and deleted values are erased \(rule 6 RETENTION\)/);
     expect(prose(readme)).toMatch(/The server keeps only the latest value of each of the three: a replaced value is erased, and a DELETE erases the stored one, so no history of past searches is kept/);
+    expect(prose(readme)).toMatch(/A search is trimmed, not empty, at most 200 code points, with no control character or lone surrogate\. `golden\/account-pref-vectors\.json`/);
   });
 
   it('has a device push what it holds once, on first sign-in, and only where the account has nothing', () => {

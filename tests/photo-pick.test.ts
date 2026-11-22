@@ -334,6 +334,34 @@ describe('golden photo-pick vectors: ER merges', () => {
       return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
     },
     'writes always to card.head_id': (c) => ({ ...reference(c), write_to: c.card.head_id }),
+    'equal versions: the head that is not card.head_id': (c) => {
+      const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort((x, y) => compareVersion(y.version, x.version) || (headOf(x) === c.card.head_id ? 1 : headOf(y) === c.card.head_id ? -1 : 0))[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'equal versions: the later event in arrival order': (c) => {
+      const decider = c.events.map((e, i) => [e, i] as const).filter(([e]) => heads(c).has(headOf(e))).sort(([x, i], [y, j]) => compareVersion(y.version, x.version) || j - i)[0]?.[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'equal versions: the last head in requested_as': (c) => {
+      const at = (e: KeyedPickEvent) => c.card.requested_as.indexOf(headOf(e));
+      const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort((x, y) => compareVersion(y.version, x.version) || at(y) - at(x))[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'versions compared by instant only, the lower head between equal instants': (c) => {
+      const instant = (v: string) => v.split('#')[0]!;
+      const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort((x, y) => (instant(y.version) > instant(x.version) ? 1 : instant(y.version) < instant(x.version) ? -1 : 0) || (headOf(x) < headOf(y) ? -1 : headOf(x) > headOf(y) ? 1 : 0))[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'a deciding pick the list lacks falls back to the pick on card.head_id': (c) => {
+      const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort(byVersionThenHead)[0];
+      let shown = showIf(decider, c.images);
+      if (shown === null && decider?.op === 'UPSERT') shown = showIf(c.events.find((e) => headOf(e) === c.card.head_id), c.images);
+      return { shown, write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
+    'equal versions: the lower image id': (c) => {
+      const decider = c.events.filter((e) => heads(c).has(headOf(e))).sort((x, y) => compareVersion(y.version, x.version) || ((x.derivative_id ?? '') < (y.derivative_id ?? '') ? -1 : 1))[0];
+      return { shown: showIf(decider, c.images), write_to: decider === undefined ? c.card.head_id : headOf(decider) };
+    },
   };
 
   it('has two-figure cases, each keyed by photo/{head_id}/pick on canonical versions', () => {
@@ -380,7 +408,7 @@ describe('golden photo-pick vectors: ER merges', () => {
 
   it('covers the cases the rule decides', () => {
     const names = vectors.merged.map((c) => c.name).join(' | ');
-    for (const re of [/use default on the survivor/, /absorbed head only/, /later pick on the absorbed head/, /not in the merged figure's image list/, /equal versions/, /not among requested_as/, /outside the card/, /no event on any head/, /tombstone on the absorbed head/])
+    for (const re of [/use default on the survivor/, /absorbed head only/, /later pick on the absorbed head/, /not in the merged figure's image list/, /equal versions/, /not among requested_as/, /outside the card/, /no event on any head/, /tombstone on the absorbed head/, /lower head is the survivor/, /higher counter on the higher head/, /survivor's older pick is in the list/])
       expect(names).toMatch(re);
   });
 });

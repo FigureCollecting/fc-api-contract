@@ -351,11 +351,12 @@
 //     control's shape and the dismissed do-not-fit list.
 //     LAST WRITER WINS PER KEY, for all four as for every facet: the event
 //     with the greater version (rule 5) replaces the other on every device.
-//     The server refuses a version more than 5 minutes past its own clock
-//     (version_future), so a fast clock gains at most that: an edit from a
-//     device running up to 5 minutes fast outranks a later edit from a
-//     device on the right time, the trade-off rule 5 states. A value is
-//     replaced whole: two looks are never merged field by field, nor two
+//     The server refuses a version more than 5 minutes past its own clock at
+//     push time (version_future). That bounds a push, not an edit: an edit
+//     minted on a clock that jumped ahead and pushed once real time has
+//     caught up is accepted at its version, and it outranks later edits from
+//     other devices until real time catches up with that version, the
+//     trade-off rule 5 states. A value is replaced whole: two looks are never merged field by field, nor two
 //     lists of searches. A DELETE is the app's default (the default theme,
 //     the default look, an empty list) and wins or loses by its version like
 //     any value.
