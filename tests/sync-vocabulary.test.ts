@@ -57,11 +57,12 @@ describe('vocabulary', () => {
     expect(DISPOSAL_REASONS).toEqual(['sold', 'traded', 'gifted', 'damaged', 'lost', 'stolen', 'other']);
   });
 
-  it('names sixteen user-owned and six server-owned families, one grammar each', () => {
+  it('names twenty user-owned and six server-owned families, one grammar each', () => {
     expect(USER_FACET_FAMILIES).toEqual([
       'occ/head', 'occ/status', 'occ/collection', 'occ/disposal', 'occ/tag',
       'uf/score', 'uf/note', 'uf/wishability', 'uf/label', 'uf/refs', 'uf/tag', 'uf/ktag',
-      'coll/name', 'tag/name', 'res/answer', 'pref/import',
+      'coll/name', 'tag/name', 'res/answer', 'pref/import', 'photo/pick',
+      'pref/theme', 'pref/case', 'pref/recents',
     ]);
     expect(SERVER_FACET_FAMILIES).toEqual(['occ/origin', 'imp/figure', 'imp/held', 'imp/change', 'imp/align', 'imp/import']);
     expect(OCC_FIELDS).toEqual(['head', 'status', 'collection', 'disposal']);

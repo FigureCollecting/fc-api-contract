@@ -125,6 +125,7 @@ export { Hlc } from './hlc.js';
 export type { HlcClock, HlcOptions, HlcState } from './hlc.js';
 
 export {
+  ACCOUNT_PREFS,
   COLLECTION_KINDS,
   DEFAULT_COLLECTION_ID,
   DISPOSAL_REASONS,
@@ -139,6 +140,7 @@ export {
   UF_FIELDS,
   USER_FACET_FAMILIES,
   USER_FACET_PAYLOAD_SCHEMAS,
+  accountPrefKey,
   buildFacetKey,
   canonicalMfcId,
   collNameKey,
@@ -156,12 +158,14 @@ export {
   parseServerFacetKey,
   parseUserFacetKey,
   payloadSchemaPath,
+  photoPickKey,
   tagNameKey,
   ufFacetKey,
   ufKindTagKey,
   ufTagKey,
 } from './sync-vocabulary.js';
 export type {
+  AccountPref,
   CollectionKind,
   CollectionRef,
   DisposalReason,

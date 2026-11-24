@@ -148,6 +148,8 @@ const userKey: fc.Arbitrary<UserFacetKey> = fc.oneof(
   fc.record({ family: fc.constant('tag/name' as const), tagId: id }),
   fc.record({ family: fc.constant('res/answer' as const), site, headId: id }),
   fc.record({ family: fc.constant('pref/import' as const), site }),
+  fc.record({ family: fc.constant('photo/pick' as const), headId: id }),
+  fc.record({ family: fc.constantFrom('pref/theme' as const, 'pref/case' as const, 'pref/recents' as const) }),
 );
 const serverKey: fc.Arbitrary<ServerFacetKey> = fc.oneof(
   fc.record({ family: fc.constant('occ/origin' as const), occId: id }),
@@ -165,7 +167,7 @@ const shout = (k: FacetKey): FacetKey =>
 const SEGMENTS = [
   'occ', 'uf', 'coll', 'tag', 'imp', 'holding', 'head', 'status', 'collection', 'disposal', 'origin',
   'score', 'note', 'wishability', 'ktag', 'name', 'base', 'conflict', 'mfc', 'default', 'DEFAULT',
-  'res', 'pref', 'import', 'figure', 'held', 'change', 'align',
+  'res', 'pref', 'import', 'figure', 'held', 'change', 'align', 'photo', 'pick', 'theme', 'case', 'recents',
   ...COLLECTION_KINDS, 'custom', 'count', '', '6f1c2b3a-4d5e-4f60-8a71-92b3c4d5e6f7',
   '5B0C7C7E-2F1D-4C1E-9A1B-3C4D5E6F7A8B', '0192f3a44f5b6c7d8e9f0123456789ab',
 ];

@@ -534,7 +534,7 @@ export const ProductImagesSchema: GenMessage<ProductImages> = /*@__PURE__*/
  */
 export type ProductImage = Message<"coordinator.v1.ProductImage"> & {
   /**
-   * Hex SHA-256 of the derivative bytes.
+   * Hex SHA-256 of the derivative bytes: 64 lowercase hex characters.
    *
    * @generated from field: string derivative_id = 1;
    */

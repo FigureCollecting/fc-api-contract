@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://figurecollecting.com/schemas/coordinator/v1/pref-theme.schema.json",
+  "title": "pref/theme payload",
+  "description": "UPSERT payload of pref/theme: the app theme the account chose, the same on every device it signs in on. Last writer wins. A DELETE with an empty payload goes back to the app's default. Serialized, at most 140 bytes of UTF-8 as JSON.stringify writes it, under the Push cap MAX_PAYLOAD_BYTES (65,536).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "theme",
+    "edited_at",
+    "tz"
+  ],
+  "properties": {
+    "theme": {
+      "description": "dark, light, or system: follow the device's own light or dark setting, read on each device at display time.",
+      "enum": [
+        "dark",
+        "light",
+        "system"
+      ]
+    },
+    "edited_at": {
+      "description": "When the user made the edit, in the device's local time with its offset (at most ±18:00). Display only; never compared, never restamped.",
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,9})?(Z|[+-]((0\\d|1[0-7]):[0-5]\\d|18:00))$"
+    },
+    "tz": {
+      "description": "The device's IANA time zone at edit time, e.g. America/Chicago. Display only.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$"
+    }
+  }
+}
